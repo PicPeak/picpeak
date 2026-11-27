@@ -1109,7 +1109,8 @@
     "automation": "Automation",
     "sharing": "Sharing",
     "openMenu": "Open menu",
-    "closeMenu": "Close menu"
+    "closeMenu": "Close menu",
+    "website": "Website"
   },
   "transfers": {
     "title": "PicTransfer",
@@ -3769,6 +3770,10 @@
         "title": "Customer gifts",
         "description": "Suggest gifts at customer milestones, track gift stock and record who received what. Every gift is confirmed by an admin.",
         "sidebar": "Gifts"
+      },
+      "websiteBuilder": {
+        "title": "Website builder",
+        "description": "Build your public website from blocks: pages, portfolio, pricing, contact form and booking button. Photos only appear from galleries you put on the website. Until you publish, the current public site stays as it is."
       }
     },
     "customerSurface": {
@@ -13112,5 +13117,284 @@
     "reachedOn": "Reached {{date}}",
     "lowStock_one": "{{count}} gift due, {{stock}} in stock.",
     "lowStock_other": "{{count}} gifts due, {{stock}} in stock."
+  },
+  "website": {
+    "background": {
+      "default": "Page",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "fields": {
+      "badLink": "Use https://, mailto:, tel:, a page like /about or an anchor like #contact.",
+      "linkHint": "A page like /about, a section like #contact, or https://, mailto:, tel:",
+      "notShown": "Not shown on the site: its gallery is no longer on the website.",
+      "notShownShort": "Not shown",
+      "replace": "Replace",
+      "remove": "Remove",
+      "alt": "Description for screen readers",
+      "chooseImage": "Choose image",
+      "video": "Background video (optional)",
+      "chooseVideo": "Choose video",
+      "removeImage": "Remove image {{n}}",
+      "addImages": "Add images",
+      "imageCount": "{{count}} of {{max}} images",
+      "layout": "Layout",
+      "background": "Background",
+      "heading": "Heading",
+      "subheading": "Text",
+      "image": "Image",
+      "buttonLabel": "Button text",
+      "buttonUrl": "Button link",
+      "body": "Text",
+      "columns": "Columns on a computer",
+      "images": "Images",
+      "handle": "Account name",
+      "profileUrl": "Profile link",
+      "instagramHint": "Pick the photos yourself; nothing is loaded from Instagram.",
+      "intro": "Introduction",
+      "showPrices": "Show prices",
+      "showPhone": "Ask for a phone number",
+      "showDate": "Ask for the event date",
+      "submitLabel": "Button text",
+      "submitDefault": "Send message",
+      "successMessage": "Thank-you message",
+      "divider": "Show a line",
+      "customHtmlNotice": "For advanced use. Scripts, frames, forms and event handlers are removed when the page is shown; style it with the site’s custom CSS.",
+      "html": "HTML",
+      "contactNotice": "Messages arrive in Messages › Customers. Nothing is emailed to the visitor.",
+      "contactNoticeOff": "Messages are stored in Messages › Customers, which is switched off. Turn on Messages under Settings › Features to read them.",
+      "bookingOff": "Booking is switched off, so this block is hidden on the site. Turn on Booking under Settings › Features.",
+      "galleries": "Galleries",
+      "noGalleries": "No gallery is on the website yet. Put one on the website from the image picker’s Galleries tab.",
+      "galleriesMissing": "{{count}} chosen galleries are no longer on the website and are not shown.",
+      "packagesOff": "Packages come from the quote catalogue, which needs Quotes under Settings › Features.",
+      "packages": "Packages from your catalogue",
+      "noPackages": "The catalogue has no packages yet.",
+      "packagesHint": "Names, descriptions and prices are edited in the catalogue and stay in step.",
+      "testimonial": "Testimonial {{n}}",
+      "removeTestimonial": "Remove testimonial {{n}}",
+      "quote": "Quote",
+      "author": "Name",
+      "role": "Detail (optional)",
+      "rolePlaceholder": "Wedding, June 2026",
+      "portrait": "Photo (optional)",
+      "addTestimonial": "Add testimonial",
+      "formatHint": "Blank line = new paragraph. **bold**, *italic*, [link text](https://…)"
+    },
+    "defaults": {
+      "heroHeading": "Your headline",
+      "textBody": "Write something here.",
+      "featuredHeading": "Recent work",
+      "testimonialsHeading": "Kind words",
+      "pricingHeading": "Packages",
+      "contactHeading": "Get in touch",
+      "bookingHeading": "Book a session"
+    },
+    "pages": {
+      "newTitle": "New page",
+      "deleteTitle": "Delete “{{name}}”?",
+      "deleteMessage": "The page and its blocks are removed from the draft. Undo brings it back until you leave the editor.",
+      "slugReserved": "This address is used by PicPeak itself. Choose another.",
+      "slugDuplicate": "Another page already has this address.",
+      "slugCms": "A legal or CMS page already uses this address.",
+      "slugEmpty": "Enter an address.",
+      "title": "Pages",
+      "add": "Add page",
+      "orderHint": "The order here is the order of the menu. Legal pages are added to the footer on their own.",
+      "home": "Home",
+      "hidden": "Hidden",
+      "settings": "Page settings",
+      "settingsOf": "Settings of “{{name}}”",
+      "pageTitle": "Title",
+      "navLabel": "Menu label (optional)",
+      "slug": "Address",
+      "slugHint": "Shown as yoursite.com/{{slug}}",
+      "inNav": "Show in the menu",
+      "visible": "Published on the site",
+      "visibleHint": "Off: the page stays in the draft but nobody can open it.",
+      "makeHome": "Make this the home page",
+      "seo": "Search engines and sharing",
+      "seoTitle": "Title in search results",
+      "seoDescription": "Description",
+      "seoDescriptionHint": "{{count}}/300 — one or two sentences about this page.",
+      "seoImage": "Image when shared (optional)",
+      "delete": "Delete page"
+    },
+    "picker": {
+      "addSelected": "Add {{count}} images",
+      "videoTitle": "Choose a video",
+      "title": "Choose images",
+      "videoDescription": "An MP4 up to two minutes. It plays muted and in a loop.",
+      "description": "Upload images for the website, or pick photos from galleries you put on the website.",
+      "uploads": "Uploads",
+      "galleries": "Galleries",
+      "deleteTitle": "Delete this upload?",
+      "deleteMessage": "It is removed for good. An upload still used on a page cannot be deleted.",
+      "uploadVideo": "Upload video",
+      "upload": "Upload images",
+      "videoHint": "MP4, up to 100 MB. Location and device data are removed.",
+      "uploadHint": "JPEG, PNG, WebP or GIF, up to 30 MB. Location data is removed; the original is not kept.",
+      "noVideos": "No videos uploaded yet",
+      "noUploads": "No uploads yet",
+      "noUploadsHint": "Upload files here that you only want on the website.",
+      "deleteLabel": "Delete {{name}}",
+      "openGallery": "Choose photos",
+      "showOnWebsite": "Show “{{name}}” on the website",
+      "galleriesNotice": "Only galleries you put on the website can be used, and only while they are open to guests without a password. Turn a gallery off here and its photos leave the website at once.",
+      "onWebsite": "On the website",
+      "noneOnWebsite": "No gallery is on the website yet.",
+      "otherGalleries": "Other galleries",
+      "back": "All galleries",
+      "more": "Show more",
+      "reason": {
+        "password": "Has a password",
+        "unavailable": "Expired, a draft or switched off",
+        "hidden": "Not revealed yet",
+        "payment_lock": "Waiting for payment",
+        "not_opted_in": "Not on the website",
+        "missing": "Not found"
+      }
+    },
+    "preview": {
+      "title": "Preview of the page",
+      "updating": "Updating preview…"
+    },
+    "site": {
+      "fromBranding": "From branding",
+      "resetColor": "Use the branding colour for {{name}}",
+      "title": "Site design",
+      "intro": "Logo, colours and fonts come from your branding, so the website and the galleries match. Change them here only for the website.",
+      "openBranding": "Open branding settings",
+      "headingFont": "Heading font",
+      "bodyFont": "Text font",
+      "buttonStyle": "Buttons",
+      "solid": "Filled",
+      "outline": "Outline",
+      "pill": "Rounded",
+      "colours": "Colours",
+      "accent": "Buttons and links",
+      "background": "Page background",
+      "text": "Text",
+      "customCss": "Custom CSS (advanced)",
+      "customCssHint": "Applied to every page after the site’s own styles. Imports and scripts are removed."
+    },
+    "list": {
+      "drag": "Move “{{name}}” (drag, or Space then arrow keys)",
+      "moveUp": "Move “{{name}}” up",
+      "moveDown": "Move “{{name}}” down",
+      "dragInstructions": "To move an item, press Space or Enter, move it with the arrow keys, and press Space or Enter again to drop it. Press Escape to cancel."
+    },
+    "blocks": {
+      "deleteTitle": "Remove this block?",
+      "deleteMessage": "It is removed from the draft. Undo brings it back.",
+      "delete": "Remove",
+      "back": "All blocks",
+      "duplicate": "Duplicate block",
+      "title": "Blocks on “{{name}}”",
+      "add": "Add block",
+      "empty": "This page has no blocks yet.",
+      "hint": "Click a block here or in the preview to edit it. Drag to change the order.",
+      "addTitle": "Add a block",
+      "addDescription": "It is added below the selected block, or at the end of the page.",
+      "hero": {
+        "name": "Hero",
+        "description": "Big opening picture or video with a headline and a button."
+      },
+      "text": {
+        "name": "Text",
+        "description": "Headings and paragraphs."
+      },
+      "imageText": {
+        "name": "Image and text",
+        "description": "A picture next to a text."
+      },
+      "gallery": {
+        "name": "Image grid",
+        "description": "Your picked photos as a grid or masonry."
+      },
+      "featuredGalleries": {
+        "name": "Featured galleries",
+        "description": "Galleries on the website, with cover and title."
+      },
+      "testimonials": {
+        "name": "Testimonials",
+        "description": "Quotes from happy clients."
+      },
+      "pricing": {
+        "name": "Pricing",
+        "description": "Packages from your quote catalogue."
+      },
+      "contact": {
+        "name": "Contact form",
+        "description": "Messages land in Messages › Customers."
+      },
+      "booking": {
+        "name": "Booking button",
+        "description": "Leads to your booking page."
+      },
+      "instagram": {
+        "name": "Photo strip",
+        "description": "A row of photos with a link to your profile."
+      },
+      "spacer": {
+        "name": "Spacer",
+        "description": "Space or a line between blocks."
+      },
+      "customHtml": {
+        "name": "Custom HTML",
+        "description": "Your own markup, sanitised."
+      }
+    },
+    "saved": "Draft saved",
+    "publishTitle": "Publish the website?",
+    "publishMessage": "Visitors see this version right away. The draft is saved first.",
+    "publishMessageOff": "The public site is switched off, so visitors will not see it until you turn it on in Settings › CMS. The draft is saved first.",
+    "publish": "Publish",
+    "published": "Website published",
+    "status": {
+      "notPublished": "Not published yet",
+      "changes": "Unpublished changes",
+      "live": "Published"
+    },
+    "title": "Website",
+    "description": "Your public website, built from blocks. Edit the draft, then publish.",
+    "openSite": "Open site",
+    "readOnly": "You can see the website but not change it.",
+    "siteOff": "The public site is switched off in Settings › CMS. Until it is on, `/` leads to the login page and the website is not visible.",
+    "tabs": {
+      "blocks": "Blocks",
+      "pages": "Pages",
+      "site": "Design"
+    },
+    "previewPage": "Page in the preview",
+    "undo": "Undo",
+    "redo": "Redo",
+    "device": "Preview size",
+    "desktop": "Computer",
+    "phone": "Phone",
+    "saveDraft": "Save draft",
+    "variants": {
+      "overlay": "Text on image",
+      "split": "Side by side",
+      "minimal": "Text only",
+      "left": "Left",
+      "center": "Centred",
+      "columns": "Two columns",
+      "image-left": "Image left",
+      "image-right": "Image right",
+      "grid": "Grid",
+      "masonry": "Masonry",
+      "cards": "Cards",
+      "list": "List",
+      "quote": "Large quote",
+      "simple": "Simple",
+      "button": "Button",
+      "banner": "Banner",
+      "strip": "Strip",
+      "small": "Small",
+      "medium": "Medium",
+      "large": "Large",
+      "default": "Default"
+    }
   }
 }

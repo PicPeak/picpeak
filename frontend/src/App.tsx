@@ -61,6 +61,7 @@ import { HoursLoggingPage } from './pages/admin/clients/HoursLoggingPage';
 const CalendarPage = lazy(() => import('./pages/admin/clients/CalendarPage').then((m) => ({ default: m.CalendarPage })));
 // Its own chunk: the template editor carries the drag-and-drop library (#1445).
 const ContractTemplateEditorPage = lazy(() => import('./pages/admin/contracts/ContractTemplateEditorPage').then((m) => ({ default: m.ContractTemplateEditorPage })));
+const WebsiteBuilderPage = lazy(() => import('./features/website/WebsiteBuilderPage').then((m) => ({ default: m.WebsiteBuilderPage })));
 const MessagesPage = lazy(() => import('./pages/admin/messages/MessagesPage').then((m) => ({ default: m.MessagesPage })));
 import { QuoteResponsePage } from './pages/public/QuoteResponsePage';
 import { ContractResponsePage, ContractSigningSessionPage } from './pages/public/ContractResponsePage';
@@ -286,6 +287,15 @@ const router = createBrowserRouter(
             Sharing section, which activates on both trees. */}
         <Route element={<RequireFeature flag="transfers" />}>
           <Route path="transfers" element={<TransfersPage />} />
+        </Route>
+        <Route element={<RequireFeature flag="websiteBuilder" />}>
+          <Route element={<RequirePermission permission="cms.view" />}>
+            <Route path="website" element={
+              <Suspense fallback={<Loading />}>
+                <WebsiteBuilderPage />
+              </Suspense>
+            } />
+          </Route>
         </Route>
         <Route element={<RequireFeature flag="messaging" />}>
           <Route path="messages" element={

@@ -1109,7 +1109,8 @@
     "automation": "Automatisierung",
     "sharing": "Teilen",
     "openMenu": "Menü öffnen",
-    "closeMenu": "Menü schliessen"
+    "closeMenu": "Menü schliessen",
+    "website": "Website"
   },
   "transfers": {
     "title": "PicTransfer",
@@ -4502,6 +4503,10 @@
         "title": "Kundengeschenke",
         "description": "Schlägt Geschenke zu Kundenjubiläen vor, führt den Geschenkbestand und hält fest, wer was erhalten hat. Jedes Geschenk bestätigt ein Admin.",
         "sidebar": "Geschenke"
+      },
+      "websiteBuilder": {
+        "title": "Website-Baukasten",
+        "description": "Bauen Sie Ihre öffentliche Website aus Blöcken: Seiten, Portfolio, Preise, Kontaktformular und Buchungsknopf. Fotos erscheinen nur aus Galerien, die Sie auf die Website stellen. Bis Sie veröffentlichen, bleibt die bisherige öffentliche Seite unverändert."
       }
     },
     "customerSurface": {
@@ -13077,5 +13082,284 @@
     "reachedOn": "Erreicht am {{date}}",
     "lowStock_one": "{{count}} Geschenk fällig, {{stock}} auf Lager.",
     "lowStock_other": "{{count}} Geschenke fällig, {{stock}} auf Lager."
+  },
+  "website": {
+    "background": {
+      "default": "Seite",
+      "light": "Hell",
+      "dark": "Dunkel"
+    },
+    "fields": {
+      "badLink": "Verwenden Sie https://, mailto:, tel:, eine Seite wie /ueber-uns oder einen Anker wie #kontakt.",
+      "linkHint": "Eine Seite wie /ueber-uns, ein Abschnitt wie #kontakt oder https://, mailto:, tel:",
+      "notShown": "Wird auf der Website nicht gezeigt: Die Galerie ist nicht mehr auf der Website.",
+      "notShownShort": "Nicht sichtbar",
+      "replace": "Ersetzen",
+      "remove": "Entfernen",
+      "alt": "Beschreibung für Screenreader",
+      "chooseImage": "Bild auswählen",
+      "video": "Hintergrundvideo (optional)",
+      "chooseVideo": "Video auswählen",
+      "removeImage": "Bild {{n}} entfernen",
+      "addImages": "Bilder hinzufügen",
+      "imageCount": "{{count}} von {{max}} Bildern",
+      "layout": "Layout",
+      "background": "Hintergrund",
+      "heading": "Überschrift",
+      "subheading": "Text",
+      "image": "Bild",
+      "buttonLabel": "Text der Schaltfläche",
+      "buttonUrl": "Link der Schaltfläche",
+      "body": "Text",
+      "columns": "Spalten am Computer",
+      "images": "Bilder",
+      "handle": "Kontoname",
+      "profileUrl": "Link zum Profil",
+      "instagramHint": "Wählen Sie die Fotos selbst aus; von Instagram wird nichts geladen.",
+      "intro": "Einleitung",
+      "showPrices": "Preise anzeigen",
+      "showPhone": "Nach einer Telefonnummer fragen",
+      "showDate": "Nach dem Datum des Anlasses fragen",
+      "submitLabel": "Text der Schaltfläche",
+      "submitDefault": "Nachricht senden",
+      "successMessage": "Dankesnachricht",
+      "divider": "Linie anzeigen",
+      "customHtmlNotice": "Für Fortgeschrittene. Skripte, Frames, Formulare und Event-Handler werden beim Anzeigen entfernt; gestalten Sie den Block mit dem eigenen CSS der Website.",
+      "html": "HTML",
+      "contactNotice": "Nachrichten kommen unter Nachrichten › Kunden an. An die Besucherin oder den Besucher wird nichts gemailt.",
+      "contactNoticeOff": "Nachrichten werden unter Nachrichten › Kunden gespeichert, das ausgeschaltet ist. Schalten Sie Nachrichten unter Einstellungen › Funktionen ein, um sie zu lesen.",
+      "bookingOff": "Die Buchung ist ausgeschaltet, deshalb ist dieser Block auf der Website ausgeblendet. Schalten Sie die Buchung unter Einstellungen › Funktionen ein.",
+      "galleries": "Galerien",
+      "noGalleries": "Noch keine Galerie ist auf der Website. Stellen Sie eine im Register Galerien der Bildauswahl auf die Website.",
+      "galleriesMissing": "{{count}} gewählte Galerien sind nicht mehr auf der Website und werden nicht gezeigt.",
+      "packagesOff": "Pakete kommen aus dem Angebotskatalog; dafür muss Angebote unter Einstellungen › Funktionen eingeschaltet sein.",
+      "packages": "Pakete aus Ihrem Katalog",
+      "noPackages": "Der Katalog enthält noch keine Pakete.",
+      "packagesHint": "Namen, Beschreibungen und Preise bearbeiten Sie im Katalog; die Website übernimmt sie.",
+      "testimonial": "Kundenstimme {{n}}",
+      "removeTestimonial": "Kundenstimme {{n}} entfernen",
+      "quote": "Zitat",
+      "author": "Name",
+      "role": "Detail (optional)",
+      "rolePlaceholder": "Hochzeit, Juni 2026",
+      "portrait": "Foto (optional)",
+      "addTestimonial": "Kundenstimme hinzufügen",
+      "formatHint": "Leerzeile = neuer Absatz. **fett**, *kursiv*, [Linktext](https://…)"
+    },
+    "defaults": {
+      "heroHeading": "Ihre Überschrift",
+      "textBody": "Schreiben Sie hier Ihren Text.",
+      "featuredHeading": "Aktuelle Arbeiten",
+      "testimonialsHeading": "Was Kundinnen und Kunden sagen",
+      "pricingHeading": "Pakete",
+      "contactHeading": "Kontakt aufnehmen",
+      "bookingHeading": "Termin buchen"
+    },
+    "pages": {
+      "newTitle": "Neue Seite",
+      "deleteTitle": "„{{name}}“ löschen?",
+      "deleteMessage": "Die Seite und ihre Blöcke werden aus dem Entwurf entfernt. Mit Rückgängig holen Sie sie zurück, solange Sie den Editor nicht verlassen.",
+      "slugReserved": "Diese Adresse verwendet PicPeak selbst. Wählen Sie eine andere.",
+      "slugDuplicate": "Eine andere Seite hat bereits diese Adresse.",
+      "slugCms": "Eine Rechts- oder CMS-Seite verwendet diese Adresse bereits.",
+      "slugEmpty": "Geben Sie eine Adresse ein.",
+      "title": "Seiten",
+      "add": "Seite hinzufügen",
+      "orderHint": "Die Reihenfolge hier ist die Reihenfolge im Menü. Rechtliche Seiten kommen von selbst in die Fusszeile.",
+      "home": "Startseite",
+      "hidden": "Ausgeblendet",
+      "settings": "Seiteneinstellungen",
+      "settingsOf": "Einstellungen von „{{name}}“",
+      "pageTitle": "Titel",
+      "navLabel": "Name im Menü (optional)",
+      "slug": "Adresse",
+      "slugHint": "Erscheint als ihreseite.ch/{{slug}}",
+      "inNav": "Im Menü zeigen",
+      "visible": "Auf der Website veröffentlicht",
+      "visibleHint": "Aus: Die Seite bleibt im Entwurf, aber niemand kann sie öffnen.",
+      "makeHome": "Zur Startseite machen",
+      "seo": "Suchmaschinen und Teilen",
+      "seoTitle": "Titel in Suchergebnissen",
+      "seoDescription": "Beschreibung",
+      "seoDescriptionHint": "{{count}}/300 – ein oder zwei Sätze über diese Seite.",
+      "seoImage": "Bild beim Teilen (optional)",
+      "delete": "Seite löschen"
+    },
+    "picker": {
+      "addSelected": "{{count}} Bilder hinzufügen",
+      "videoTitle": "Video auswählen",
+      "title": "Bilder auswählen",
+      "videoDescription": "Ein MP4 bis zwei Minuten. Es läuft stumm in einer Schleife.",
+      "description": "Laden Sie Bilder für die Website hoch oder wählen Sie Fotos aus Galerien, die Sie auf die Website gestellt haben.",
+      "uploads": "Uploads",
+      "galleries": "Galerien",
+      "deleteTitle": "Diesen Upload löschen?",
+      "deleteMessage": "Er wird endgültig entfernt. Ein Upload, der noch auf einer Seite verwendet wird, kann nicht gelöscht werden.",
+      "uploadVideo": "Video hochladen",
+      "upload": "Bilder hochladen",
+      "videoHint": "MP4, bis 100 MB. Standort- und Gerätedaten werden entfernt.",
+      "uploadHint": "JPEG, PNG, WebP oder GIF, bis 30 MB. Standortdaten werden entfernt, das Original wird nicht aufbewahrt.",
+      "noVideos": "Noch keine Videos hochgeladen",
+      "noUploads": "Noch keine Uploads",
+      "noUploadsHint": "Laden Sie hier Dateien hoch, die nur auf der Website erscheinen sollen.",
+      "deleteLabel": "{{name}} löschen",
+      "openGallery": "Fotos auswählen",
+      "showOnWebsite": "„{{name}}“ auf der Website zeigen",
+      "galleriesNotice": "Verwendet werden können nur Galerien, die Sie auf die Website gestellt haben, und nur solange Gäste sie ohne Passwort öffnen können. Schalten Sie eine Galerie hier aus, verschwinden ihre Fotos sofort von der Website.",
+      "onWebsite": "Auf der Website",
+      "noneOnWebsite": "Noch keine Galerie ist auf der Website.",
+      "otherGalleries": "Weitere Galerien",
+      "back": "Alle Galerien",
+      "more": "Mehr anzeigen",
+      "reason": {
+        "password": "Hat ein Passwort",
+        "unavailable": "Abgelaufen, Entwurf oder ausgeschaltet",
+        "hidden": "Noch nicht enthüllt",
+        "payment_lock": "Wartet auf Zahlung",
+        "not_opted_in": "Nicht auf der Website",
+        "missing": "Nicht gefunden"
+      }
+    },
+    "preview": {
+      "title": "Vorschau der Seite",
+      "updating": "Vorschau wird aktualisiert …"
+    },
+    "site": {
+      "fromBranding": "Aus dem Branding",
+      "resetColor": "Branding-Farbe für {{name}} verwenden",
+      "title": "Gestaltung der Website",
+      "intro": "Logo, Farben und Schriften kommen aus Ihrem Branding, damit Website und Galerien zusammenpassen. Ändern Sie sie hier nur für die Website.",
+      "openBranding": "Branding-Einstellungen öffnen",
+      "headingFont": "Schrift für Überschriften",
+      "bodyFont": "Schrift für Text",
+      "buttonStyle": "Schaltflächen",
+      "solid": "Gefüllt",
+      "outline": "Umrandet",
+      "pill": "Abgerundet",
+      "colours": "Farben",
+      "accent": "Schaltflächen und Links",
+      "background": "Seitenhintergrund",
+      "text": "Text",
+      "customCss": "Eigenes CSS (für Fortgeschrittene)",
+      "customCssHint": "Gilt auf jeder Seite nach den Stilen der Website. Imports und Skripte werden entfernt."
+    },
+    "list": {
+      "drag": "„{{name}}“ verschieben (ziehen oder Leertaste, dann Pfeiltasten)",
+      "moveUp": "„{{name}}“ nach oben",
+      "moveDown": "„{{name}}“ nach unten",
+      "dragInstructions": "Zum Verschieben Leertaste oder Eingabe drücken, mit den Pfeiltasten bewegen und mit Leertaste oder Eingabe ablegen. Escape bricht ab."
+    },
+    "blocks": {
+      "deleteTitle": "Diesen Block entfernen?",
+      "deleteMessage": "Er wird aus dem Entwurf entfernt. Mit Rückgängig holen Sie ihn zurück.",
+      "delete": "Entfernen",
+      "back": "Alle Blöcke",
+      "duplicate": "Block duplizieren",
+      "title": "Blöcke auf „{{name}}“",
+      "add": "Block hinzufügen",
+      "empty": "Diese Seite hat noch keine Blöcke.",
+      "hint": "Klicken Sie einen Block hier oder in der Vorschau an, um ihn zu bearbeiten. Ziehen Sie ihn, um die Reihenfolge zu ändern.",
+      "addTitle": "Block hinzufügen",
+      "addDescription": "Er wird unter dem gewählten Block eingefügt oder am Ende der Seite.",
+      "hero": {
+        "name": "Hero",
+        "description": "Grosses Eingangsbild oder Video mit Überschrift und Schaltfläche."
+      },
+      "text": {
+        "name": "Text",
+        "description": "Überschriften und Absätze."
+      },
+      "imageText": {
+        "name": "Bild und Text",
+        "description": "Ein Bild neben einem Text."
+      },
+      "gallery": {
+        "name": "Bilderraster",
+        "description": "Ihre ausgewählten Fotos als Raster oder Mauerwerk."
+      },
+      "featuredGalleries": {
+        "name": "Ausgewählte Galerien",
+        "description": "Galerien auf der Website, mit Titelbild und Titel."
+      },
+      "testimonials": {
+        "name": "Kundenstimmen",
+        "description": "Zitate zufriedener Kundinnen und Kunden."
+      },
+      "pricing": {
+        "name": "Preise",
+        "description": "Pakete aus Ihrem Angebotskatalog."
+      },
+      "contact": {
+        "name": "Kontaktformular",
+        "description": "Nachrichten landen unter Nachrichten › Kunden."
+      },
+      "booking": {
+        "name": "Buchungsknopf",
+        "description": "Führt zu Ihrer Buchungsseite."
+      },
+      "instagram": {
+        "name": "Fotostreifen",
+        "description": "Eine Reihe Fotos mit Link zu Ihrem Profil."
+      },
+      "spacer": {
+        "name": "Abstand",
+        "description": "Abstand oder Linie zwischen Blöcken."
+      },
+      "customHtml": {
+        "name": "Eigenes HTML",
+        "description": "Ihr eigenes Markup, bereinigt."
+      }
+    },
+    "saved": "Entwurf gespeichert",
+    "publishTitle": "Website veröffentlichen?",
+    "publishMessage": "Besucherinnen und Besucher sehen diese Version sofort. Der Entwurf wird zuerst gespeichert.",
+    "publishMessageOff": "Die öffentliche Seite ist ausgeschaltet; Besucher sehen die Website erst, wenn Sie sie unter Einstellungen › CMS einschalten. Der Entwurf wird zuerst gespeichert.",
+    "publish": "Veröffentlichen",
+    "published": "Website veröffentlicht",
+    "status": {
+      "notPublished": "Noch nicht veröffentlicht",
+      "changes": "Unveröffentlichte Änderungen",
+      "live": "Veröffentlicht"
+    },
+    "title": "Website",
+    "description": "Ihre öffentliche Website aus Blöcken. Bearbeiten Sie den Entwurf, dann veröffentlichen Sie.",
+    "openSite": "Website öffnen",
+    "readOnly": "Sie können die Website sehen, aber nicht ändern.",
+    "siteOff": "Die öffentliche Seite ist unter Einstellungen › CMS ausgeschaltet. Solange sie aus ist, führt `/` zur Anmeldung und die Website ist nicht sichtbar.",
+    "tabs": {
+      "blocks": "Blöcke",
+      "pages": "Seiten",
+      "site": "Gestaltung"
+    },
+    "previewPage": "Seite in der Vorschau",
+    "undo": "Rückgängig",
+    "redo": "Wiederholen",
+    "device": "Vorschaugrösse",
+    "desktop": "Computer",
+    "phone": "Telefon",
+    "saveDraft": "Entwurf speichern",
+    "variants": {
+      "overlay": "Text auf Bild",
+      "split": "Nebeneinander",
+      "minimal": "Nur Text",
+      "left": "Links",
+      "center": "Zentriert",
+      "columns": "Zwei Spalten",
+      "image-left": "Bild links",
+      "image-right": "Bild rechts",
+      "grid": "Raster",
+      "masonry": "Mauerwerk",
+      "cards": "Karten",
+      "list": "Liste",
+      "quote": "Grosses Zitat",
+      "simple": "Einfach",
+      "button": "Schaltfläche",
+      "banner": "Banner",
+      "strip": "Streifen",
+      "small": "Klein",
+      "medium": "Mittel",
+      "large": "Gross",
+      "default": "Standard"
+    }
   }
 }

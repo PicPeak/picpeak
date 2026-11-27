@@ -123,11 +123,14 @@ async function ensureDraft(adminId = null) {
 async function getEditorState(adminId) {
   const draft = await ensureDraft(adminId);
   const published = await readRow('published');
+  const settings = await readSettings(['general_public_site_enabled']);
   return {
     document: parseDocument(draft),
     draft: rowSummary(draft),
     published: rowSummary(published),
     hasUnpublishedChanges: !published || published.document !== draft.document,
+    // Publishing changes nothing visible while the public site is off.
+    publicSiteEnabled: settings.general_public_site_enabled === true,
   };
 }
 

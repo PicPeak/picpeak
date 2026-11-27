@@ -111,6 +111,8 @@ describe('admin API', () => {
     expect(home.blocks[0].html).toContain('Old site');
     expect(res.body.document.customCss).toContain('.legacy-rule{color:red}');
     expect(res.body.published).toBeNull();
+    // The editor warns that publishing shows nothing while the site is off.
+    expect(res.body.publicSiteEnabled).toBe(false);
     // Imported once: a second open keeps the draft as it is.
     await setSetting('general_public_site_html', '<p>changed</p>');
     const again = await request(app).get('/api/admin/website').set(auth(adminId));

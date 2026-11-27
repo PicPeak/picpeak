@@ -13,6 +13,7 @@ import {
   Mail,
   Share2,
   Workflow,
+  Globe,
   PanelLeftClose,
   PanelLeftOpen,
   Github,
@@ -151,6 +152,11 @@ export const adminNavigation: NavItem[] = [
   {
     nameKey: 'navigation.messages', href: '/admin/messages', icon: Mail,
     permission: 'email.view', featureFlag: 'messaging',
+  },
+  // Website builder (issue 2618): the public site, built from blocks.
+  {
+    nameKey: 'navigation.website', href: '/admin/website', icon: Globe,
+    permission: 'cms.view', featureFlag: 'websiteBuilder',
   },
   // Clients section (#354 follow-up) — admin-side surface for the
   // CRM-area sub-features. Today this entry leads to /admin/clients

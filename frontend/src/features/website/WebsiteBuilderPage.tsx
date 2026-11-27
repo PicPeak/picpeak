@@ -1,0 +1,350 @@
+/**
+ * Website builder (issue 2618): pages built from blocks, previewed with the
+ * server's own markup, edited as a draft and published in one step.
+ */
+import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
+import { toast } from 'react-toastify';
+import {
+  ArrowLeft, Copy, ExternalLink, FileText, Globe, Layers, Monitor, Palette, Plus, Redo2, Smartphone, Trash2, Undo2,
+} from 'lucide-react';
+import { Badge, Button, Modal, Notice, Tabs } from '../../components/common';
+import { ErrorState } from '../../components/common/EmptyState';
+import { Loading } from '../../components/common/Loading';
+import { useConfirm } from '../../components/common/ConfirmDialog';
+import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
+import { SettingsSaveBar } from '../../components/admin/SettingsSaveBar';
+import { useFillViewport } from '../../components/admin/fillViewport';
+import { usePermission } from '../../hooks/usePermission';
+import { mediaKey, websiteService } from '../../services/website.service';
+import { apiErrorText } from '../../utils/apiErrorText';
+import { BLOCK_ICONS, BLOCK_TYPES, blockLabel, collectImageRefs, createBlock, moveItem, newId } from './blocks';
+import { BlockEditor } from './BlockEditor';
+import { MediaUrlsContext } from './fields';
+import { PagesPanel, slugProblem } from './PagesPanel';
+import { PreviewFrame, type PreviewDevice } from './PreviewFrame';
+import { SitePanel } from './SitePanel';
+import { SortableList } from './SortableList';
+import { useWebsiteEditor } from './useWebsiteEditor';
+import type { Block, BlockType, ValidationProblem, WebsiteDocument, WebsitePage } from './types';
+
+type Panel = 'blocks' | 'pages' | 'site';
+
+function blockSummary(block: Block): string {
+  if ('heading' in block && block.heading) return block.heading;
+  if (block.type === 'text') return block.body.slice(0, 60);
+  if (block.type === 'gallery' || block.type === 'instagram') return `${block.images.length} ×`;
+  return '';
+}
+
+function usePreview(doc: WebsiteDocument | null, pageId: string) {
+  const [html, setHtml] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!doc || !pageId) return undefined;
+    let stale = false;
+    setLoading(true);
+    // Typing re-renders on a pause, not on every key.
+    const timer = window.setTimeout(() => {
+      websiteService.preview(doc, pageId)
+        .then((next) => { if (!stale) setHtml(next); })
+        .catch(() => { /* the last good preview stays */ })
+        .finally(() => { if (!stale) setLoading(false); });
+    }, 350);
+    return () => { stale = true; window.clearTimeout(timer); };
+  }, [doc, pageId]);
+  return { html, loading };
+}
+
+export const WebsiteBuilderPage: React.FC = () => {
+  const { t } = useTranslation();
+  useFillViewport();
+  const confirm = useConfirm();
+  const canEdit = usePermission('cms.edit');
+  const editor = useWebsiteEditor();
+  const { draft, server } = editor;
+  const [panel, setPanel] = useState<Panel>('blocks');
+  const [pageId, setPageId] = useState('');
+  const [blockId, setBlockId] = useState<string | null>(null);
+  const [device, setDevice] = useState<PreviewDevice>('desktop');
+  const [adding, setAdding] = useState(false);
+  const [problems, setProblems] = useState<ValidationProblem[]>([]);
+
+  const page: WebsitePage | undefined = draft?.pages.find((p) => p.id === pageId) || draft?.pages.find((p) => p.isHome) || draft?.pages[0];
+  useEffect(() => { if (page && page.id !== pageId) setPageId(page.id); }, [page, pageId]);
+  const block = page?.blocks.find((b) => b.id === blockId) || null;
+
+  const { html, loading } = usePreview(draft, page?.id || '');
+
+  const refs = useMemo(() => (draft ? collectImageRefs(draft) : []), [draft]);
+  const refsKey = useMemo(() => [...new Set(refs.map(mediaKey))].sort().join(','), [refs]);
+  const media = useQuery({
+    queryKey: ['website-media', refsKey],
+    queryFn: () => websiteService.resolveMedia(refs),
+    enabled: refs.length > 0,
+    placeholderData: (previous) => previous,
+  });
+
+  // Ctrl/Cmd+Z outside a text field steps through the draft's history.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      e.preventDefault();
+      if (e.shiftKey) editor.redo(); else editor.undo();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [editor]);
+
+  if (editor.query.isLoading || (!draft && !editor.query.isError)) return <Loading />;
+  if (editor.query.isError || !draft || !server || !page) {
+    return <ErrorState onRetry={() => editor.query.refetch()} message={apiErrorText(editor.query.error)} />;
+  }
+
+  const setPageBlocks = (fn: (blocks: Block[]) => Block[], field?: string) => editor.update((d) => ({
+    ...d, pages: d.pages.map((p) => (p.id === page.id ? { ...p, blocks: fn(p.blocks) } : p)),
+  }), field);
+
+  const addBlock = (type: BlockType) => {
+    const created = createBlock(type, t);
+    const at = block ? page.blocks.findIndex((b) => b.id === block.id) + 1 : page.blocks.length;
+    setPageBlocks((blocks) => [...blocks.slice(0, at), created, ...blocks.slice(at)]);
+    setBlockId(created.id);
+    setAdding(false);
+  };
+
+  const duplicateBlock = (b: Block) => {
+    const copy = { ...structuredClone(b), id: newId() };
+    setPageBlocks((blocks) => {
+      const at = blocks.findIndex((x) => x.id === b.id) + 1;
+      return [...blocks.slice(0, at), copy, ...blocks.slice(at)];
+    });
+    setBlockId(copy.id);
+  };
+
+  const deleteBlock = async (b: Block) => {
+    const ok = await confirm({
+      title: t('website.blocks.deleteTitle', 'Remove this block?'),
+      message: t('website.blocks.deleteMessage', 'It is removed from the draft. Undo brings it back.'),
+      confirmLabel: t('website.blocks.delete', 'Remove'),
+      variant: 'danger',
+    });
+    if (!ok) return;
+    setPageBlocks((blocks) => blocks.filter((x) => x.id !== b.id));
+    setBlockId(null);
+  };
+
+  const localProblem = draft.pages.some((p) => !p.isHome && slugProblem(draft, p));
+
+  const onSaveError = (err: unknown) => {
+    const details = (err as { response?: { data?: { details?: ValidationProblem[] } } })?.response?.data?.details;
+    if (Array.isArray(details)) {
+      setProblems(details);
+      setPanel('pages');
+      const firstPage = details.find((d) => d.pageId)?.pageId;
+      if (firstPage) setPageId(firstPage);
+    }
+    toast.error(apiErrorText(err));
+  };
+
+  const save = () => editor.save.mutate(undefined, {
+    onSuccess: () => { setProblems([]); toast.success(t('website.saved', 'Draft saved')); },
+    onError: onSaveError,
+  });
+
+  const publish = async () => {
+    const ok = await confirm({
+      title: t('website.publishTitle', 'Publish the website?'),
+      message: server.publicSiteEnabled
+        ? t('website.publishMessage', 'Visitors see this version right away. The draft is saved first.')
+        : t('website.publishMessageOff', 'The public site is switched off, so visitors will not see it until you turn it on in Settings › CMS. The draft is saved first.'),
+      confirmLabel: t('website.publish', 'Publish'),
+    });
+    if (!ok) return;
+    editor.publish.mutate(undefined, {
+      onSuccess: () => { setProblems([]); toast.success(t('website.published', 'Website published')); },
+      onError: onSaveError,
+    });
+  };
+
+  const status = !server.published
+    ? <Badge tone="neutral">{t('website.status.notPublished', 'Not published yet')}</Badge>
+    : server.hasUnpublishedChanges || editor.isDirty
+      ? <Badge tone="warning" dot>{t('website.status.changes', 'Unpublished changes')}</Badge>
+      : <Badge tone="success" dot>{t('website.status.live', 'Published')}</Badge>;
+
+  const blocksPanel = block ? (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="ghost" leftIcon={<ArrowLeft className="w-4 h-4" />} onClick={() => setBlockId(null)}>
+          {t('website.blocks.back', 'All blocks')}
+        </Button>
+        <span className="flex-1 min-w-0 text-sm font-semibold text-heading truncate">{blockLabel(t, block.type)}</span>
+        {canEdit && (
+          <>
+            <Button size="icon-sm" variant="ghost" onClick={() => duplicateBlock(block)} aria-label={t('website.blocks.duplicate', 'Duplicate block') as string}>
+              <Copy className="w-4 h-4" />
+            </Button>
+            <Button size="icon-sm" variant="ghost" onClick={() => deleteBlock(block)} aria-label={t('website.blocks.delete', 'Remove') as string}>
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </>
+        )}
+      </div>
+      <fieldset disabled={!canEdit}>
+        <BlockEditor
+          block={block}
+          onChange={(next, field) => setPageBlocks((blocks) => blocks.map((b) => (b.id === next.id ? next : b)), field ? `${next.id}.${field}` : undefined)}
+        />
+      </fieldset>
+    </div>
+  ) : (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-heading">{t('website.blocks.title', 'Blocks on “{{name}}”', { name: page.title })}</h3>
+        {canEdit && (
+          <Button size="sm" variant="secondary" leftIcon={<Plus className="w-4 h-4" />} onClick={() => setAdding(true)} disabled={page.blocks.length >= 60}>
+            {t('website.blocks.add', 'Add block')}
+          </Button>
+        )}
+      </div>
+      {page.blocks.length === 0 ? (
+        <p className="text-sm text-muted py-6 text-center">{t('website.blocks.empty', 'This page has no blocks yet.')}</p>
+      ) : (
+        <SortableList
+          items={page.blocks}
+          getId={(b) => b.id}
+          getLabel={(b) => blockLabel(t, b.type)}
+          onMove={(from, to) => setPageBlocks((blocks) => moveItem(blocks, from, to))}
+          renderItem={(b) => {
+            const Icon = BLOCK_ICONS[b.type];
+            return (
+              <button type="button" className="w-full flex items-center gap-2.5 px-1 py-1 text-left" onClick={() => setBlockId(b.id)}>
+                <span className="inline-flex w-8 h-8 flex-none items-center justify-center rounded-md bg-inset text-soft"><Icon className="w-4 h-4" aria-hidden="true" /></span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-heading">{blockLabel(t, b.type)}</span>
+                  {blockSummary(b) && <span className="block text-xs text-muted truncate">{blockSummary(b)}</span>}
+                </span>
+              </button>
+            );
+          }}
+        />
+      )}
+      <p className="text-xs text-muted">{t('website.blocks.hint', 'Click a block here or in the preview to edit it. Drag to change the order.')}</p>
+    </div>
+  );
+
+  return (
+    <MediaUrlsContext.Provider value={media.data || {}}>
+      <div className="space-y-4 lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
+        <SectionPageHeader
+          icon={Globe}
+          title={t('website.title', 'Website')}
+          description={t('website.description', 'Your public website, built from blocks. Edit the draft, then publish.')}
+          feature="websiteBuilder"
+          actions={(
+            <div className="flex flex-wrap items-center gap-2">
+              {status}
+              {server.published && (
+                <a href="/" target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm inline-flex items-center gap-1.5">
+                  <ExternalLink className="w-4 h-4" aria-hidden="true" />{t('website.openSite', 'Open site')}
+                </a>
+              )}
+              {canEdit && (
+                <Button variant="primary" onClick={publish} isLoading={editor.publish.isPending}
+                  disabled={localProblem || (!editor.isDirty && !server.hasUnpublishedChanges && !!server.published)}>
+                  {t('website.publish', 'Publish')}
+                </Button>
+              )}
+            </div>
+          )}
+        />
+        {!canEdit && <Notice tone="neutral" size="sm">{t('website.readOnly', 'You can see the website but not change it.')}</Notice>}
+        {!server.publicSiteEnabled && (
+          <Notice tone="warning" size="sm">{t('website.siteOff', 'The public site is switched off in Settings › CMS. Until it is on, `/` leads to the login page and the website is not visible.')}</Notice>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-[400px_minmax(0,1fr)] gap-6 lg:flex-1 lg:min-h-0">
+          <aside className="min-w-0 lg:min-h-0 lg:overflow-y-auto lg:pb-8 rounded-xl border border-line bg-panel p-4 space-y-4">
+            <Tabs<Panel>
+              value={panel}
+              onChange={setPanel}
+              items={[
+                { id: 'blocks', label: t('website.tabs.blocks', 'Blocks'), icon: <Layers className="w-4 h-4" /> },
+                { id: 'pages', label: t('website.tabs.pages', 'Pages'), icon: <FileText className="w-4 h-4" />, dirty: problems.length > 0 || localProblem },
+                { id: 'site', label: t('website.tabs.site', 'Design'), icon: <Palette className="w-4 h-4" /> },
+              ]}
+            />
+            {panel === 'blocks' && blocksPanel}
+            {panel === 'pages' && (
+              <PagesPanel doc={draft} pageId={page.id} onSelectPage={(id) => { setPageId(id); setBlockId(null); }}
+                update={editor.update} serverProblems={problems} readOnly={!canEdit} />
+            )}
+            {panel === 'site' && <SitePanel doc={draft} update={editor.update} readOnly={!canEdit} />}
+          </aside>
+
+          <section className="min-w-0 flex flex-col gap-3 lg:min-h-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="sr-only" htmlFor="website-page-select">{t('website.previewPage', 'Page in the preview')}</label>
+              <select id="website-page-select" className="input w-auto min-w-0 max-w-[16rem]" value={page.id}
+                onChange={(e) => { setPageId(e.target.value); setBlockId(null); }}>
+                {draft.pages.map((p) => <option key={p.id} value={p.id}>{p.isHome ? `${p.title} (/)` : `${p.title} (/${p.slug})`}</option>)}
+              </select>
+              <div className="flex items-center gap-1">
+                <Button size="icon-sm" variant="ghost" onClick={editor.undo} disabled={!editor.canUndo || !canEdit} aria-label={t('website.undo', 'Undo') as string}>
+                  <Undo2 className="w-4 h-4" />
+                </Button>
+                <Button size="icon-sm" variant="ghost" onClick={editor.redo} disabled={!editor.canRedo || !canEdit} aria-label={t('website.redo', 'Redo') as string}>
+                  <Redo2 className="w-4 h-4" />
+                </Button>
+              </div>
+              <div className="ml-auto inline-flex rounded-lg border border-line p-0.5" role="group" aria-label={t('website.device', 'Preview size') as string}>
+                {([['desktop', Monitor, t('website.desktop', 'Computer')], ['phone', Smartphone, t('website.phone', 'Phone')]] as const).map(([id, Icon, label]) => (
+                  <button key={id} type="button" aria-pressed={device === id} onClick={() => setDevice(id)}
+                    className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm ${device === id ? 'tile-selected' : 'text-body hover:bg-hover'}`}>
+                    <Icon className="w-4 h-4" aria-hidden="true" />{label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <PreviewFrame html={html} loading={loading} device={device} selectedBlockId={block?.id || null}
+              onSelectBlock={(id) => { setPanel('blocks'); setBlockId(id); }} />
+          </section>
+        </div>
+
+        <Modal open={adding} onClose={() => setAdding(false)} size="xl" title={t('website.blocks.addTitle', 'Add a block')}
+          description={t('website.blocks.addDescription', 'It is added below the selected block, or at the end of the page.')}>
+          <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {BLOCK_TYPES.map((type) => {
+              const Icon = BLOCK_ICONS[type];
+              return (
+                <li key={type}>
+                  <button type="button" onClick={() => addBlock(type)}
+                    className="w-full h-full text-left rounded-xl border border-line p-3 hover:border-accent hover:bg-hover-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+                    <Icon className="w-5 h-5 text-soft mb-2" aria-hidden="true" />
+                    <span className="block text-sm font-medium text-heading">{blockLabel(t, type)}</span>
+                    <span className="block text-xs text-muted mt-0.5">{t(`website.blocks.${type}.description`)}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </Modal>
+
+        {canEdit && (
+          <SettingsSaveBar
+            isDirty={editor.isDirty}
+            isSaving={editor.save.isPending}
+            onSave={save}
+            onDiscard={() => { editor.discard(); setProblems([]); }}
+            canSave={!localProblem}
+            saveLabel={t('website.saveDraft', 'Save draft')}
+          />
+        )}
+      </div>
+    </MediaUrlsContext.Provider>
+  );
+};

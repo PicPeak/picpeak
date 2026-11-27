@@ -29,6 +29,7 @@ import {
   Gift,
   ShieldCheck,
   Code,
+  Globe,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -174,6 +175,21 @@ export const FeaturesTab: React.FC = () => {
             sidebarHiddenLabel={sidebarHiddenLabel}
             enabled={staged.embed}
             onToggle={(next) => setFlag('embed', next)}
+          />
+
+          {/* Website builder (issue 2618): pages built from blocks replace the
+              single-page public site at `/` once something is published. */}
+          <FeatureCard
+            icon={Globe}
+            title={t('settings.features.websiteBuilder.title', 'Website builder')}
+            description={t(
+              'settings.features.websiteBuilder.description',
+              'Build your public website from blocks: pages, portfolio, pricing, contact form and booking button. Photos only appear from galleries you put on the website. Until you publish, the current public site stays as it is.',
+            )}
+            feature="websiteBuilder"
+            sidebarLabel={t('navigation.website', 'Website')}
+            enabled={staged.websiteBuilder}
+            onToggle={(next) => setFlag('websiteBuilder', next)}
           />
 
           <FeatureCard
