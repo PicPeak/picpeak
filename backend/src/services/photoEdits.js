@@ -217,6 +217,10 @@ async function originalPreviewJpeg(photo, { longEdge = BASE_LONG_EDGE, interacti
 }
 
 const renderFlights = new Map();
+// Full-size renders at once in this process, whoever asks (the background
+// pass, a guest download of a photo whose render was lost): each holds a
+// decoded photo, so they queue like the preview regeneration.
+const renderLimit = pLimit(concurrency());
 
 /**
  * Render the photo's edit of its current revision and record it. Null when
@@ -271,7 +275,7 @@ async function ensureEditedSource(photo, { interactive = false } = {}) {
     if (!flight) {
       const snapshot = photo;
       const snapshotParams = params;
-      flight = renderAndRecord(snapshot, snapshotParams, { interactive }).finally(() => renderFlights.delete(flightKey));
+      flight = renderLimit(() => renderAndRecord(snapshot, snapshotParams, { interactive })).finally(() => renderFlights.delete(flightKey));
       renderFlights.set(flightKey, flight);
     }
     const recorded = await flight;

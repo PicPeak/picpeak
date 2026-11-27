@@ -50,7 +50,8 @@ router.get('/settings', async (req, res) => {
   }
 });
 
-router.put('/settings', async (req, res) => {
+// Developing every RAW upload costs server CPU: a studio setting.
+router.put('/settings', requirePermission('settings.edit'), async (req, res) => {
   try {
     const value = req.body?.auto_develop_raw;
     if (typeof value !== 'boolean') return res.status(400).json({ error: 'auto_develop_raw must be true or false' });

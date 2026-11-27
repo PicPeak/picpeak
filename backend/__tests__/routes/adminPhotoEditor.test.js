@@ -12,7 +12,8 @@
  *    download (a .jpg name), the streamed and the prebuilt download-all ZIP;
  *    a URL naming another revision is not cached
  *  - the admin's download is the original; ?edited=1 the edit
- *  - batch copy carries only the parts asked for; presets round-trip
+ *  - batch copy carries only the parts asked for; presets round-trip; the
+ *    RAW auto-develop setting is off by default and needs settings.edit
  *  - flag off: saved edits keep applying, the API answers 403
  */
 
@@ -276,6 +277,16 @@ describe('batch copy and presets', () => {
       .send({ photo_ids: [photoId], params: { exposure: 10 } }))).status).toBe(400);
     await applyEdits();
     expect(await require('../../src/services/photoEdits').status(event.id)).toMatchObject({ pending: 0 });
+  });
+
+  it('keeps the auto-develop setting off by default; changing it needs settings.edit', async () => {
+    const base = '/api/admin/photo-edit-presets/settings';
+    expect((await auth(request(presetApp).get(base))).body).toEqual({ auto_develop_raw: false });
+    expect((await auth(request(presetApp).put(base).send({ auto_develop_raw: true }), outsiderToken)).status).toBe(403);
+    expect((await auth(request(presetApp).put(base).send({ auto_develop_raw: 'yes' }))).status).toBe(400);
+    expect((await auth(request(presetApp).put(base).send({ auto_develop_raw: true }))).body).toEqual({ auto_develop_raw: true });
+    expect((await auth(request(presetApp).get(base))).body).toEqual({ auto_develop_raw: true });
+    await auth(request(presetApp).put(base).send({ auto_develop_raw: false })).expect(200);
   });
 
   it('saves, lists, renames and deletes a preset; validates its params', async () => {
