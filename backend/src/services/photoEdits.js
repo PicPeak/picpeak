@@ -372,16 +372,18 @@ async function ensureEditedSource(photo, { interactive = false, retryFailed = fa
   photo = await withEditColumns(photo);
   let params = paramsOf(photo);
   if (!params) return null;
-  // A revision whose render failed is tried again by the background pass
-  // only (an admin retry asks it to), never on a request: each would queue
-  // another full render on the shared limit and fail again.
-  if (!retryFailed && photo.edit_view !== 'applied') {
+  // A revision whose render failed is rendered again by the background pass
+  // only (an admin retry asks it to; it marks the rows it rebuilds with
+  // edit_retry_failed), never on a request: each would queue another full
+  // render on the shared limit and fail again. A render that is there is
+  // served whatever failed before it.
+  const mayRetry = retryFailed || photo.edit_retry_failed === true || photo.edit_view === 'applied';
+  const failedBefore = async () => {
+    if (mayRetry) return false;
     const failed = 'edit_failed_rev' in photo ? photo.edit_failed_rev
       : (await db('photos').where({ id: photo.id }).first('edit_failed_rev'))?.edit_failed_rev;
-    if (failed != null && Number(failed) === Number(photo.edit_rev)) {
-      throw Object.assign(new Error(`The edit of photo ${photo.id} could not be rendered; it is tried again later`), { status: 503, code: 'EDIT_FAILED' });
-    }
-  }
+    return failed != null && Number(failed) === Number(photo.edit_rev);
+  };
   // The source columns only where there is a render to check.
   photo = await withEditColumns(photo, { source: true });
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -395,6 +397,9 @@ async function ensureEditedSource(photo, { interactive = false, retryFailed = fa
     }
     // A HEAD request answers from what is there; it never starts a render.
     if (headOnly) throw Object.assign(new Error(`The edit of photo ${photo.id} is not rendered yet`), { status: 503, code: 'EDIT_PENDING' });
+    if (await failedBefore()) {
+      throw Object.assign(new Error(`The edit of photo ${photo.id} could not be rendered; it is tried again later`), { status: 503, code: 'EDIT_FAILED' });
+    }
     const flightKey = `${photo.edit_view === 'applied' ? 'applied' : 'current'}:${photo.id}:${photo.edit_rev}`;
     let flight = renderFlights.get(flightKey);
     if (!flight) {
@@ -768,7 +773,7 @@ async function applyPhoto(photo, references) {
       // The renditions of the revision being applied, cut from its own
       // render (edit_view 'current': not the applied view guests' requests get).
       const written = {};
-      if (!(await require('./renditionRefresh').refreshPhoto({ ...row, edit_view: 'current' }, references, written))) return 'renditions';
+      if (!(await require('./renditionRefresh').refreshPhoto({ ...row, edit_view: 'current', edit_retry_failed: true }, references, written))) return 'renditions';
       await dropWatermarkCopy(row);
       const zip = require('./downloadZipService');
       await zip.invalidateIfBuilt(Number(row.event_id));

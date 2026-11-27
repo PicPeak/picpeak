@@ -410,6 +410,32 @@ describe('an edit whose render failed', () => {
   });
 });
 
+describe('a failed edit of a photo with renditions', () => {
+  it('is applied by the next pass, renditions and all', async () => {
+    fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath('events/active/edit-card/recover.jpg'));
+    const id = unwrap(await db('photos').insert({
+      event_id: eventId, filename: 'recover.jpg', path: 'edit-card/recover.jpg', type: 'individual', media_type: 'image',
+      mime_type: 'image/jpeg', width: 600, height: 400, size_bytes: originalBytes.length, processing_status: 'complete',
+      uploaded_at: new Date().toISOString(),
+    }).returning('id'));
+    const fresh = () => db('photos').where({ id }).first();
+    const { ensureThumbnail, ensurePreviewImage } = require('../../src/services/imageProcessor');
+    try {
+      await ensureThumbnail(await fresh(), { force: true });
+      await ensurePreviewImage(await fresh(), { force: true });
+      await photoEdits().saveEdits([{ photo: await fresh(), params: validated({ exposure: 0.4 }) }]);
+      // An earlier pass failed on it; the source is fine again.
+      await db('photos').where({ id }).update({ edit_failed_rev: 1, edit_error: 'render' });
+      expect(await photoEdits().runPass({ active: () => true, sleep: async () => {} })).toMatchObject({ failed: 0 });
+      const after = await fresh();
+      expect(after).toMatchObject({ edit_applied_rev: 1, edit_failed_rev: null });
+      expect(after.thumbnail_path).toContain(`edit_p${id}_r1_`);
+    } finally {
+      await db('photos').where({ id }).delete();
+    }
+  });
+});
+
 describe('a guest request while the pass applies a revision', () => {
   it('cannot leave the old revision\'s preview in place once the new one is applied', async () => {
     fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath('events/active/edit-card/race-preview.jpg'));
