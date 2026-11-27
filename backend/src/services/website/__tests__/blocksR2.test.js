@@ -58,7 +58,7 @@ describe('steps', () => {
     expect(document.pages[0].blocks[0].items).toHaveLength(8);
     expect(errors).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'TOO_MANY_ITEMS', field: 'items' })]));
     const html = render([{ type: 'steps', items: items.slice(0, 3) }]);
-    expect(html).toContain('<ol class="pp-steps" style="--steps:3">');
+    expect(html).toContain('<ol class="pp-steps__list" style="--steps:3">');
     expect(html).toMatch(/<li class="pp-step"><span class="pp-step__mark" aria-hidden="true">1<\/span><h3 class="pp-h">Step 1<\/h3><p>Short <strong>text<\/strong><\/p><\/li>/);
   });
 
@@ -108,7 +108,7 @@ describe('logos', () => {
       { image: { source: 'asset', id: ASSET, alt: 'Plain' }, url: 'javascript:alert(1)' },
       { image: null, url: 'https://empty.example' },
     ] }]);
-    expect(html).toContain('pp-logos pp-logos--strip pp-logos--gray');
+    expect(html).toContain('pp-logos__row pp-logos__row--strip pp-logos__row--gray');
     expect(html).toMatch(/<a class="pp-logo" href="https:\/\/vogue.example" rel="noopener noreferrer"><img[^>]*alt="Vogue"/);
     expect(html).toMatch(/<span class="pp-logo"><img[^>]*alt="Plain"/);
     expect(html).not.toMatch(/javascript:|empty.example/);
@@ -150,4 +150,13 @@ test('logo images count as the page\'s images (loaded, picked, published like an
   const { collectReferences } = require('../document');
   const { document } = normalize([{ type: 'logos', items: [{ image: { source: 'asset', id: ASSET } }, { image: { source: 'photo', id: 5 } }] }]);
   expect(collectReferences(document)).toMatchObject({ assetIds: [ASSET], photoIds: [5] });
+});
+
+test('a block\'s own section class is not reused inside it (its layout rules would hit the section)', () => {
+  for (const type of ['faq', 'steps', 'cta', 'logos', 'social']) {
+    const block = { type, heading: 'H', items: [{ question: 'Q', answer: '<p>A</p>', title: 'T', image: { source: 'asset', id: ASSET } }], buttons: [{ label: 'B', target: { kind: 'booking' } }], links: [{ network: 'email', url: 'a@b.example' }] };
+    const html = render([block]);
+    const body = html.slice(html.indexOf('<main'));
+    expect(body.match(new RegExp(`class="[^"]*\\bpp-${type}\\b(?![-_])`, 'g'))).toHaveLength(1);
+  }
 });
