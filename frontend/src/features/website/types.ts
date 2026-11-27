@@ -127,7 +127,8 @@ export interface WebsiteGallery {
   date: string | null;
   showOnWebsite: boolean;
   eligible: boolean;
-  reason: 'not_opted_in' | 'password' | 'unavailable' | 'hidden' | 'payment_lock' | 'missing' | null;
+  hasPassword: boolean;
+  reason: 'not_opted_in' | 'unavailable' | 'hidden' | 'payment_lock' | 'missing' | null;
   canChange: boolean;
 }
 

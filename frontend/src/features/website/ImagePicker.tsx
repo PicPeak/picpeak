@@ -208,7 +208,6 @@ const UploadsPane: React.FC<{ kind: 'image' | 'video'; isSelected: (ref: ImageRe
 };
 
 const REASONS: Record<string, string> = {
-  password: 'Has a password',
   unavailable: 'Expired, a draft or switched off',
   hidden: 'Not revealed yet',
   payment_lock: 'Waiting for payment',
@@ -245,6 +244,11 @@ export const GalleriesPane: React.FC<{ onOpen: (gallery: WebsiteGallery) => void
           {g.date ? new Date(g.date).toLocaleDateString() : ''}
           {g.showOnWebsite && !g.eligible && g.reason ? ` · ${t(`website.picker.reason.${g.reason}`, REASONS[g.reason] || g.reason)}` : ''}
         </p>
+        {g.hasPassword && (
+          <p className="text-xs text-warning-text">
+            {t('website.picker.passwordNote', 'Has a password. On the website, the photos you pick are public; the rest of the gallery keeps its password.')}
+          </p>
+        )}
       </div>
       {g.eligible && (
         <Button size="sm" variant="ghost" onClick={() => onOpen(g)}>{t('website.picker.openGallery', 'Choose photos')}</Button>
@@ -264,7 +268,7 @@ export const GalleriesPane: React.FC<{ onOpen: (gallery: WebsiteGallery) => void
   return (
     <div className="space-y-4">
       <Notice tone="info" size="sm">
-        {t('website.picker.galleriesNotice', 'Only galleries you put on the website can be used, and only while they are open to guests without a password. Turn a gallery off here and its photos leave the website at once.')}
+        {t('website.picker.galleriesNotice', 'Only galleries you put on the website can be used, and only while they are live. Putting a gallery on the website makes the photos you pick public, even when the gallery has a password; its other photos stay private. Turn a gallery off here and its photos leave the website at once.')}
       </Notice>
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted mb-1">{t('website.picker.onWebsite', 'On the website')}</h3>

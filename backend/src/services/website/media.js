@@ -64,15 +64,17 @@ function parseMediaToken(token) {
 /**
  * Whether a gallery may contribute to the public website. Fails closed: a
  * gallery has to be opted in, live (active, not archived, not a draft, not
- * expired, not paused), without a password, revealed, and not waiting for
- * payment. Password-protected galleries stay excluded even when opted in: the
- * password is the studio's statement that the gallery is not public.
+ * expired, not paused), revealed, and not waiting for payment.
+ *
+ * A password does not exclude it. The opt-in is the owner's consent to show
+ * the photos they pick; only picked photos (and the cover the owner chose)
+ * get a URL, the rest of the gallery stays behind its password, and a
+ * featured-gallery card links to the gallery, where the password applies.
  */
 function isEventWebsiteEligible(event, now = new Date()) {
   return !!event
     && isTrue(event.show_on_website)
     && isGalleryAvailable(event)
-    && !requiresGalleryPassword(event)
     && !isGalleryHidden(event, now)
     && !(isTrue(event.payment_lock) && !event.payment_unlocked_at);
 }
@@ -81,7 +83,6 @@ function isEventWebsiteEligible(event, now = new Date()) {
 function eventIneligibleReason(event, now = new Date()) {
   if (!event) return 'missing';
   if (!isTrue(event.show_on_website)) return 'not_opted_in';
-  if (requiresGalleryPassword(event)) return 'password';
   if (!isGalleryAvailable(event)) return 'unavailable';
   if (isGalleryHidden(event, now)) return 'hidden';
   if (isTrue(event.payment_lock) && !event.payment_unlocked_at) return 'payment_lock';
@@ -132,9 +133,10 @@ function parseRenditionKeys(row) {
 }
 
 /**
- * The first eligible photo per gallery, for a featured-gallery card without a
- * cover photo of its own: the cover (hero_photo_id) when a guest sees it,
- * else the gallery's first photo.
+ * The picture of a featured-gallery card: the cover (hero_photo_id) when a
+ * guest sees it, else, for a gallery without a password, its first photo. A
+ * protected gallery without a cover gets no picture: its other photos are
+ * not the owner's pick.
  */
 async function loadCoverPhotos(events) {
   const covers = new Map();
@@ -144,7 +146,7 @@ async function loadCoverPhotos(events) {
       photo = await guestPhotoQuery().where({ 'photos.id': event.hero_photo_id, 'photos.event_id': event.id })
         .first('photos.id', 'photos.event_id', 'photos.width', 'photos.height');
     }
-    if (!photo) {
+    if (!photo && !requiresGalleryPassword(event)) {
       photo = await guestPhotoQuery().where('photos.event_id', event.id).orderBy('photos.id', 'asc')
         .first('photos.id', 'photos.event_id', 'photos.width', 'photos.height');
     }

@@ -13244,14 +13244,13 @@
       "deleteLabel": "Delete {{name}}",
       "openGallery": "Choose photos",
       "showOnWebsite": "Show “{{name}}” on the website",
-      "galleriesNotice": "Only galleries you put on the website can be used, and only while they are open to guests without a password. Turn a gallery off here and its photos leave the website at once.",
+      "galleriesNotice": "Only galleries you put on the website can be used, and only while they are live. Putting a gallery on the website makes the photos you pick public, even when the gallery has a password; its other photos stay private. Turn a gallery off here and its photos leave the website at once.",
       "onWebsite": "On the website",
       "noneOnWebsite": "No gallery is on the website yet.",
       "otherGalleries": "Other galleries",
       "back": "All galleries",
       "more": "Show more",
       "reason": {
-        "password": "Has a password",
         "unavailable": "Expired, a draft or switched off",
         "hidden": "Not revealed yet",
         "payment_lock": "Waiting for payment",
@@ -13259,7 +13258,8 @@
         "missing": "Not found"
       },
       "addSelected_one": "Add {{count}} image",
-      "addSelected_other": "Add {{count}} images"
+      "addSelected_other": "Add {{count}} images",
+      "passwordNote": "Has a password. On the website, the photos you pick are public; the rest of the gallery keeps its password."
     },
     "preview": {
       "title": "Preview of the page",

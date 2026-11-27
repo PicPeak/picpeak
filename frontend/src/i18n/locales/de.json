@@ -13209,14 +13209,13 @@
       "deleteLabel": "{{name}} löschen",
       "openGallery": "Fotos auswählen",
       "showOnWebsite": "„{{name}}“ auf der Website zeigen",
-      "galleriesNotice": "Verwendet werden können nur Galerien, die Sie auf die Website gestellt haben, und nur solange Gäste sie ohne Passwort öffnen können. Schalten Sie eine Galerie hier aus, verschwinden ihre Fotos sofort von der Website.",
+      "galleriesNotice": "Verwendet werden können nur Galerien, die Sie auf die Website gestellt haben, und nur solange sie aktiv sind. Stellen Sie eine Galerie auf die Website, werden die Fotos öffentlich, die Sie auswählen, auch wenn die Galerie ein Passwort hat; ihre übrigen Fotos bleiben privat. Schalten Sie eine Galerie hier aus, verschwinden ihre Fotos sofort von der Website.",
       "onWebsite": "Auf der Website",
       "noneOnWebsite": "Noch keine Galerie ist auf der Website.",
       "otherGalleries": "Weitere Galerien",
       "back": "Alle Galerien",
       "more": "Mehr anzeigen",
       "reason": {
-        "password": "Hat ein Passwort",
         "unavailable": "Abgelaufen, Entwurf oder ausgeschaltet",
         "hidden": "Noch nicht enthüllt",
         "payment_lock": "Wartet auf Zahlung",
@@ -13224,7 +13223,8 @@
         "missing": "Nicht gefunden"
       },
       "addSelected_one": "{{count}} Bild hinzufügen",
-      "addSelected_other": "{{count}} Bilder hinzufügen"
+      "addSelected_other": "{{count}} Bilder hinzufügen",
+      "passwordNote": "Hat ein Passwort. Auf der Website sind die Fotos öffentlich, die Sie auswählen; der Rest der Galerie bleibt hinter dem Passwort."
     },
     "preview": {
       "title": "Vorschau der Seite",

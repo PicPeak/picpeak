@@ -24,6 +24,7 @@ const { formatBoolean } = require('../utils/dbCompat');
 const websiteService = require('../services/website/service');
 const assets = require('../services/website/assets');
 const media = require('../services/website/media');
+const { requiresGalleryPassword } = require('../utils/galleryLifecycle');
 
 const router = express.Router();
 
@@ -102,6 +103,9 @@ router.get('/galleries', canView, handleAsync(async (req, res) => {
       slug: e.slug,
       date: e.event_date,
       showOnWebsite: e.show_on_website === true || e.show_on_website === 1,
+      // The picker says that opting in publishes the picked photos although
+      // the gallery has a password.
+      hasPassword: requiresGalleryPassword(e),
       eligible: media.isEventWebsiteEligible(e, now),
       reason: media.eventIneligibleReason(e, now),
       canChange: ownsEvent(req.admin, e),
