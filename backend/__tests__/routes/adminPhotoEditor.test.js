@@ -654,3 +654,38 @@ describe('a cached preview archive and a crop that then fails', () => {
     }
   });
 });
+
+describe('jobs packaged around a failed edit', () => {
+  it('deliver what they hold, and a recovered edit makes a new full-size job', async () => {
+    const jobs = require('../../src/services/downloadJobService');
+    const crop = JSON.stringify({ v: 1, crop: { x: 0, y: 0, w: 0.5, h: 1 } });
+    const id = unwrap(await db('photos').insert({
+      event_id: event.id, filename: 'failing-crop.jpg', path: 'edit-route/beach.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      size_bytes: originalBytes.length, processing_status: 'complete', uploaded_at: new Date().toISOString(), width: 800, height: 600,
+      edit_params: crop, edit_rev: 1, edit_applied_rev: 0, edit_failed_rev: 1, edit_error: 'render',
+    }).returning('id'));
+    try {
+      const fresh = await db('events').where({ id: event.id }).first();
+      // A preview job built while the crop is withheld skips it: what it holds may go out.
+      const preview = await jobs.createJob({ event: fresh, resolution: 'original', photoIds: [secondId, id], accessLevel: 'guest', previewOnly: true });
+      await jobs.liveBuilds.get(preview.id);
+      const ready = await db('download_jobs').where({ id: preview.id }).first();
+      expect(JSON.parse(ready.delivered_photo_ids)).toEqual([secondId]);
+      expect(await jobs.deliveryPhotos(ready, fresh, 'guest')).toBeTruthy();
+      // A full-size job skips the photo whose render failed...
+      const full = await jobs.createJob({ event: fresh, resolution: 'original', photoIds: [secondId, id], accessLevel: 'guest' });
+      await jobs.liveBuilds.get(full.id);
+      expect(JSON.parse((await db('download_jobs').where({ id: full.id }).first()).delivered_photo_ids)).toEqual([secondId]);
+      // ...and once the edit is applied after all, a new one has it.
+      await auth(request(adminApp).post(`/api/admin/photos/${event.id}/photos/edit/retry`).send({ photo_ids: [id] })).expect(200);
+      await applyEdits();
+      expect((await row(id)).edit_applied_rev).toBe(1);
+      const again = await jobs.createJob({ event: fresh, resolution: 'original', photoIds: [secondId, id], accessLevel: 'guest' });
+      expect(again.id).not.toBe(full.id);
+      await jobs.liveBuilds.get(again.id);
+      expect(JSON.parse((await db('download_jobs').where({ id: again.id }).first()).delivered_photo_ids).sort()).toEqual([secondId, id].sort());
+    } finally {
+      await db('photos').where({ id }).delete();
+    }
+  });
+});

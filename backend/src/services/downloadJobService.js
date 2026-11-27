@@ -161,22 +161,28 @@ class DownloadJobService {
       const part = ids.slice(i, i + 500);
       const row = await db('photos').whereIn('id', part).sum({ total: column }).first();
       sum += Number(row?.total) || 0;
-      // Previews whose crop or turn failed to render are withheld from
-      // guests (photoEdits.withheldFromGuests): part of the identity too, so
-      // an archive of their old pictures is not reused once that happens.
-      if (applied) withheld.push(...(await this.withheldIds(part)));
+      // Photos whose saved edit failed to render: a full-size job skips
+      // them, a preview job those of them a failed crop or turn withholds
+      // (photoEdits.withheldFromGuests). Part of the identity too, so a job
+      // made without them is not reused once they render, nor one made with
+      // their old pictures once they fail.
+      withheld.push(...(await this.failedEditIds(part, { withheldOnly: applied })));
     }
     return withheld.length ? `${sum}w${withheld.sort((a, b) => a - b).join(',')}` : sum;
   }
 
-  /** The photos of `ids` withheld from guests while a failed geometry edit stands. */
-  async withheldIds(ids) {
+  /**
+   * The photos of `ids` whose saved edit failed to render; `withheldOnly`:
+   * those of them withheld from guests while that failed edit is a crop or
+   * turn.
+   */
+  async failedEditIds(ids, { withheldOnly = false } = {}) {
     const photoEdits = require('./photoEdits');
     const failed = await db('photos').whereIn('id', ids).whereRaw('edit_failed_rev = edit_rev')
       // An edit is only ever saved for a photo, never a video.
       .select('id', 'edit_params', 'edit_rev', 'edit_applied_rev', 'edit_applied_params', 'edit_failed_rev');
     const out = [];
-    for (const row of failed) if (await photoEdits.withheldFromGuests(row)) out.push(Number(row.id));
+    for (const row of failed) if (!withheldOnly || await photoEdits.withheldFromGuests(row)) out.push(Number(row.id));
     return out;
   }
 
@@ -431,10 +437,13 @@ class DownloadJobService {
     const visible = await this.photoQuery(job.event_id, ids, accessLevel, await blockedFoldersOf(job.event_id))
       .select('photos.id', 'photos.media_type', 'photos.mime_type');
     if (visible.length !== ids.length) return false;
-    // …and none of them withheld for a crop or turn that failed to render
-    // (issue 2619): the archive holds its picture from before.
-    for (let i = 0; i < ids.length; i += 500) {
-      if ((await this.withheldIds(ids.slice(i, i + 500))).length) return false;
+    // …and none of the photos it holds withheld for a crop or turn that
+    // failed to render since (issue 2619): it would have its picture from
+    // before. The ones it skipped for that are not in it.
+    let packagedIds = ids;
+    try { packagedIds = JSON.parse(job.delivered_photo_ids || 'null') || ids; } catch (_) { return false; }
+    for (let i = 0; i < packagedIds.length; i += 500) {
+      if ((await this.failedEditIds(packagedIds.slice(i, i + 500), { withheldOnly: true })).length) return false;
     }
 
     // …and the archive must still match the CURRENT rendition policy. Turning
