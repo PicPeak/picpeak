@@ -327,27 +327,34 @@ const renderLimit = pLimit(concurrency());
 /**
  * Render the photo's edit of its current revision and record it. Null when
  * a newer save superseded that revision meanwhile (the file is dropped).
+ *
+ * Published compare-and-set against `photo` as read before the render: only
+ * while the row still names the render path that snapshot had. Another
+ * replica may have rendered the same revision meanwhile, and a download or
+ * an archive may already hold its key; then its render is adopted (when it
+ * is of this revision and source) and only this render's own file goes.
  */
 async function renderAndRecord(photo, params, options) {
   const { buffer, width, height } = await renderEditedJpeg(photo, params, options);
   const key = `edits/edit_p${photo.id}_r${photo.edit_rev}_s${sourceTag(photo)}_${crypto.randomBytes(6).toString('hex')}.jpg`;
   const storage = getStorage();
   await storage.put(key, buffer);
-  const current = await db('photos').where({ id: photo.id }).first(['edit_rev', 'edit_render_path']);
-  const recorded = current && Number(current.edit_rev) === Number(photo.edit_rev)
-    ? await db('photos').where({ id: photo.id, edit_rev: photo.edit_rev })
-      .where((q) => (current.edit_render_path ? q.where('edit_render_path', current.edit_render_path) : q.whereNull('edit_render_path')))
-      .update({ edit_render_path: key, edit_width: width, edit_height: height })
-    : 0;
+  const before = photo.edit_render_path || null;
+  const recorded = await db('photos').where({ id: photo.id, edit_rev: photo.edit_rev })
+    .where((q) => (before ? q.where('edit_render_path', before) : q.whereNull('edit_render_path')))
+    .update({ edit_render_path: key, edit_width: width, edit_height: height });
   if (recorded !== 1) {
     await storage.delete(key).catch(() => {});
-    return null;
+    const current = await db('photos').where({ id: photo.id }).first(['edit_rev', 'edit_render_path']);
+    const winner = current && Number(current.edit_rev) === Number(photo.edit_rev) ? current.edit_render_path : null;
+    return winner && isRenderKeyOf(photo, winner, photo.edit_rev) ? winner : null;
   }
-  // The render this one replaced. Only a key of this photo's own render
-  // namespace is deleted; a download still streaming it keeps its handle.
-  if (current.edit_render_path && current.edit_render_path !== key && isRenderKeyOf(photo, current.edit_render_path)) {
-    await storage.delete(current.edit_render_path).catch((err) => {
-      logger.warn(`Could not remove the superseded edited render ${current.edit_render_path} of photo ${photo.id}: ${err.message}`);
+  // The render this one replaced: of an older revision or source, or lost.
+  // Only a key of this photo's own render namespace is deleted; a download
+  // still streaming it keeps its handle.
+  if (before && before !== key && isRenderKeyOf(photo, before)) {
+    await storage.delete(before).catch((err) => {
+      logger.warn(`Could not remove the superseded edited render ${before} of photo ${photo.id}: ${err.message}`);
     });
   }
   return key;

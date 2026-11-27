@@ -314,6 +314,54 @@ describe('save, background apply, reset', () => {
   });
 });
 
+describe('two replicas rendering the same revision', () => {
+  it('the later one adopts the render the first published, and that file survives', async () => {
+    fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath('events/active/edit-card/race.jpg'));
+    const id = unwrap(await db('photos').insert({
+      event_id: eventId, filename: 'race.jpg', path: 'edit-card/race.jpg', type: 'individual', media_type: 'image',
+      mime_type: 'image/jpeg', width: 600, height: 400, size_bytes: originalBytes.length, processing_status: 'complete',
+      uploaded_at: new Date().toISOString(),
+    }).returning('id'));
+    const fresh = () => db('photos').where({ id }).first();
+    await photoEdits().saveEdits([{ photo: await fresh(), params: validated({ exposure: 0.4 }) }]);
+    // Replica B: its own module instances (its own flights), the same database and storage.
+    let replica; let replicaStorage; let replicaDb; let replicaSharp;
+    jest.isolateModules(() => {
+      replica = require('../../src/services/photoEdits');
+      replicaStorage = require('../../src/services/storage').getStorage();
+      replicaDb = require('../../src/database/db').db;
+      replicaSharp = require('../../src/services/isolatedSharp');
+    });
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    let rendered;
+    const renderedByB = new Promise((resolve) => { rendered = resolve; });
+    const put = replicaStorage.put.bind(replicaStorage);
+    jest.spyOn(replicaStorage, 'put').mockImplementation(async (key, ...rest) => {
+      if (String(key).startsWith('edits/')) { rendered(key); await gate; }
+      return put(key, ...rest);
+    });
+    // B read the row (no render yet) and rendered; it is held before publishing.
+    try {
+      const b = replica.ensureEditedSource(await fresh());
+      const keyB = await Promise.race([renderedByB, b.then(() => { throw new Error('B finished without publishing'); })]);
+      // A renders and publishes meanwhile; a download now holds A's key.
+      const keyA = await photoEdits().ensureEditedSource(await fresh());
+      expect(keyA).not.toBe(keyB);
+      release();
+      expect(await b).toBe(keyA);
+      expect((await fresh()).edit_render_path).toBe(keyA);
+      expect(fs.existsSync(storagePath(keyA))).toBe(true);
+      expect(fs.existsSync(storagePath(keyB))).toBe(false);
+    } finally {
+      release();
+      await replicaSharp.shutdown();
+      await replicaDb.destroy();
+      await db('photos').where({ id }).delete();
+    }
+  });
+});
+
 describe('a pass over many edited photos', () => {
   it('reads the rendition owners once, not once a photo', async () => {
     const ids = [];
