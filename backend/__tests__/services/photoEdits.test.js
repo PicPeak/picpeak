@@ -274,6 +274,51 @@ describe('save, background apply, reset', () => {
   });
 });
 
+describe('deleting photos leaves no edit files behind', () => {
+  // A RAW by name with a develop preview file, and an edited JPEG with its render.
+  const plant = async (slug) => {
+    const { adminId } = { adminId: (await db('admin_users').first('id')).id };
+    const event = unwrap(await db('events').insert({
+      slug, event_type: 'wedding', event_name: slug, event_date: '2026-08-01', host_email: 'h@example.com',
+      admin_email: 'a@example.com', password_hash: 'x', share_token: `tok-${slug}`, share_link: `/gallery/${slug}/tok`,
+      created_by: adminId, expires_at: new Date(Date.now() + 864e5).toISOString(), is_active: 1, is_archived: 0, is_draft: 0,
+      created_at: new Date().toISOString(),
+    }).returning('id'));
+    const dir = storagePath(`events/active/${slug}`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'raw.dng'), 'raw');
+    fs.writeFileSync(path.join(dir, 'pic.jpg'), originalBytes);
+    const insert = async (filename, over = {}) => unwrap(await db('photos').insert({
+      event_id: event, filename, path: `${slug}/${filename}`, type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      size_bytes: 3, processing_status: 'complete', uploaded_at: new Date().toISOString(), width: 600, height: 400, ...over,
+    }).returning('id'));
+    const rawId = await insert('raw.dng', { mime_type: 'image/x-adobe-dng' });
+    const jpegId = await insert('pic.jpg');
+    const raw = await db('photos').where({ id: rawId }).first();
+    const previewKey = require('../../src/services/rawDevelop').previewKey(raw);
+    fs.mkdirSync(path.dirname(storagePath(previewKey)), { recursive: true });
+    fs.writeFileSync(storagePath(previewKey), 'preview');
+    await photoEdits().saveEdits([{ photo: await db('photos').where({ id: jpegId }).first(), params: validated({ exposure: 0.4 }) }]);
+    const render = await photoEdits().ensureEditedSource(await db('photos').where({ id: jpegId }).first());
+    return { event, rawId, jpegId, files: [previewKey, render] };
+  };
+
+  it('a gallery delete removes renders and RAW develop previews', async () => {
+    const { event, files } = await plant('edit-delete-gallery');
+    for (const key of files) expect(fs.existsSync(storagePath(key))).toBe(true);
+    await require('../../src/routes/adminEvents/helpers').deleteEventCascade(event, { id: (await db('admin_users').first('id')).id });
+    for (const key of files) expect(fs.existsSync(storagePath(key))).toBe(false);
+  });
+
+  it('a photo deleted for good removes them too', async () => {
+    const { event, rawId, jpegId, files } = await plant('edit-delete-photo');
+    const trash = require('../../src/services/photoTrash');
+    const gallery = await db('events').where({ id: event }).first();
+    for (const id of [rawId, jpegId]) await trash.deletePhotoForGood(gallery, await db('photos').where({ id }).first());
+    for (const key of files) expect(fs.existsSync(storagePath(key))).toBe(false);
+  });
+});
+
 describe('focal point after a geometry change', () => {
   it('carries a manual point through a rotation and clears a detected one', () => {
     const photo = { width: 600, height: 400, focal_x: 0.25, focal_y: 0.5, focal_source: 'manual' };

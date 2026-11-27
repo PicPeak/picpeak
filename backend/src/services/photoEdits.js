@@ -72,9 +72,10 @@ const isVideoRow = (photo) => photo.media_type === 'video' || photo.type === 'vi
   || String(photo.mime_type || '').startsWith('video/');
 
 /** The row with its edit columns, read once when a caller's select left them out. */
-async function withEditColumns(photo) {
+async function withEditColumns(photo, { source = false } = {}) {
   if (!photo || photo.id == null || isVideoRow(photo)) return photo;
-  const missing = [...EDIT_COLUMNS, ...SOURCE_COLUMNS].filter((column) => !(column in photo));
+  // `source`: the columns sourceTag reads too, for whoever checks a render.
+  const missing = [...EDIT_COLUMNS, ...(source ? SOURCE_COLUMNS : [])].filter((column) => !(column in photo));
   if (!missing.length) return photo;
   const row = await db('photos').where({ id: photo.id }).first(missing);
   return row ? { ...photo, ...Object.fromEntries(missing.map((column) => [column, row[column]])) } : photo;
@@ -284,7 +285,7 @@ async function renderAndRecord(photo, params, options) {
  * a caller must never fall back to the original, which the edit may crop.
  */
 async function ensureEditedSource(photo, { interactive = false } = {}) {
-  photo = await withEditColumns(photo);
+  photo = await withEditColumns(photo, { source: true });
   let params = paramsOf(photo);
   if (!params) return null;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -447,14 +448,24 @@ async function saveEdits(changes) {
   return revisions;
 }
 
-/** Remove a photo's edited render and RAW develop preview (photo delete, archive, replace). Best effort. */
-async function deleteEditedRender(photo) {
-  if (!photo) return;
+/**
+ * Every edit cache file of a photo row: its edited render and, for a RAW,
+ * its develop preview. Read from the row before the row goes (a gallery
+ * delete collects them ahead of its transaction).
+ */
+function editCacheKeys(photo) {
+  if (!photo) return [];
   const keys = [];
   if (isRenderKeyOf(photo, photo.edit_render_path)) keys.push(photo.edit_render_path);
   const rawDevelop = require('./rawDevelop');
   if (rawDevelop.isRawPhoto(photo)) keys.push(rawDevelop.previewKey(photo));
-  for (const key of keys) {
+  return keys;
+}
+
+/** Remove a photo's edit cache files (photo delete, archive, replace). Best effort. */
+async function deleteEditedRender(photo) {
+  if (!photo) return;
+  for (const key of editCacheKeys(photo)) {
     await getStorage().delete(key).catch((err) => {
       logger.warn(`Could not remove the edit file ${key} of photo ${photo.id}: ${err.message}`);
     });
@@ -691,6 +702,7 @@ module.exports = {
   watermarkCopyCurrent,
   focalAfterEdit,
   saveEdits,
+  editCacheKeys,
   deleteEditedRender,
   AUTO_DEVELOP_SETTING,
   autoDevelopEnabled,

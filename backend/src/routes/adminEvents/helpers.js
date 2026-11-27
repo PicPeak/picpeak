@@ -111,8 +111,9 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
           derivedKeys.add(derived);
         }
       }
-      // The edited render (issue 2619) is this photo's alone (its key names it).
-      if (require('../../services/photoEdits').isRenderKeyOf(photo, photo.edit_render_path)) storageKeys.add(photo.edit_render_path);
+      // The edit caches (issue 2619), the render and a RAW's develop preview,
+      // are this photo's alone (their keys name it).
+      for (const key of require('../../services/photoEdits').editCacheKeys(photo)) storageKeys.add(key);
     }
   } catch (collectErr) {
     logger.warn('Could not enumerate stored objects before cascade delete', {
