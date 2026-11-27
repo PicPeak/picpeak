@@ -285,9 +285,11 @@ async function renderAndRecord(photo, params, options) {
  * a caller must never fall back to the original, which the edit may crop.
  */
 async function ensureEditedSource(photo, { interactive = false } = {}) {
-  photo = await withEditColumns(photo, { source: true });
+  photo = await withEditColumns(photo);
   let params = paramsOf(photo);
   if (!params) return null;
+  // The source columns only where there is a render to check.
+  photo = await withEditColumns(photo, { source: true });
   for (let attempt = 0; attempt < 3; attempt++) {
     const key = photo.edit_render_path;
     if (isRenderKeyOf(photo, key, photo.edit_rev)) {
