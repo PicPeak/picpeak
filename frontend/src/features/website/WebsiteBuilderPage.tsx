@@ -23,7 +23,7 @@ import { BLOCK_ICONS, BLOCK_TYPES, blockLabel, collectImageRefs, createBlock, mo
 import { BlockEditor } from './BlockEditor';
 import { MediaUrlsContext } from './fields';
 import { PagesPanel, slugProblem } from './PagesPanel';
-import { PreviewFrame, type PreviewDevice } from './PreviewFrame';
+import { PreviewFrame, mediaOriginDiffers, type PreviewDevice } from './PreviewFrame';
 import { SitePanel } from './SitePanel';
 import { SortableList } from './SortableList';
 import { useWebsiteEditor } from './useWebsiteEditor';
@@ -50,7 +50,7 @@ function usePreview(doc: WebsiteDocument | null, pageId: string) {
     setLoading(true);
     // Typing re-renders on a pause, not on every key.
     const timer = window.setTimeout(() => {
-      websiteService.preview(doc, pageId)
+      websiteService.preview(doc, pageId, { videoAsPoster: mediaOriginDiffers() })
         .then((next) => { if (!stale) setHtml(next); })
         .catch(() => { /* the last good preview stays */ })
         .finally(() => { if (!stale) setLoading(false); });

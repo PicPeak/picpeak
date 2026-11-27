@@ -107,7 +107,7 @@ describe('WebsiteBuilderPage', () => {
     renderPage();
     expect(await screen.findByText('Blocks on “Home”')).toBeInTheDocument();
     expect(screen.getByText('Hello there')).toBeInTheDocument();
-    await waitFor(() => expect(websiteService.preview).toHaveBeenCalledWith(expect.anything(), 'home'));
+    await waitFor(() => expect(websiteService.preview).toHaveBeenCalledWith(expect.anything(), 'home', expect.anything()));
     const frame = await screen.findByTitle('Preview of the page');
     await waitFor(() => expect(frame.getAttribute('srcdoc')).toContain('Hello there|About'));
     expect(frame.getAttribute('sandbox')).toBe('allow-same-origin');
@@ -255,6 +255,11 @@ describe('WebsiteBuilderPage', () => {
     fireEvent.change(screen.getByLabelText('Address'), { target: { value: 'start' } });
     expect(screen.queryByText('This address is used by PicPeak itself. Choose another.')).toBeNull();
     expect(screen.getByRole('button', { name: 'Publish' })).not.toBeDisabled();
+  });
+
+  it('asks for the hero video\'s poster when the media live on another origin', async () => {
+    renderPage();
+    await waitFor(() => expect(websiteService.preview).toHaveBeenCalledWith(expect.anything(), 'home', { videoAsPoster: true }));
   });
 });
 

@@ -19,6 +19,15 @@ export type PreviewDevice = 'desktop' | 'phone';
  * runs no scripts and its clicks are cancelled, so the base only moves where
  * resources load from.
  */
+/**
+ * Whether the backend's resources live on another origin than the admin
+ * (split origin). The admin's policy lets the preview frame load no video
+ * from there, so the preview then shows the hero video's poster instead.
+ */
+export function mediaOriginDiffers(): boolean {
+  return new URL(buildResourceUrl('/'), window.location.href).origin !== window.location.origin;
+}
+
 export function withResourceBase(html: string): string {
   const base = new URL(buildResourceUrl('/'), window.location.href).href;
   const tag = `<base href="${base.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}">`;

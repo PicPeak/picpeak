@@ -27,8 +27,8 @@ export const websiteService = {
     const r = await api.post<EditorState>('/admin/website/publish', { revision });
     return r.data;
   },
-  async preview(document: WebsiteDocument, pageId: string): Promise<string> {
-    const r = await api.post<{ html: string }>('/admin/website/preview', { document, pageId });
+  async preview(document: WebsiteDocument, pageId: string, options: { videoAsPoster?: boolean } = {}): Promise<string> {
+    const r = await api.post<{ html: string }>('/admin/website/preview', { document, pageId, ...options });
     return r.data.html;
   },
   /** Thumbnail URLs by mediaKey: each image once, in batches the server accepts. */

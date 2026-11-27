@@ -67,10 +67,15 @@ router.post('/discard', canEdit, handleAsync(async (req, res) => {
 router.post('/preview', canView, [
   body('document').isObject(),
   body('pageId').optional().isString().isLength({ max: 40 }),
+  // The editor runs on another origin than the media (split origin): its
+  // frame may not load a video from there, so the hero shows its poster.
+  body('videoAsPoster').optional().isBoolean(),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
   res.set('Cache-Control', 'no-store');
-  res.json({ html: await websiteService.renderPreview(req.body.document, req.body.pageId, req.admin) });
+  res.json({ html: await websiteService.renderPreview(req.body.document, req.body.pageId, req.admin, {
+    videoAsPoster: parseBooleanInput(req.body.videoAsPoster, false),
+  }) });
 }));
 
 // URLs for the editor's thumbnails of picked images; null where the image

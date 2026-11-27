@@ -48,6 +48,7 @@ const STRINGS = {
     terms: 'Terms & Conditions',
     previewForm: 'The form is disabled in the preview.',
     follow: 'Follow',
+    videoInPreview: 'Video plays on the published page',
   },
   de: {
     menu: 'Menü',
@@ -70,6 +71,7 @@ const STRINGS = {
     terms: 'AGB',
     previewForm: 'Das Formular ist in der Vorschau deaktiviert.',
     follow: 'Folgen',
+    videoInPreview: 'Das Video läuft auf der veröffentlichten Seite',
   },
 };
 
@@ -204,7 +206,15 @@ function renderHero(block, ctx) {
   const video = block.video ? ctx.assets.get(block.video.id) : null;
   const isFirst = ctx.firstHeroId === block.id;
   const media = [];
-  if (video && video.kind === 'video') {
+  if (video && video.kind === 'video' && ctx.preview && ctx.videoAsPoster) {
+    // The editor runs on another origin than the media, and its policy lets
+    // a frame load no video from there: the poster, or a placeholder, and
+    // where the video does play.
+    media.push(image
+      ? imgTag(image, { alt: block.image.alt, eager: true, className: 'pp-hero__media' })
+      : '<div class="pp-hero__media pp-hero__placeholder"></div>');
+    media.push(`<span class="pp-video-note">${esc(strings(ctx.locale).videoInPreview)}</span>`);
+  } else if (video && video.kind === 'video') {
     const poster = image ? ` poster="${esc(defaultSrc(image))}"` : '';
     media.push(`<video class="pp-hero__media" autoplay muted loop playsinline preload="metadata"${poster}><source src="${esc(mediaBase(block.video))}/video" type="${esc(video.mime_type || 'video/mp4')}"></video>`);
   } else if (image) {
@@ -569,7 +579,9 @@ h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 
 // The marker is a pseudo-element above the section's children: an outline
 // would be painted under a positioned full-bleed hero picture.
-const PREVIEW_CSS = `[data-block-id]{position:relative;cursor:pointer}
+const PREVIEW_CSS = `.pp-hero__placeholder{background:linear-gradient(135deg,#3a3a3a,#1c1c1c);min-height:100%}
+.pp-video-note{position:absolute;z-index:2;top:1rem;right:1rem;padding:.35rem .7rem;border-radius:999px;background:rgba(0,0,0,.6);color:#fff;font:600 .8rem/1.2 var(--font-body)}
+[data-block-id]{position:relative;cursor:pointer}
 [data-block-id]::after{content:"";position:absolute;inset:0;z-index:5;pointer-events:none;border:2px dashed transparent}
 [data-block-id]:hover::after{border-color:color-mix(in srgb,var(--accent) 60%,transparent)}
 [data-block-id].pp-selected::after{border:3px solid var(--accent)}

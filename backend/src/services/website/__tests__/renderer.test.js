@@ -213,3 +213,32 @@ test('a testimonial without a quote is left off the page', () => {
   expect(html).toContain('Lovely day');
   expect(html).not.toContain('Unfinished Lea');
 });
+
+describe('hero video in the editor preview', () => {
+  const video = { id: 'b'.repeat(24), kind: 'video', mime_type: 'video/mp4', rendition_keys: '{}' };
+  const blocks = [{ type: 'hero', variant: 'overlay', heading: 'H', video: { id: 'b'.repeat(24) }, image: { source: 'photo', id: 11 } }];
+  const ctx = { assets: new Map([['b'.repeat(24), video]]), photos: new Map([[11, { id: 11, width: 1600, height: 900 }]]), preview: true };
+
+  test('plays the video when the preview may load it', () => {
+    const html = render([home(blocks)], { ctx });
+    expect(html).toContain('<video');
+  });
+
+  test('shows the poster and says where the video plays when the admin runs on another origin', () => {
+    const html = render([home(blocks)], { ctx: { ...ctx, videoAsPoster: true } });
+    expect(html).not.toContain('<video');
+    expect(html).toMatch(/<img class="pp-hero__media"[^>]+src="\/site-media\/p11-/);
+    expect(html).toContain('Video plays on the published page');
+  });
+
+  test('without a poster image it shows a neutral placeholder', () => {
+    const html = render([home([{ ...blocks[0], image: null }])], { ctx: { ...ctx, videoAsPoster: true } });
+    expect(html).not.toContain('<video');
+    expect(html).toContain('pp-hero__placeholder');
+  });
+
+  test('the published page always plays it', () => {
+    const html = render([home(blocks)], { ctx: { ...ctx, preview: false, videoAsPoster: true } });
+    expect(html).toContain('<video');
+  });
+});

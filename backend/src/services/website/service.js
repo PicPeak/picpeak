@@ -506,12 +506,12 @@ async function buildContext(document, page, { preview = false, allowed = null } 
   };
 }
 
-async function renderPreview(rawDocument, pageId, admin) {
+async function renderPreview(rawDocument, pageId, admin, { videoAsPoster = false } = {}) {
   const { document } = normalizeDocument(rawDocument);
   const page = document.pages.find((p) => p.id === pageId) || document.pages[0];
   if (!page) throw new AppError('The website has no pages', 422, 'WEBSITE_INVALID');
   const allowed = await referencesAdminMay(admin, collectReferences(document));
-  return renderPage(await buildContext(document, page, { preview: true, allowed }));
+  return renderPage({ ...(await buildContext(document, page, { preview: true, allowed })), videoAsPoster });
 }
 
 // ---------------------------------------------------------------------------
