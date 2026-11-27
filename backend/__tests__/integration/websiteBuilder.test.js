@@ -482,6 +482,35 @@ describe('gallery photos on the website', () => {
     expect((await getPhoto(openPhoto)).status).toBe(200);
   });
 
+  test('a gallery the gallery page keeps closed stays off the website, whatever closes it', async () => {
+    const reason = async () => (await request(app).get('/api/admin/website/galleries').set(auth(adminId)))
+      .body.galleries.find((g) => g.id === openEvent).reason;
+    const closedBy = async (change, expected) => {
+      await db('events').where({ id: openEvent }).update(change);
+      cache.clearWebsiteCache();
+      expect((await getPhoto(openPhoto)).status).toBe(404);
+      expect((await service.resolvePublicPage('')).html).not.toContain(`/site-media/p${openPhoto}-`);
+      expect(await reason()).toBe(expected);
+    };
+    const open = { payment_lock: null, payment_unlocked_at: null, is_draft: 0, temporarily_disabled: 0, reveal_mode: 0, reveal_at: null, revealed_at: null };
+    // What bookingDeposits.applyGalleryLock writes, and any other lock value
+    // (the gallery treats every non-empty lock as closed).
+    for (const lock of ['full_payment', 'deposit']) {
+      // eslint-disable-next-line no-await-in-loop
+      await closedBy({ ...open, payment_lock: lock }, 'payment_lock');
+    }
+    // Paid (or opened by hand): the lock stays, the unlock stamp opens it.
+    await db('events').where({ id: openEvent }).update({ ...open, payment_lock: 'full_payment', payment_unlocked_at: new Date().toISOString() });
+    expect((await getPhoto(openPhoto)).status).toBe(200);
+    expect(await reason()).toBeNull();
+    await closedBy({ ...open, is_draft: 1 }, 'unavailable');
+    await closedBy({ ...open, temporarily_disabled: 1 }, 'unavailable');
+    await closedBy({ ...open, reveal_mode: 1, reveal_at: new Date(Date.now() + 86400000).toISOString() }, 'hidden');
+    await db('events').where({ id: openEvent }).update(open);
+    cache.clearWebsiteCache();
+    expect((await getPhoto(openPhoto)).status).toBe(200);
+  });
+
   test('the picker lists eligible galleries, flags a password, and refuses the photos of others', async () => {
     const list = await request(app).get('/api/admin/website/galleries').set(auth(adminId));
     expect(list.body.galleries.find((g) => g.id === lockedEvent)).toMatchObject({ showOnWebsite: true, eligible: true, reason: null, hasPassword: true });

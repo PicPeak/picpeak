@@ -15,7 +15,7 @@
  */
 const crypto = require('crypto');
 const { db } = require('../../database/db');
-const { isGalleryAvailable, requiresGalleryPassword, isTrue } = require('../../utils/galleryLifecycle');
+const { isAwaitingPayment, isGalleryAvailable, requiresGalleryPassword, isTrue } = require('../../utils/galleryLifecycle');
 const { isGalleryHidden } = require('../../utils/revealMode');
 const {
   applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed, whereNotVideo,
@@ -96,7 +96,7 @@ function isEventWebsiteEligible(event, now = new Date()) {
     && isTrue(event.show_on_website)
     && isGalleryAvailable(event)
     && !isGalleryHidden(event, now)
-    && !(isTrue(event.payment_lock) && !event.payment_unlocked_at);
+    && !isAwaitingPayment(event);
 }
 
 /** Why a gallery is not eligible, for the admin picker; null when it is. */
@@ -105,7 +105,7 @@ function eventIneligibleReason(event, now = new Date()) {
   if (!isTrue(event.show_on_website)) return 'not_opted_in';
   if (!isGalleryAvailable(event)) return 'unavailable';
   if (isGalleryHidden(event, now)) return 'hidden';
-  if (isTrue(event.payment_lock) && !event.payment_unlocked_at) return 'payment_lock';
+  if (isAwaitingPayment(event)) return 'payment_lock';
   return null;
 }
 
