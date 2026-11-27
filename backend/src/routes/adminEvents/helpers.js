@@ -79,8 +79,9 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
     .select('id', 'event_id', 'path', 'filename', 'source_origin', 'external_relpath', 'size_bytes', 'source_mtime_ms',
       'processing_attempt_id',
       'thumbnail_path', 'hero_path', 'preview_path', 'watermark_path', 'web_path', 'hls_path', 'hls_status',
-      // An edit's tag is in the tier keys too (issue 2619), and its render goes.
-      'edit_params', 'edit_rev', 'edit_applied_rev', 'edit_render_path', 'edit_width', 'edit_height');
+      // An edit's tag is in the tier keys too (issue 2619), and its files go.
+      'edit_params', 'edit_rev', 'edit_applied_rev', 'edit_width', 'edit_height',
+      ...require('../../services/photoEdits').EDIT_FILE_COLUMNS);
 
   // A Set because a photo can carry the same key in two columns (an unresized
   // gallery's hero and preview can resolve to one object) and deleting it

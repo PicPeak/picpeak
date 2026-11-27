@@ -583,7 +583,12 @@ describe('deleting photos leaves no edit files behind', () => {
     fs.writeFileSync(storagePath(previewKey), 'preview');
     await photoEdits().saveEdits([{ photo: await db('photos').where({ id: jpegId }).first(), params: validated({ exposure: 0.4 }) }]);
     const render = await photoEdits().ensureEditedSource(await db('photos').where({ id: jpegId }).first());
-    return { event, rawId, jpegId, files: [previewKey, render] };
+    // The applied revision's render too: a newer edit pending, its own render drawn.
+    await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+    await photoEdits().saveEdits([{ photo: await db('photos').where({ id: jpegId }).first(), params: validated({ exposure: 0.8 }) }]);
+    const pending = await photoEdits().ensureEditedSource(await db('photos').where({ id: jpegId }).first());
+    expect((await db('photos').where({ id: jpegId }).first()).edit_applied_render_path).toBe(render);
+    return { event, rawId, jpegId, files: [previewKey, render, pending] };
   };
 
   it('a gallery delete removes renders and RAW develop previews', async () => {

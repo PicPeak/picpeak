@@ -71,6 +71,9 @@ const concurrency = () => Math.min(8, intEnv('PREVIEW_REGEN_CONCURRENCY', 1));
 const isVideoRow = (photo) => photo.media_type === 'video' || photo.type === 'video'
   || String(photo.mime_type || '').startsWith('video/');
 
+// Every column that names an edit file (migration 380): what a delete collects.
+const EDIT_FILE_COLUMNS = ['edit_render_path', 'edit_applied_render_path'];
+
 // The applied revision's edit, size and render (migration 380).
 const APPLIED_COLUMNS = ['edit_applied_params', 'edit_applied_width', 'edit_applied_height', 'edit_applied_render_path'];
 
@@ -632,9 +635,8 @@ function editCacheKeys(photo) {
   // The tiers of the edit's revisions too: a reset still waiting for the
   // background pass has not dropped them yet.
   const keys = Number(photo.edit_rev) > 0 ? historicalTierKeys(photo) : [];
-  if (isRenderKeyOf(photo, photo.edit_render_path)) keys.push(photo.edit_render_path);
-  if (isRenderKeyOf(photo, photo.edit_applied_render_path) && photo.edit_applied_render_path !== photo.edit_render_path) {
-    keys.push(photo.edit_applied_render_path);
+  for (const column of EDIT_FILE_COLUMNS) {
+    if (isRenderKeyOf(photo, photo[column]) && !keys.includes(photo[column])) keys.push(photo[column]);
   }
   const rawDevelop = require('./rawDevelop');
   if (rawDevelop.isRawPhoto(photo)) keys.push(rawDevelop.previewKey(photo));
@@ -937,6 +939,7 @@ module.exports = {
   ensureEditedSource,
   deliveredPhoto,
   renditionView,
+  EDIT_FILE_COLUMNS,
   namedAsDelivered,
   deliveredKey,
   deliveredDimensions,
