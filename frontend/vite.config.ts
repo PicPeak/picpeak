@@ -51,6 +51,20 @@ const config: VitestUserConfig = {
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
+      // Website builder (issue 2618): the preview's and the pages' images,
+      // their fonts, and the sitemap come from the backend.
+      '/site-media': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/fonts': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/sitemap.xml': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
     },
   }
 }
