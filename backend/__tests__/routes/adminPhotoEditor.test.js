@@ -781,3 +781,41 @@ describe('the gallery photo route while an edit is pending', () => {
     }
   });
 });
+
+describe('the admin viewer while an edit is pending', () => {
+  it('shows the applied revision, the one its annotations are placed on; the Edited download gets the saved edit', async () => {
+    const insert = async (filename, over) => unwrap(await db('photos').insert({
+      event_id: event.id, filename, path: 'edit-route/beach.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      size_bytes: originalBytes.length, processing_status: 'complete', uploaded_at: new Date().toISOString(), width: 800, height: 600, ...over,
+    }).returning('id'));
+    // A first crop, not applied yet; and a crop applied with a turn pending.
+    const fresh = await insert('admin-pending-first.jpg', {
+      edit_params: JSON.stringify({ v: 1, crop: { x: 0, y: 0, w: 0.5, h: 1 } }), edit_rev: 1, edit_applied_rev: 0,
+    });
+    const turned = await insert('admin-pending-turn.jpg', {
+      edit_params: JSON.stringify({ v: 1, rotate: 90, crop: { x: 0, y: 0, w: 0.5, h: 1 } }), edit_rev: 2, edit_applied_rev: 1,
+      edit_applied_params: JSON.stringify({ v: 1, crop: { x: 0, y: 0, w: 0.5, h: 1 } }), edit_applied_width: 400, edit_applied_height: 600,
+    });
+    const admin = (url) => binary(auth(request(adminApp).get(`/api/admin/photos/${event.id}${url}`)));
+    try {
+      const rows = (await auth(request(adminApp).get(`/api/admin/photos/${event.id}/photos`))).body.photos;
+      const listed = (id) => rows.find((p) => p.id === id);
+      expect(listed(fresh).url).toBe(`/admin/photos/${event.id}/photo/${fresh}`);
+      expect(listed(turned).url).toBe(`/admin/photos/${event.id}/photo/${turned}?e=1`);
+
+      expect(await size((await admin(`/photo/${fresh}`).expect(200)).body)).toEqual([800, 600]);
+      const shown = await admin(`/photo/${turned}?e=1`).expect(200);
+      expect(await size(shown.body)).toEqual([400, 600]);
+      expect(shown.headers['cache-control']).toBe('private, max-age=3600');
+
+      // The downloads are as before: the saved edit, or the original.
+      expect(await size((await admin(`/photos/${fresh}/download?edited=1`).expect(200)).body)).toEqual([400, 600]);
+      // The crop is taken in the turned frame (600 x 800).
+      expect(await size((await admin(`/photos/${turned}/download?edited=1`).expect(200)).body)).toEqual([300, 800]);
+      expect(await size((await admin(`/photos/${turned}/download`).expect(200)).body)).toEqual([800, 600]);
+      expect(await size((await admin(`/photo/${turned}?original=1`).expect(200)).body)).toEqual([800, 600]);
+    } finally {
+      await db('photos').whereIn('id', [fresh, turned]).delete();
+    }
+  });
+});

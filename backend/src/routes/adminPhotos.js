@@ -2137,6 +2137,12 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
       req.admin.id,
       photos.map(p => p.id),
     );
+
+    // What the viewer shows of an edited photo (issue 2619): its applied
+    // revision while a newer save is pending, as guests see it and as the
+    // annotations on it are placed. The row comes with every column, so this
+    // reads nothing more.
+    const shownRows = new Map(await Promise.all(photos.map(async (p) => [p.id, await photoEdits.renditionView(p)])));
     
     res.json({
       photos: photos.map(photo => ({
@@ -2152,9 +2158,9 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         // URL naming its revision. The preview of a photo that has had an
         // edit names the applied revision, a reset too: the preview is cut
         // again when the revision lands, and the URL changes with it.
-        url: originalNeedsPreview(photo) && !photoEdits.isEdited(photo)
+        url: originalNeedsPreview(photo) && !photoEdits.isEdited(shownRows.get(photo.id))
           ? `/admin/photos/${eventId}/preview/${photo.id}${photoEdits.editQuery(photo) ? `?${photoEdits.editQuery(photo)}` : ''}`
-          : `/admin/photos/${eventId}/photo/${photo.id}${photoEdits.isEdited(photo) ? `?e=${photo.edit_rev}` : ''}`,
+          : `/admin/photos/${eventId}/photo/${photo.id}${photoEdits.isEdited(shownRows.get(photo.id)) ? `?e=${shownRows.get(photo.id).edit_rev}` : ''}`,
         // Always expose a thumbnail URL; backend will generate on demand if
         // missing. Versioned by adminThumbnailUrl, see there.
         thumbnail_url: adminThumbnailUrl(eventId, photo),
@@ -2282,13 +2288,16 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
       return res.status(404).json({ error: 'Photo not found' });
     }
     // An edited photo (issue 2619) shows its edit, as guests see it, unless
-    // the original is asked for.
-    const photo = req.query.original === '1' ? row : await photoEdits.deliveredPhoto(row, { interactive: true, headOnly: req.method === 'HEAD' });
+    // the original is asked for: the applied revision while a newer save is
+    // pending, the picture the listing's size and the annotations drawn on
+    // it describe. The Edited download (/download?edited=1) gets the saved one.
+    const shown = req.query.original === '1' ? row : await photoEdits.renditionView(row);
+    const photo = req.query.original === '1' ? row : await photoEdits.deliveredPhoto(shown, { interactive: true, headOnly: req.method === 'HEAD' });
     // Kept by the browser only under the URL the listing gives for what is
     // served: the edit's revision for an edited photo, none for the
     // original. A URL naming another revision is answered, never kept.
     const cacheable = req.query.original === '1'
-      || String(typeof req.query.e === 'string' ? req.query.e : '') === (photoEdits.isEdited(row) ? String(row.edit_rev) : '');
+      || String(typeof req.query.e === 'string' ? req.query.e : '') === (photoEdits.isEdited(shown) ? String(shown.edit_rev) : '');
 
     // Photos still in async processing don't have all metadata in the DB
     // yet; serving the original is fine, but downstream consumers (admin
