@@ -10,6 +10,7 @@ import { useConfirm } from '../../components/common/ConfirmDialog';
 import { SortableList } from './SortableList';
 import { createPage, moveItem, slugWhileTyping } from './blocks';
 import { ImageField, TextArea, TextField } from './fields';
+import { LegalPagesSection } from './LegalPagesSection';
 import type { ValidationProblem, WebsiteDocument, WebsitePage } from './types';
 
 // A copy of backend/src/services/website/reservedSlugs.json, held to it by
@@ -153,6 +154,7 @@ export const PagesPanel: React.FC<PagesPanelProps> = ({ doc, pageId, onSelectPag
           )}
         </fieldset>
       )}
+      <LegalPagesSection readOnly={readOnly} />
     </div>
   );
 };

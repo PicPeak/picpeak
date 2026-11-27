@@ -20,12 +20,7 @@ const { clearMaintenanceCache } = require('../middleware/maintenance');
 const { clearSettingsCache, initializeRateLimiters, RATE_LIMIT_DEFAULTS } = require('../services/rateLimitService');
 const { SETTING_KEY: GALLERY_PASSWORD_SETTING, purgeRecoverablePasswords, purgePlanForSettingWrite } = require('../utils/galleryPasswordVault');
 const {
-  DEFAULT_PUBLIC_SITE_HTML,
-  DEFAULT_PUBLIC_SITE_CSS,
-} = require('../constants/publicSiteDefaults');
-const {
   clearPublicSiteCache,
-  getDefaultPublicSitePayload,
   getRawPublicSiteSettings,
 } = require('../services/publicSiteService');
 const { sanitizeCss } = require('../utils/cssSanitizer');
@@ -2471,68 +2466,6 @@ router.put('/security/rate-limit', adminAuth, requirePermission('settings.securi
     res.json({ message: 'Rate limit settings updated successfully' });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to update rate limit settings');
-  }
-});
-
-// Get default public site template
-router.get('/public-site/default', adminAuth, requirePermission('settings.view'), async (req, res) => {
-  try {
-    const defaults = await getDefaultPublicSitePayload();
-
-    res.json({
-      enabled: false,
-      html: DEFAULT_PUBLIC_SITE_HTML.trim(),
-      css: '',
-      baseCss: DEFAULT_PUBLIC_SITE_CSS.trim(),
-      branding: defaults.branding,
-      meta: {
-        title: defaults.title,
-      }
-    });
-  } catch (error) {
-    errorResponse(res, error, 500, 'Failed to load defaults');
-  }
-});
-
-// Reset public site template to defaults
-router.post('/public-site/reset', adminAuth, requirePermission('settings.edit'), async (req, res) => {
-  try {
-    const entries = [
-      {
-        key: 'general_public_site_html',
-        value: DEFAULT_PUBLIC_SITE_HTML.trim()
-      },
-      {
-        key: 'general_public_site_custom_css',
-        value: ''
-      }
-    ];
-
-    for (const { key, value } of entries) {
-      await upsertSettingValue(key, value, 'general');
-    }
-
-    clearPublicSiteCache();
-
-    const defaults = await getDefaultPublicSitePayload();
-
-    await logActivity('public_site_reset_to_default',
-      {
-        template_length: DEFAULT_PUBLIC_SITE_HTML.length,
-      },
-      null,
-      { type: 'admin', id: req.admin.id, name: req.admin.username }
-    );
-
-    res.json({
-      message: 'Public site template reset to defaults',
-      html: DEFAULT_PUBLIC_SITE_HTML.trim(),
-      css: '',
-      baseCss: DEFAULT_PUBLIC_SITE_CSS.trim(),
-      branding: defaults.branding
-    });
-  } catch (error) {
-    errorResponse(res, error, 500, 'Failed to reset template');
   }
 });
 

@@ -1372,9 +1372,7 @@
         "PUT /seo",
         "GET /storage/info",
         "POST /favicon",
-        "PUT /security/rate-limit",
-        "GET /public-site/default",
-        "POST /public-site/reset"
+        "PUT /security/rate-limit"
       ]
     },
     "adminShortUrls.js": {

@@ -26,6 +26,13 @@ export interface PublicCMSPage {
   updated_at: string;
 }
 
+/**
+ * The legal pages: the website builder edits these in its Pages panel while
+ * the website is on (issue 2618). Mirrors LEGAL_SLUGS in
+ * backend/src/services/website/service.js, which links them in its footer.
+ */
+export const LEGAL_PAGE_SLUGS = ['impressum', 'datenschutz', 'agb'];
+
 export const cmsService = {
   // Get all CMS pages
   async getPages(): Promise<CMSPage[]> {

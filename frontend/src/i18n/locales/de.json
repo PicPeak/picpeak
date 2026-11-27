@@ -3809,33 +3809,6 @@
       "photoTrashRetention": "Aufbewahrung im Papierkorb (Tage)",
       "photoTrashRetentionHelp": "So lange bleiben aus einer Galerie gelöschte Fotos in deren Papierkorb und lassen sich wiederherstellen. 0 löscht Fotos sofort. Fotos im Papierkorb belegen weiterhin Speicherplatz."
     },
-    "publicSite": {
-      "badge": "Öffentliche Landingpage",
-      "title": "Öffentliche Landingpage",
-      "subtitle": "Veröffentlichen Sie eine anpassbare Landingpage für Gäste, die Ihre Domain besuchen.",
-      "loading": "Öffentliche Seite wird geladen...",
-      "enabled": "Aktiv",
-      "disabled": "Inaktiv",
-      "htmlLabel": "Landingpage-HTML",
-      "htmlPlaceholder": "HTML-Markup für Hero, Abschnitte und Handlungsaufrufe einfügen.",
-      "htmlHelp": "Rohes HTML wird beim Speichern bereinigt. Unsichere Skripte und Attribute werden automatisch entfernt. Platzhalter wie {{company_name}}, {{company_tagline}} und {{support_email}} werden mit den Werten aus den Branding-Einstellungen ersetzt.",
-      "cssLabel": "Benutzerdefiniertes CSS",
-      "cssPlaceholder": "Optionale CSS-Anpassungen für Layout, Farben oder Typografie.",
-      "cssHelp": "Import-Anweisungen und JavaScript-URLs werden entfernt. Verwenden Sie Standard-CSS-Selektoren.",
-      "saveSuccess": "Öffentliche Seite gespeichert.",
-      "saveError": "Öffentliche Seite konnte nicht gespeichert werden.",
-      "resetCta": "Auf Standard zurücksetzen",
-      "resetting": "Setze zurück...",
-      "resetSuccess": "Landingpage wurde auf die Standardvorlage zurückgesetzt.",
-      "resetError": "Zurücksetzen auf Standard fehlgeschlagen.",
-      "previewTitle": "Live-Vorschau",
-      "previewSandboxed": "Sandbox-Vorschau",
-      "previewDisabled": "Aktivieren Sie die öffentliche Seite, um die Live-Vorschau zu sehen.",
-      "sanitizationNotice": "Skripte, iframes und unsichere Attribute werden vor der Veröffentlichung entfernt. Erlaubt sind sichere HTML-Elemente, Links und Bilder.",
-      "htmlRequired": "Legen Sie HTML-Inhalt fest, bevor die öffentliche Seite aktiviert wird.",
-      "openWebsiteBuilder": "Website-Baukasten öffnen",
-      "websiteBuilderNotice": "Der Website-Baukasten ist eingeschaltet. Sobald Sie dort eine Website veröffentlichen, ersetzt sie diese Seite unter der Hauptadresse. Eine gespeicherte Startseite wird beim ersten Öffnen des Baukastens als eigener HTML-Block übernommen."
-    },
     "storage": {
       "totalUsed": "Gesamt verwendet",
       "archiveStorage": "Archivspeicher",
@@ -7068,7 +7041,9 @@
     "showInFooter": "In der Galerie-Fußzeile anzeigen",
     "showInFooterHelp": "Wenn deaktiviert, wird diese Seite in der öffentlichen Galerie-Fußzeile ausgeblendet. Die Seite selbst bleibt über ihre direkte URL erreichbar.",
     "discardOnSwitch": "Ungespeicherte Änderungen an dieser Seite verwerfen?",
-    "discardAndSwitch": "Verwerfen und wechseln"
+    "discardAndSwitch": "Verwerfen und wechseln",
+    "legalInWebsiteLink": "In Website › Seiten bearbeiten",
+    "legalInWebsite": "Die Website ist eingeschaltet: Die rechtlichen Seiten (Impressum, Datenschutz, AGB) bearbeiten Sie in ihrem Bereich Seiten – es sind dieselben Seiten, auf die die Galerien verweisen."
   },
   "validation": {
     "eventNameRequired": "Galeriename ist erforderlich",
@@ -13431,7 +13406,11 @@
     "takeOffline": "Offline nehmen",
     "takeOfflineTitle": "Website offline nehmen?",
     "takeOfflineMessage": "Besucher sehen sie nicht mehr an der Hauptadresse; `/` führt stattdessen zur Seite für den Galerie-Code. Die Website und ihr Entwurf bleiben, wie sie sind.",
-    "takeOfflineConfirm": "Website offline nehmen"
+    "takeOfflineConfirm": "Website offline nehmen",
+    "legal": {
+      "title": "Rechtliche Seiten",
+      "hint": "In der Fusszeile der Website und der Galerien verlinkt. Dieselben Seiten wie unter Einstellungen › CMS."
+    }
   },
   "websiteNotice": {
     "title": "Ihre Startseite ist umgezogen",

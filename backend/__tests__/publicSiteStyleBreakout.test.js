@@ -23,7 +23,6 @@ process.env.SERVE_FRONTEND = 'false';
 jest.mock('../src/services/publicSiteService', () => ({
   getPublicSitePayload: jest.fn(),
   clearPublicSiteCache: jest.fn(),
-  getDefaultPublicSitePayload: jest.fn(),
   getRawPublicSiteSettings: jest.fn(),
 }));
 

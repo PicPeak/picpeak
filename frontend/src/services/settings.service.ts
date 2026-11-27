@@ -162,24 +162,6 @@ export interface SystemStatus {
   timestamp: string;
 }
 
-export interface PublicSiteBranding {
-  companyName: string | null;
-  companyTagline: string | null;
-  supportEmail: string | null;
-  logoUrl: string | null;
-  footerText: string | null;
-  colors: {
-    primary: string;
-    accent: string;
-    background: string;
-    text: string;
-    surface?: string;
-    elevated?: string;
-    border?: string;
-    mutedText?: string;
-  };
-}
-
 export const settingsService = {
   // Get all settings
   async getAllSettings(): Promise<Record<string, any>> {
@@ -214,28 +196,6 @@ export const settingsService = {
   // Update branding settings
   async updateBranding(settings: BrandingSettings): Promise<void> {
     await api.put('/admin/settings/branding', settings);
-  },
-
-  async getPublicSiteDefaults(): Promise<{ html: string; css: string; baseCss: string; branding?: PublicSiteBranding; meta?: { title?: string } }> {
-    const response = await api.get('/admin/settings/public-site/default');
-    return response.data;
-  },
-
-  async resetPublicSite(): Promise<{ html: string; css: string; baseCss?: string; branding?: PublicSiteBranding }> {
-    const response = await api.post('/admin/settings/public-site/reset');
-    return response.data;
-  },
-
-  async updatePublicSite(settings: {
-    enabled: boolean;
-    html: string;
-    css: string;
-  }): Promise<void> {
-    await api.put('/admin/settings/general', {
-      general_public_site_enabled: settings.enabled,
-      general_public_site_html: settings.html,
-      general_public_site_custom_css: settings.css,
-    });
   },
 
   // Upload logo. Pass variant='dark' to store the dark-mode logo

@@ -1,7 +1,8 @@
 /**
- * With the website builder on (issue 2618) the single-page site below is only
- * the fallback until a website is published; the CMS page says so and links
- * to the builder.
+ * The single-page landing editor moved into the website builder (issue
+ * 2618). The CMS tab keeps the legal pages while the website is off; while it
+ * is on, they are edited in the builder's Pages panel, which the tab links to,
+ * and the tab keeps the other CMS pages.
  */
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -21,16 +22,11 @@ vi.mock('../../../hooks/useLocalizedDate', () => ({
 }));
 vi.mock('../../../components/admin/CMSEditor', () => ({ CMSEditor: () => <div>editor</div> }));
 vi.mock('../../../services/cms.service', () => ({
-  cmsService: { getPages: () => Promise.resolve([]), updatePage: vi.fn(), uploadPageLogo: vi.fn(), clearPageLogo: vi.fn() },
+  cmsService: { getPages: () => Promise.resolve(PAGES), updatePage: vi.fn(), uploadPageLogo: vi.fn(), clearPageLogo: vi.fn() },
+  LEGAL_PAGE_SLUGS: ['impressum', 'datenschutz', 'agb'],
 }));
-vi.mock('../../../services/settings.service', () => ({
-  settingsService: {
-    getAllSettings: () => Promise.resolve({}),
-    getPublicSiteDefaults: () => Promise.resolve({ html: '', css: '' }),
-    updatePublicSite: vi.fn(),
-    resetPublicSite: vi.fn(),
-  },
-}));
+const page = (slug: string) => ({ id: slug.length, slug, title_en: slug, title_de: slug, content_en: '', content_de: '', logo_url: null, use_external_url: false, external_url: null, updated_at: '' });
+const PAGES = [page('impressum'), page('datenschutz'), page('gallery-not-found')];
 const flagOn = vi.fn(() => false);
 vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureEnabled: () => flagOn() }));
 
@@ -45,16 +41,26 @@ function renderPage() {
   );
 }
 
-it('points to the website builder while it is on', async () => {
-  flagOn.mockReturnValue(true);
-  renderPage();
-  const link = await screen.findByRole('link', { name: 'Open the website builder' });
-  expect(link.getAttribute('href')).toBe('/admin/website');
-});
-
-it('says nothing about it while it is off', async () => {
+it('has no landing page editor any more', async () => {
   flagOn.mockReturnValue(false);
   renderPage();
   await screen.findAllByText('editor');
-  expect(screen.queryByRole('link', { name: 'Open the website builder' })).toBeNull();
+  expect(screen.queryByText('settings.publicSite.title')).toBeNull();
+});
+
+it('keeps every CMS page, the legal ones too, while the website is off', async () => {
+  flagOn.mockReturnValue(false);
+  renderPage();
+  expect(await screen.findByText('/impressum')).toBeInTheDocument();
+  expect(screen.getByText('/gallery-not-found')).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Edit them in Website › Pages' })).toBeNull();
+});
+
+it('links the legal pages to the website builder while it is on, and keeps the others here', async () => {
+  flagOn.mockReturnValue(true);
+  renderPage();
+  const link = await screen.findByRole('link', { name: 'Edit them in Website › Pages' });
+  expect(link.getAttribute('href')).toBe('/admin/website?panel=pages');
+  expect(await screen.findByText('/gallery-not-found')).toBeInTheDocument();
+  expect(screen.queryByText('/impressum')).toBeNull();
 });

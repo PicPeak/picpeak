@@ -263,18 +263,6 @@ function clearPublicSiteCache() {
   require('./website/cache').clearWebsiteCache();
 }
 
-async function getDefaultPublicSitePayload() {
-  const branding = await fetchBrandingContext();
-  return buildCachedPayload({
-    publicSite: {
-      general_public_site_enabled: false,
-      general_public_site_html: DEFAULT_PUBLIC_SITE_HTML,
-      general_public_site_custom_css: ''
-    },
-    branding
-  });
-}
-
 async function getRawPublicSiteSettings() {
   return fetchPublicSiteSettings();
 }
@@ -304,7 +292,6 @@ function applyBrandTokens(html, branding) {
 module.exports = {
   getPublicSitePayload,
   clearPublicSiteCache,
-  getDefaultPublicSitePayload,
   getRawPublicSiteSettings,
   // The website builder (issue 2618) renders its custom-HTML block and its
   // theme from the same sanitiser and branding as the single page.

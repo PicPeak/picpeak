@@ -42,6 +42,10 @@ vi.mock('../../../components/admin/SettingsSaveBar', () => ({
     </>
   ),
 }));
+vi.mock('../../../services/cms.service', () => ({
+  cmsService: { getPages: () => Promise.resolve([]) },
+  LEGAL_PAGE_SLUGS: ['impressum', 'datenschutz', 'agb'],
+}));
 vi.mock('../../../services/website.service', () => ({
   websiteService: {
     getState: vi.fn(), saveDraft: vi.fn(), publish: vi.fn(), preview: vi.fn(), resolveMedia: vi.fn(), setVisibility: vi.fn(),
@@ -223,6 +227,17 @@ describe('WebsiteBuilderPage', () => {
     vi.mocked(websiteService.getState).mockResolvedValue({ ...structuredClone(STATE), publicSiteEnabled: false });
     fireEvent.click(await screen.findByRole('button', { name: 'Take offline' }));
     await waitFor(() => expect(websiteService.setVisibility).toHaveBeenLastCalledWith(false));
+  });
+
+  it('opens on the Pages panel from a link to it', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient = client;
+    render(
+      <MemoryRouter initialEntries={['/admin/website?panel=pages']}>
+        <QueryClientProvider client={client}><WebsiteBuilderPage /></QueryClientProvider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole('tab', { name: /Pages/, selected: true })).toBeInTheDocument();
   });
 
   it('switches the preview to phone width', async () => {

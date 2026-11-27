@@ -4,6 +4,7 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import {
@@ -100,7 +101,9 @@ export const WebsiteBuilderPage: React.FC = () => {
     onError: (err) => toast.error(apiErrorText(err)),
   });
   const { draft, server } = editor;
-  const [panel, setPanel] = useState<Panel>('blocks');
+  // ?panel=pages opens on the Pages panel (Settings › CMS links its legal pages there).
+  const [searchParams] = useSearchParams();
+  const [panel, setPanel] = useState<Panel>(searchParams.get('panel') === 'pages' ? 'pages' : 'blocks');
   const [pageId, setPageId] = useState('');
   const [blockId, setBlockId] = useState<string | null>(null);
   const [device, setDevice] = useState<PreviewDevice>('desktop');

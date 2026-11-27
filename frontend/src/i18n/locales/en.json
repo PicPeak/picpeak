@@ -3076,33 +3076,6 @@
       "photoTrashRetention": "Trash retention (days)",
       "photoTrashRetentionHelp": "Photos deleted from a gallery stay in its trash this long and can be restored. 0 deletes photos at once. Photos in the trash still use storage."
     },
-    "publicSite": {
-      "badge": "Public Landing",
-      "title": "Public Landing Page",
-      "subtitle": "Publish a customized landing page for guests when they visit your domain.",
-      "loading": "Loading public site settings...",
-      "enabled": "Enabled",
-      "disabled": "Disabled",
-      "htmlLabel": "Landing Page HTML",
-      "htmlPlaceholder": "Provide the HTML markup for your landing page hero, sections, and calls to action.",
-      "htmlHelp": "Raw HTML is sanitized on save. Unsafe tags, inline scripts, and disallowed attributes are removed automatically. Tokens such as {{company_name}}, {{company_tagline}}, and {{support_email}} will be substituted with values from Branding settings.",
-      "cssLabel": "Custom CSS",
-      "cssPlaceholder": "Optional CSS overrides to adjust layout, colors, or typography.",
-      "cssHelp": "Imports and JavaScript URLs are stripped. Use standard CSS selectors to override the default styling.",
-      "saveSuccess": "Public site settings saved.",
-      "saveError": "Failed to save public site settings.",
-      "resetCta": "Reset to default",
-      "resetting": "Resetting...",
-      "resetSuccess": "Public site template reset to defaults.",
-      "resetError": "Failed to reset public site template.",
-      "previewTitle": "Live Preview",
-      "previewSandboxed": "Sandboxed preview",
-      "previewDisabled": "Enable the public site to see the live preview.",
-      "sanitizationNotice": "Scripts, embedded frames, and unsafe attributes are removed before publishing. Only safe HTML, links, and images are allowed.",
-      "htmlRequired": "Provide HTML content before enabling the public site.",
-      "openWebsiteBuilder": "Open the website builder",
-      "websiteBuilderNotice": "The website builder is on. Once you publish a website there, it replaces this page at the site root. A saved landing page is copied into the builder as a custom HTML block the first time the builder opens."
-    },
     "storage": {
       "totalUsed": "Total Used",
       "archiveStorage": "Archive Storage",
@@ -6385,7 +6358,9 @@
     "showInFooter": "Show in gallery footer",
     "showInFooterHelp": "When off, this page is hidden from the public gallery footer. The page itself remains accessible at its direct URL.",
     "discardOnSwitch": "Discard your unsaved changes to this page?",
-    "discardAndSwitch": "Discard and switch"
+    "discardAndSwitch": "Discard and switch",
+    "legalInWebsiteLink": "Edit them in Website › Pages",
+    "legalInWebsite": "The website is on: its Pages panel edits the legal pages (Impressum, privacy policy, terms), the same pages the galleries link to."
   },
   "eventTypes": {
     "title": "Event Types",
@@ -13466,7 +13441,11 @@
     "takeOffline": "Take offline",
     "takeOfflineTitle": "Take the website offline?",
     "takeOfflineMessage": "Visitors no longer see it at the site root; `/` leads to the gallery code page instead. The website and its draft stay as they are.",
-    "takeOfflineConfirm": "Take the website offline"
+    "takeOfflineConfirm": "Take the website offline",
+    "legal": {
+      "title": "Legal pages",
+      "hint": "Linked in the website’s footer and the galleries’. The same pages as in Settings › CMS."
+    }
   },
   "websiteNotice": {
     "title": "Your landing page moved",
