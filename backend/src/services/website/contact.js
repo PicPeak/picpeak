@@ -20,6 +20,8 @@ const { META_BYTES } = require('../mailRetentionService');
 const DAILY_CAP = Number(process.env.WEBSITE_CONTACT_DAILY_CAP || 200);
 const EMAIL_PATTERN = /^[^\s@<>()[\]\\,;:"]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 const MESSAGE_ID_PREFIX = '<website-contact-';
+// Characters, as the form's maxlength counts them.
+const MESSAGE_MAX = 5000;
 
 function clean(value, max) {
   if (typeof value !== 'string') return '';
@@ -32,14 +34,20 @@ function clean(value, max) {
  * Validate a submission. Returns { ok: true, values } or { ok: false, reason }.
  * `reason` 'spam' is answered like a success, so a bot learns nothing.
  */
+const LIMITS = { name: 160, email: 255, phone: 40, message: MESSAGE_MAX };
+
 function validateSubmission(body) {
   if (body.company_website) return { ok: false, reason: 'spam' };
+  // Too long is an error the visitor sees, not a message cut short.
+  for (const [field, max] of Object.entries(LIMITS)) {
+    if (typeof body[field] === 'string' && [...body[field].trim()].length > max) return { ok: false, reason: 'invalid' };
+  }
   const values = {
-    name: clean(body.name, 160).replace(/\n/g, ' '),
-    email: clean(body.email, 255).replace(/\n/g, ''),
-    phone: clean(body.phone, 40).replace(/\n/g, ' '),
+    name: clean(body.name, LIMITS.name).replace(/\n/g, ' '),
+    email: clean(body.email, LIMITS.email).replace(/\n/g, ''),
+    phone: clean(body.phone, LIMITS.phone).replace(/\n/g, ' '),
     date: /^\d{4}-\d{2}-\d{2}$/.test(String(body.date || '')) ? String(body.date) : '',
-    message: clean(body.message, 5000),
+    message: clean(body.message, LIMITS.message),
   };
   if (!values.name || !values.message) return { ok: false, reason: 'invalid' };
   if (!EMAIL_PATTERN.test(values.email)) return { ok: false, reason: 'invalid' };
@@ -105,4 +113,4 @@ async function storeSubmission(values, page) {
   return 'stored';
 }
 
-module.exports = { validateSubmission, findForm, storeSubmission, DAILY_CAP, _internal: { formatBody, overDailyCap } };
+module.exports = { validateSubmission, findForm, storeSubmission, DAILY_CAP, MESSAGE_MAX, _internal: { formatBody, overDailyCap } };

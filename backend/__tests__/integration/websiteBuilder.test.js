@@ -559,6 +559,21 @@ describe('contact form', () => {
     expect(cross.status).toBe(403);
   });
 
+  test('a long message in a script of three-byte characters is accepted; too many characters go to the error note', async () => {
+    const cjk = '写'.repeat(3000);
+    const ok = await post({ ...valid, email: 'cjk@example.com', message: cjk });
+    expect(ok.status).toBe(303);
+    expect(ok.headers.location).toBe('/#contact-sent-c1');
+    expect((await db('received_emails').where('from_address', 'cjk@example.com').first()).body_text).toContain(cjk);
+    const tooLong = await post({ ...valid, email: 'long@example.com', message: 'x'.repeat(5001) });
+    expect(tooLong.headers.location).toBe('/#contact-error-c1');
+    // Over the byte limit of the upload parser: the same note, not a bare 400.
+    const huge = await post({ ...valid, email: 'huge@example.com', message: '写'.repeat(7000) });
+    expect(huge.status).toBe(303);
+    expect(huge.headers.location).toBe('/#contact-error-c1');
+    expect(await db('received_emails').whereIn('from_address', ['long@example.com', 'huge@example.com']).first()).toBeUndefined();
+  });
+
   test('is rate-limited per address', async () => {
     const fixed = () => request(app).post('/api/public/website/contact').set('X-Forwarded-For', '198.51.100.7').set('Sec-Fetch-Site', 'same-origin').field('page', 'home').field('block', 'nope');
     for (let i = 0; i < 5; i += 1) {

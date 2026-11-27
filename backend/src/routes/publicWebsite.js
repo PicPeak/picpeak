@@ -22,8 +22,12 @@ const { pageHref } = require('../services/website/renderer');
 
 const router = express.Router();
 
-// Fields only, small: the form has six text inputs and two hidden ones.
-const formFields = multer({ limits: { fields: 12, fieldSize: 8 * 1024, files: 0, parts: 12, fieldNameSize: 40 } }).none();
+// Fields only: six text inputs and two hidden ones. Multer counts bytes; the
+// longest field (the message, MESSAGE_MAX characters) may take four bytes a
+// character in UTF-8. Characters are checked in validateSubmission.
+const formFields = multer({
+  limits: { fields: 12, fieldSize: 4 * contact.MESSAGE_MAX, files: 0, parts: 12, fieldNameSize: 40 },
+}).none();
 
 function back(res, page, blockId, outcome) {
   // Anchors and page paths come from the published document only.
@@ -43,8 +47,12 @@ const contactLimiter = rateLimit({
 
 router.post('/contact', contactLimiter, (req, res, next) => {
   formFields(req, res, (err) => {
-    if (err) return res.status(400).type('text/plain').send('Invalid form');
-    return next();
+    if (!err) return next();
+    // Over the parser's limits: the visitor gets the form's own error note
+    // when the fields before the overflow name it, else a plain 400.
+    return contact.findForm(String(req.body?.page || ''), String(req.body?.block || ''))
+      .then((form) => (form ? back(res, form.page, form.block.id, 'error') : res.status(400).type('text/plain').send('Invalid form')))
+      .catch(() => res.status(400).type('text/plain').send('Invalid form'));
   });
 }, async (req, res) => {
   try {
