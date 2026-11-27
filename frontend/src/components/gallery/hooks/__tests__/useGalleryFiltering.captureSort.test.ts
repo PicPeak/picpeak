@@ -4,10 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { useGalleryFiltering, type GalleryFilterOptions } from '../useGalleryFiltering';
 import type { Photo } from '../../../../types';
 
-function makePhoto(id: number, originalFilename: string | null, capturedAt: string): Photo {
+function makePhoto(id: number, originalFilename: string | null, capturedAt: string, filename = `stored-${id}.jpg`): Photo {
   return {
     id,
-    filename: `stored-${id}.jpg`,
+    filename,
     original_filename: originalFilename,
     url: `/api/gallery/x/photo/${id}`,
     thumbnail_url: `/api/gallery/x/thumbnail/${id}`,
@@ -61,5 +61,15 @@ describe('useGalleryFiltering capture-date sort (issue 2617)', () => {
   it('reverses the whole order newest first', () => {
     const { result } = renderHook(() => useGalleryFiltering({ ...baseOptions, sortDesc: true }));
     expect(result.current.map((p) => p.id)).toEqual([1, 2, 4, 3, 5]);
+  });
+
+  it('takes the stored name where no original name is kept, as external imports store it', () => {
+    const external: Photo[] = [
+      makePhoto(1, null, burst, 'IMG_0003.jpg'),
+      makePhoto(2, 'IMG_0002.jpg', burst),
+      makePhoto(3, null, burst, 'IMG_0001.jpg'),
+    ];
+    const { result } = renderHook(() => useGalleryFiltering({ ...baseOptions, sourcePhotos: external }));
+    expect(result.current.map((p) => p.id)).toEqual([3, 2, 1]);
   });
 });

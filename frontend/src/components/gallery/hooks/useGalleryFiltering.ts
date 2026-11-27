@@ -182,7 +182,7 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAl
           // A burst shares one EXIF second: the camera's file counter, then
           // id, order it the way the server's capture-date sort does (issue 2617).
           return flip * (new Date(captureDateB).getTime() - new Date(captureDateA).getTime()
-            || (b.original_filename || '').localeCompare(a.original_filename || '', undefined, { numeric: true })
+            || (b.original_filename ?? b.filename).localeCompare(a.original_filename ?? a.filename, undefined, { numeric: true })
             || b.id - a.id);
         }
         case 'date':

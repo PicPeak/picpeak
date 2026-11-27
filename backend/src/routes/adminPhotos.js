@@ -2077,7 +2077,7 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
       // A burst shares one EXIF second: the camera's file counter orders it
       // before id does (issue 2617), as in the gallery.
       query = query.orderByRaw(`${captureDateOrderSql(db.client.config.client)} ${order}`)
-        .orderBy('photos.original_filename', order);
+        .orderByRaw(`COALESCE(photos.original_filename, photos.filename) ${order}`);
     } else if (sort === 'size') {
       query = query.orderBy('photos.size_bytes', order);
     } else if (sort === 'rating') {

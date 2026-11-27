@@ -170,6 +170,17 @@ describe('capture-date ordering on SQLite (#1172)', () => {
     expect(await orderedIds('desc')).toEqual([ids[0], ids[1], ids[3], ids[2]]);
   });
 
+  test('a burst without original names orders by the stored camera name (issue 2617)', async () => {
+    // External imports keep the camera name in filename, original_filename NULL.
+    const at = managed('2026-06-03T13:15:42Z');
+    const c = await addPhoto('IMG_0003.jpg', at, '2026-09-01 00:00:00');
+    const b = await addPhoto('stored-b.jpg', at, '2026-09-01 00:00:00');
+    await db('photos').where({ id: b }).update({ original_filename: 'IMG_0002.jpg' });
+    const a = await addPhoto('IMG_0001.jpg', at, '2026-09-01 00:00:00');
+    const res = await request(app).get(`/api/gallery/${SLUG}/photos?sort=capture_date&order=asc`);
+    expect(res.body.photos.map((p) => p.id)).toEqual([a, b, c]);
+  });
+
   test('all three storage classes order together correctly', async () => {
     await addPhoto('c-managed-2026-08.jpg', managed('2026-08-15T12:00:00Z'), '2026-09-01 00:00:00');
     await addPhoto('a-external-2026-06.jpg', '2026-06-03T01:15:00.000Z', '2026-09-01 00:00:00');

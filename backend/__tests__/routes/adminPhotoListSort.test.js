@@ -164,6 +164,15 @@ describe('admin photo list sorting (issue 1739)', () => {
       expect((await list('sort=capture_date&order=asc')).map((p) => p.id)).toEqual([ids[2], ids[3], ids[1], ids[0]]);
       expect((await list('sort=capture_date&order=desc')).map((p) => p.id)).toEqual([ids[0], ids[1], ids[3], ids[2]]);
     });
+
+    it('takes the stored name where no original name is kept, as external imports store it (issue 2617)', async () => {
+      const at = managed('2026-06-03T13:15:42.000Z');
+      const c = await addPhoto('IMG_0003.jpg', { original_filename: null, captured_at: at });
+      const b = await addPhoto('stored-b.jpg', { original_filename: 'IMG_0002.jpg', captured_at: at });
+      const a = await addPhoto('IMG_0001.jpg', { original_filename: null, captured_at: at });
+      expect((await list('sort=capture_date&order=asc')).map((p) => p.id)).toEqual([a, b, c]);
+      expect((await list('sort=capture_date&order=desc')).map((p) => p.id)).toEqual([c, b, a]);
+    });
   });
 
   it('returns the capture time as a zone-less wall clock in the server zone', async () => {
