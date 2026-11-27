@@ -191,7 +191,9 @@ async function brandColors() {
 async function editorState(draft, published) {
   const settings = await readSettings(['general_public_site_enabled']);
   return {
-    document: parseDocument(draft),
+    // As the editor saves it (normalised): an older stored shape, such as a
+    // text block's inline format, reaches the editor in the current one.
+    document: normalizeDocument(parseDocument(draft) || {}).document,
     draft: rowSummary(draft),
     published: rowSummary(published),
     hasUnpublishedChanges: !published || published.document !== draft.document,

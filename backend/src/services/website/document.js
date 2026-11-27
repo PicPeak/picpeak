@@ -19,6 +19,8 @@ const MAX_BLOCKS = 60;
 const MAX_IMAGES = 60;
 const MAX_ITEMS = 24;
 const MAX_DOCUMENT_BYTES = 1024 * 1024;
+// The text block's rich text (HTML, before the allowlist sanitiser).
+const MAX_RICH_TEXT = 40000;
 const MAX_CUSTOM_HTML = 100 * 1024;
 // The site stylesheet takes the largest one the settings page accepts for
 // the single-page site (sanitizeCss's MAX_CSS_SIZE) plus the template's base
@@ -184,10 +186,21 @@ const BLOCK_FIELDS = {
     image: imageRef(b.image),
     video: videoRef(b.video),
   }),
-  text: (b) => ({
-    heading: str(b.heading, 200, 'heading'),
-    body: str(b.body, 10000, 'body'),
-  }),
+  text: (b) => {
+    // Loaded here, not at the top: richText.js needs this module's safeUrl.
+    const { richText, sanitizeRichText } = require('./richText');
+    const rich = (value, field) => sanitizeRichText(capText(typeof value === 'string' ? value : '', MAX_RICH_TEXT, field));
+    const html = b.format === 'html';
+    return {
+      heading: str(b.heading, 200, 'heading'),
+      // Older text in the short inline format becomes the HTML it always
+      // rendered as (safe by construction), so the page does not change.
+      body: html ? rich(b.body, 'body') : richText(str(b.body, 10000, 'body')),
+      // Two columns: the right one, when the editor filled it separately.
+      bodyRight: html && b.variant === 'columns' ? rich(b.bodyRight, 'bodyRight') : '',
+      format: 'html',
+    };
+  },
   imageText: (b) => ({
     heading: str(b.heading, 200, 'heading'),
     body: str(b.body, 5000, 'body'),

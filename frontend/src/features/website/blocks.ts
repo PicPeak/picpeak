@@ -77,7 +77,7 @@ export function createBlock(type: BlockType, t: TFunction): Block {
   case 'hero':
     return { ...base, type, heading: t('website.defaults.heroHeading', 'Your headline'), subheading: '', buttonLabel: '', buttonUrl: '', image: null, video: null };
   case 'text':
-    return { ...base, type, heading: '', body: t('website.defaults.textBody', 'Write something here.') };
+    return { ...base, type, heading: '', body: `<p>${t('website.defaults.textBody', 'Write something here.')}</p>`, bodyRight: '', format: 'html' };
   case 'imageText':
     return { ...base, type, heading: '', body: '', image: null, buttonLabel: '', buttonUrl: '' };
   case 'gallery':

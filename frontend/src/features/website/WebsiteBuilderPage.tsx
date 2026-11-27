@@ -37,7 +37,7 @@ const MAX_BLOCKS = 60;
 
 function blockSummary(block: Block): string {
   if ('heading' in block && block.heading) return block.heading;
-  if (block.type === 'text') return block.body.slice(0, 60);
+  if (block.type === 'text') return new DOMParser().parseFromString(block.body, 'text/html').body.textContent?.slice(0, 60) || '';
   if (block.type === 'gallery' || block.type === 'instagram') return `${block.images.length} ×`;
   return '';
 }

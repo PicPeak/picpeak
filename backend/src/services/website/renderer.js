@@ -20,7 +20,7 @@ const { escapeHtml } = require('../../utils/formatters');
 const { toDateOnly } = require('../../utils/dateOnly');
 const { escapeCssForStyleElement } = require('../../utils/cssSanitizer');
 const { relativeLuminance, readableTextOn } = require('../../utils/colorContrast');
-const { safeUrl } = require('./document');
+const { inline, richText, linkAttrs } = require('./richText');
 const { brandCssVariables } = require('../../utils/brandCssVariables');
 const { MEDIA_WIDTHS, mediaBase, editorBase, parseRenditionKeys, photoVersion } = require('./media');
 
@@ -82,41 +82,6 @@ function strings(locale) {
 // ---------------------------------------------------------------------------
 // Text
 // ---------------------------------------------------------------------------
-
-// Runs on already-escaped text, which contains no `<`, so the only tags in
-// the result are the two inserted here.
-function emphasis(escaped) {
-  return escaped
-    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
-}
-
-function linkAttrs(url) {
-  return /^https?:/i.test(url) ? ' rel="noopener noreferrer"' : '';
-}
-
-/** One paragraph: escaped text with **bold**, *italic* and [label](url). */
-function inline(text) {
-  const linkPattern = /\[([^\]\n]{1,200})\]\(([^)\s]{1,500})\)/g;
-  let out = '';
-  let last = 0;
-  for (const match of text.matchAll(linkPattern)) {
-    out += emphasis(esc(text.slice(last, match.index)));
-    const url = safeUrl(match[2]);
-    out += url
-      ? `<a href="${esc(url)}"${linkAttrs(url)}>${emphasis(esc(match[1]))}</a>`
-      : emphasis(esc(match[0]));
-    last = match.index + match[0].length;
-  }
-  return out + emphasis(esc(text.slice(last)));
-}
-
-/** Multi-paragraph text: a blank line starts a paragraph, a newline is a <br>. */
-function richText(text) {
-  if (!text) return '';
-  return text.split(/\n\s*\n/).map((para) => para.trim()).filter(Boolean)
-    .map((para) => `<p>${para.split('\n').map(inline).join('<br>')}</p>`).join('');
-}
 
 // ---------------------------------------------------------------------------
 // Images
@@ -272,10 +237,14 @@ function renderHero(block, ctx) {
   return section(block, `${media.join('')}<div class="pp-hero__shade"></div><div class="pp-wrap pp-hero__over">${text}</div>`, ctx);
 }
 
+// The body is the sanitised HTML document.js stores. Two columns: one text
+// flowing over both (as before), or, once the right one is filled, each its own.
 function renderText(block, ctx) {
   const center = block.variant === 'center' ? ' pp-center' : '';
-  const cols = block.variant === 'columns' ? ' pp-columns' : '';
-  return section(block, `<div class="pp-wrap pp-narrow${center}">${heading(block.heading)}<div class="pp-prose${cols}">${richText(block.body)}</div></div>`, ctx);
+  const body = block.variant === 'columns' && block.bodyRight
+    ? `<div class="pp-two-cols"><div class="pp-prose">${block.body}</div><div class="pp-prose">${block.bodyRight}</div></div>`
+    : `<div class="pp-prose${block.variant === 'columns' ? ' pp-columns' : ''}">${block.body}</div>`;
+  return section(block, `<div class="pp-wrap pp-narrow${center}">${heading(block.heading)}${body}</div>`, ctx);
 }
 
 function renderImageText(block, ctx) {
@@ -525,6 +494,9 @@ h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 .pp-prose+.pp-btn{margin-top:1.5rem}
 .pp-intro{margin:-.2em 0 2rem;color:var(--muted);max-width:60ch}
 .pp-columns{columns:2 22rem;column-gap:3rem}
+.pp-two-cols{display:grid;gap:1.5rem 3rem}@media (min-width:720px){.pp-two-cols{grid-template-columns:1fr 1fr}}
+.pp-prose h2,.pp-prose h3{font-family:var(--font-heading);font-weight:600;line-height:1.2;margin:1.2em 0 .5em;color:var(--text)}.pp-prose h2{font-size:1.6rem}.pp-prose h3{font-size:1.25rem}.pp-prose>:first-child{margin-top:0}
+.pp-prose ul,.pp-prose ol{margin:0 0 1em;padding-left:1.4em}.pp-prose blockquote{margin:0 0 1em;padding-left:1em;border-left:3px solid var(--border);color:var(--muted)}
 .pp-btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:.7rem 1.6rem;border:2px solid var(--accent);border-radius:var(--btn-radius);background:var(--accent);color:var(--accent-fg);font:600 1rem/1.2 var(--font-body);text-decoration:none;cursor:pointer}
 .pp-btn:hover{filter:brightness(1.08)}
 .pp-btn:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}

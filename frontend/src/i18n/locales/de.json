@@ -13171,7 +13171,10 @@
       "widthFull": "Ganze Breite",
       "widthShort": "Kurz",
       "spacing": "Abstand",
-      "spacingNone": "Keiner"
+      "spacingNone": "Keiner",
+      "leftColumn": "Linke Spalte",
+      "rightColumn": "Rechte Spalte",
+      "rightColumnHint": "Bleibt sie leer, fliesst der linke Text über beide Spalten."
     },
     "defaults": {
       "heroHeading": "Ihre Überschrift",

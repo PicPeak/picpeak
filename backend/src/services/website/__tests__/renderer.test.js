@@ -282,3 +282,40 @@ describe('divider block', () => {
     expect(block).toMatchObject({ type: 'divider', variant: 'thin', width: 'full', spacing: 'medium' });
   });
 });
+
+describe('rich text in the text block', () => {
+  const textBlock = (over) => normalizeDocument({ pages: [home([{ type: 'text', id: 't1', ...over }])] }).document.pages[0].blocks[0];
+
+  test('older plain text becomes the HTML it always rendered as, so the page stays the same', () => {
+    const body = 'First **bold** line\nsecond [link](https://example.com) line\n\nA *new* paragraph with <script>x</script>';
+    const before = require('../renderer').richText(body);
+    const block = textBlock({ body });
+    expect(block).toMatchObject({ format: 'html' });
+    expect(block.body).toBe(before);
+    expect(render([home([{ type: 'text', id: 't1', body }])])).toContain(`<div class="pp-prose">${before}</div>`);
+  });
+
+  test('HTML from the editor keeps its formatting and loses everything else', () => {
+    const block = textBlock({
+      format: 'html',
+      body: '<h2 style="text-align: center">Title</h2><h1>Big</h1><p>A <strong>b</strong> <em>i</em> <u>u</u> <a href="javascript:alert(1)">bad</a> <a href="https://ok.example">ok</a></p>'
+        + '<ul><li>x</li></ul><ol><li>y</li></ol><blockquote><p>q</p></blockquote><p onclick="x()" style="color:red">p</p><img src=x onerror=alert(1)><script>alert(1)</script><iframe src="//x"></iframe>',
+    });
+    expect(block.body).toContain('<h2 style="text-align:center">Title</h2>');
+    expect(block.body).not.toContain('<h1');
+    expect(block.body).toContain('Big');
+    expect(block.body).toContain('<strong>b</strong> <em>i</em> <u>u</u>');
+    expect(block.body).not.toMatch(/javascript:|onclick|onerror|<img|<script|<iframe|color:red/);
+    expect(block.body).toContain('<a>bad</a> <a href="https://ok.example" rel="noopener noreferrer">ok</a>');
+    expect(block.body).toContain('<ul><li>x</li></ul><ol><li>y</li></ol><blockquote><p>q</p></blockquote>');
+  });
+
+  test('two columns: one text flows over both as before; with a right column each fills its own', () => {
+    const flowing = render([home([{ type: 'text', id: 't1', variant: 'columns', body: 'Only one' }])]);
+    expect(flowing).toContain('<div class="pp-prose pp-columns"><p>Only one</p></div>');
+    const split = render([home([{ type: 'text', id: 't1', variant: 'columns', format: 'html', body: '<p>Left</p>', bodyRight: '<p>Right</p>' }])]);
+    expect(split).toContain('<div class="pp-two-cols"><div class="pp-prose"><p>Left</p></div><div class="pp-prose"><p>Right</p></div></div>');
+    // The right column exists for the columns layout only.
+    expect(textBlock({ variant: 'left', format: 'html', body: '<p>L</p>', bodyRight: '<p>R</p>' }).bodyRight).toBe('');
+  });
+});

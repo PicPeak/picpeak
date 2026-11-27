@@ -1,7 +1,8 @@
 /**
  * Form fields of the website builder's block and page editors.
  */
-import React, { createContext, useContext, useId, useState } from 'react';
+import React, { createContext, useContext, useId, useLayoutEffect, useRef, useState } from 'react';
+import { CMSEditor } from '../../components/admin/CMSEditor';
 import { useTranslation } from 'react-i18next';
 import { ImageOff, ImagePlus, Plus, RotateCcw, X } from 'lucide-react';
 import { Button, Input } from '../../components/common';
@@ -41,15 +42,33 @@ export const TextArea: React.FC<{
   mono?: boolean;
 }> = ({ label, value, onChange, rows = 4, maxLength, helperText, mono }) => {
   const id = useId();
+  const ref = useRef<HTMLTextAreaElement>(null);
+  // Grows with its text from `rows` up, so a long text is read whole rather
+  // than through a scrollbar inside the panel's own.
+  useLayoutEffect(() => {
+    const box = ref.current;
+    if (!box) return;
+    box.style.height = 'auto';
+    box.style.height = `${box.scrollHeight}px`;
+  }, [value]);
   return (
     <div>
       <label htmlFor={id} className={labelClass}>{label}</label>
-      <textarea id={id} className={`input min-h-0 ${mono ? 'font-mono text-xs' : ''}`} rows={rows} value={value}
-        maxLength={maxLength} onChange={(e) => onChange(e.target.value)} />
+      <textarea ref={ref} id={id} className={`input min-h-0 resize-none ${mono ? 'font-mono text-xs' : ''}`} rows={rows} value={value}
+        style={{ overflowY: 'hidden' }} maxLength={maxLength} onChange={(e) => onChange(e.target.value)} />
       {helperText && <p className="mt-1 text-xs text-muted">{helperText}</p>}
     </div>
   );
 };
+
+/** Rich text (the text block): the CMS editor's compact form, HTML out. */
+export const RichTextField: React.FC<{ label: string; value: string; onChange: (value: string) => void; helperText?: string }> = ({ label, value, onChange, helperText }) => (
+  <div>
+    <span className={labelClass}>{label}</span>
+    <CMSEditor compact content={value} onChange={onChange} />
+    {helperText && <p className="mt-1 text-xs text-muted">{helperText}</p>}
+  </div>
+);
 
 export const SelectField: React.FC<{
   label: string;

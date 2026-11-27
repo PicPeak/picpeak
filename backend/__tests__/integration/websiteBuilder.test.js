@@ -208,6 +208,19 @@ describe('admin API', () => {
     expect(new Set(state.brandColors).size).toBe(state.brandColors.length);
   });
 
+  test('the editor gets older text blocks as the rich text they render as', async () => {
+    await setFeatureFlags(db, { websiteBuilder: true });
+    const kept = await db('website_documents').where({ state: 'draft' }).first();
+    const legacy = { pages: [{ id: 'home', slug: 'home', title: 'Home', isHome: true, blocks: [{ id: 't1', type: 'text', body: 'We take **photos**.' }] }] };
+    await db('website_documents').where({ state: 'draft' }).update({ document: JSON.stringify(legacy) });
+    try {
+      const block = (await request(app).get('/api/admin/website').set(auth(adminId))).body.document.pages[0].blocks[0];
+      expect(block).toMatchObject({ format: 'html', body: '<p>We take <strong>photos</strong>.</p>' });
+    } finally {
+      await db('website_documents').where({ state: 'draft' }).update({ document: kept.document });
+    }
+  });
+
   test('a viewer may read but not change the site', async () => {
     expect((await request(app).get('/api/admin/website').set(auth(viewerId))).status).toBe(200);
     const res = await request(app).put('/api/admin/website/draft').set(auth(viewerId)).send({ document: { pages: [] } });

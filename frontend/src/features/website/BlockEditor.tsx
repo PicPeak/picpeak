@@ -11,7 +11,7 @@ import { usePermission } from '../../hooks/usePermission';
 import { websiteService } from '../../services/website.service';
 import { BLOCK_VARIANTS, variantLabel } from './blocks';
 import {
-  BackgroundField, ChoiceField, ImageField, ImageListField, LinkField, TextArea, TextField, VideoField,
+  BackgroundField, ChoiceField, ImageField, ImageListField, LinkField, RichTextField, TextArea, TextField, VideoField,
 } from './fields';
 import { SearchField, useDebounced } from './search';
 import { loadFailure } from './loadFailure';
@@ -71,7 +71,16 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange, brand
     fields = (
       <>
         <TextField label={t('website.fields.heading', 'Heading')} value={block.heading} maxLength={200} onChange={(heading) => set(block, { heading }, 'heading')} />
-        <TextArea label={t('website.fields.body', 'Text')} value={block.body} rows={8} maxLength={10000} helperText={formatHint} onChange={(body) => set(block, { body }, 'body')} />
+        {block.variant === 'columns' ? (
+          <>
+            <RichTextField label={t('website.fields.leftColumn', 'Left column')} value={block.body} onChange={(body) => set(block, { body }, 'body')} />
+            <RichTextField label={t('website.fields.rightColumn', 'Right column')} value={block.bodyRight || ''}
+              helperText={t('website.fields.rightColumnHint', 'Leave it empty and the left text flows over both columns.')}
+              onChange={(bodyRight) => set(block, { bodyRight }, 'bodyRight')} />
+          </>
+        ) : (
+          <RichTextField label={t('website.fields.body', 'Text')} value={block.body} onChange={(body) => set(block, { body }, 'body')} />
+        )}
       </>
     );
     break;

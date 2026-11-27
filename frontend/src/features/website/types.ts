@@ -28,7 +28,8 @@ export interface HeroBlock extends BlockBase {
   image: ImageRef | null;
   video: { source: 'asset'; id: string } | null;
 }
-export interface TextBlock extends BlockBase { type: 'text'; heading: string; body: string }
+// `body` (and `bodyRight`, two columns): sanitised HTML from the rich text editor.
+export interface TextBlock extends BlockBase { type: 'text'; heading: string; body: string; bodyRight?: string; format?: 'html' }
 export interface ImageTextBlock extends BlockBase {
   type: 'imageText';
   heading: string;

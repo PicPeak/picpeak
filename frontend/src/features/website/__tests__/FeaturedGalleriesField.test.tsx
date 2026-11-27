@@ -201,5 +201,16 @@ describe('chosen entries that are gone', () => {
     fireEvent.click(screen.getByRole('button', { name: 'None' }));
     expect(onChange.mock.calls.at(-1)?.[0]).toMatchObject({ spacing: 'none' });
   });
+
+  it('the text block is edited with the rich text editor; two columns get a left and a right one', async () => {
+    const onChange = vi.fn();
+    const text = { id: 't', type: 'text' as const, variant: 'columns', background: 'default' as const, heading: '', body: '<p>Left text</p>', bodyRight: '', format: 'html' as const };
+    render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={text} onChange={onChange} /></QueryClientProvider>);
+    expect(await screen.findByText('Left column')).toBeInTheDocument();
+    expect(screen.getByText('Right column')).toBeInTheDocument();
+    expect(screen.getAllByTitle(/Heading 2/)).toHaveLength(2);
+    expect(screen.getByText('Left text')).toBeInTheDocument();
+    expect(screen.getByText(/flows over both columns/)).toBeInTheDocument();
+  });
 });
 

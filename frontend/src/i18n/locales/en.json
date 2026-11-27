@@ -13206,7 +13206,10 @@
       "widthFull": "Full",
       "widthShort": "Short",
       "spacing": "Space around it",
-      "spacingNone": "None"
+      "spacingNone": "None",
+      "leftColumn": "Left column",
+      "rightColumn": "Right column",
+      "rightColumnHint": "Leave it empty and the left text flows over both columns."
     },
     "defaults": {
       "heroHeading": "Your headline",
