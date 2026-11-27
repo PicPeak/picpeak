@@ -35,13 +35,19 @@
  *
  * @param {string} client  knex client name (db.client.config.client)
  */
+// The milliseconds of a text timestamp, '.000' when it has none. Every branch
+// keeps them, so two shots a fraction of a second apart are not a tie for the
+// name tie-break to reorder (issue 2617); the second they fall in is compared
+// as before.
+const textMillis = (column) => `CASE WHEN substr(${column}, 20, 1) = '.' THEN substr(${column}, 20, 4) ELSE '.000' END`;
+
 const captureDateOrderSql = (client) => (client === 'pg'
   ? 'COALESCE(photos.captured_at, photos.uploaded_at)'
   : `CASE
-            WHEN typeof(photos.captured_at) IN ('integer', 'real') THEN datetime(photos.captured_at / 1000, 'unixepoch')
-            WHEN photos.captured_at IS NOT NULL THEN replace(replace(substr(photos.captured_at, 1, 19), 'T', ' '), 'Z', '')
-            WHEN typeof(photos.uploaded_at) IN ('integer', 'real') THEN datetime(photos.uploaded_at / 1000, 'unixepoch')
-            ELSE substr(photos.uploaded_at, 1, 19)
+            WHEN typeof(photos.captured_at) IN ('integer', 'real') THEN strftime('%Y-%m-%d %H:%M:%f', photos.captured_at / 1000.0, 'unixepoch')
+            WHEN photos.captured_at IS NOT NULL THEN replace(replace(substr(photos.captured_at, 1, 19), 'T', ' '), 'Z', '') || ${textMillis('photos.captured_at')}
+            WHEN typeof(photos.uploaded_at) IN ('integer', 'real') THEN strftime('%Y-%m-%d %H:%M:%f', photos.uploaded_at / 1000.0, 'unixepoch')
+            ELSE substr(photos.uploaded_at, 1, 19) || ${textMillis('photos.uploaded_at')}
           END`);
 
 module.exports = { captureDateOrderSql };

@@ -85,4 +85,13 @@ describe('useGalleryFiltering capture-date sort (issue 2617)', () => {
     const { result } = renderHook(() => useGalleryFiltering({ ...baseOptions, sourcePhotos: unpadded }));
     expect(result.current.map((p) => p.original_filename)).toEqual(['IMG_10.jpg', 'IMG_3.jpg', 'IMG_9.jpg', 'img_2.jpg']);
   });
+
+  it('keeps milliseconds apart before the name tie-break', () => {
+    const subSecond: Photo[] = [
+      makePhoto(1, null, '2026-06-03T10:00:00.900Z', 'A.mp4'),
+      makePhoto(2, null, '2026-06-03T10:00:00.100Z', 'Z.mp4'),
+    ];
+    const { result } = renderHook(() => useGalleryFiltering({ ...baseOptions, sourcePhotos: subSecond }));
+    expect(result.current.map((p) => p.filename)).toEqual(['Z.mp4', 'A.mp4']);
+  });
 });

@@ -165,6 +165,13 @@ describe('admin photo list sorting (issue 1739)', () => {
       expect((await list('sort=capture_date&order=desc')).map((p) => p.id)).toEqual([ids[0], ids[1], ids[3], ids[2]]);
     });
 
+    it('keeps milliseconds apart before the name tie-break (issue 2617)', async () => {
+      await addPhoto('Z.mp4', { original_filename: 'Z.mp4', captured_at: managed('2026-06-03T10:00:00.100Z') });
+      await addPhoto('A.mp4', { original_filename: 'A.mp4', captured_at: managed('2026-06-03T10:00:00.900Z') });
+      expect(await names('sort=capture_date&order=asc')).toEqual(['Z.mp4', 'A.mp4']);
+      expect(await names('sort=capture_date&order=desc')).toEqual(['A.mp4', 'Z.mp4']);
+    });
+
     it('compares burst names plainly, as the browser does (issue 2617)', async () => {
       const at = managed('2026-06-03T13:15:42.000Z');
       for (const name of ['IMG_9.jpg', 'IMG_10.jpg', 'img_2.jpg', 'IMG_3.jpg']) {

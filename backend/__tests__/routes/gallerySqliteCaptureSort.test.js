@@ -170,6 +170,17 @@ describe('capture-date ordering on SQLite (#1172)', () => {
     expect(await orderedIds('desc')).toEqual([ids[0], ids[1], ids[3], ids[2]]);
   });
 
+  test('milliseconds apart are not a tie for the name to break (issue 2617)', async () => {
+    // Both storage classes: ISO text and the managed epoch integer.
+    for (const store of [(iso) => iso, managed]) {
+      await db('photos').where({ event_id: eventId }).del();
+      await addPhoto('Z.mp4', store('2026-06-03T10:00:00.100Z'), '2026-09-01 00:00:00');
+      await addPhoto('A.mp4', store('2026-06-03T10:00:00.900Z'), '2026-09-01 00:00:00');
+      expect(await orderedFilenames('asc')).toEqual(['Z.mp4', 'A.mp4']);
+      expect(await orderedFilenames('desc')).toEqual(['A.mp4', 'Z.mp4']);
+    }
+  });
+
   test('a burst without original names orders by the stored camera name (issue 2617)', async () => {
     // External imports keep the camera name in filename, original_filename NULL.
     const at = managed('2026-06-03T13:15:42Z');
