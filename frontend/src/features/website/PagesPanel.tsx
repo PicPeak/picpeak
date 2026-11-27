@@ -91,7 +91,8 @@ export const PagesPanel: React.FC<PagesPanelProps> = ({ doc, pageId, onSelectPag
           getId={(p) => p.id}
           getLabel={(p) => p.title}
           selectedId={page.id}
-          onMove={(from, to) => update((d) => ({ ...d, pages: moveItem(d.pages, from, to) }))}
+          readOnly={readOnly}
+          onMove={(from, to) => { if (!readOnly) update((d) => ({ ...d, pages: moveItem(d.pages, from, to) })); }}
           renderItem={(p) => (
             <button type="button" className="w-full text-left px-1 py-1" onClick={() => onSelectPage(p.id)} aria-current={p.id === page.id}>
               <span className="flex items-center gap-1.5 min-w-0">

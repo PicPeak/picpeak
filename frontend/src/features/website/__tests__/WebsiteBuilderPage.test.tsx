@@ -172,6 +172,18 @@ describe('WebsiteBuilderPage', () => {
     expect(screen.queryByRole('button', { name: 'Add block' })).toBeNull();
   });
 
+  it('offers no reordering of blocks or pages without cms.edit', async () => {
+    vi.mocked(usePermission).mockImplementation((p: string) => p !== 'cms.edit');
+    renderPage();
+    await screen.findByText('Blocks on “Home”');
+    expect(screen.queryByRole('button', { name: /Move “.*” (up|down)/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /drag, or Space/ })).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: /Pages/ }));
+    expect(screen.getByText('/about')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Move “.*” (up|down)/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /drag, or Space/ })).toBeNull();
+  });
+
   it('refuses a reserved page address before saving', async () => {
     renderPage();
     await screen.findByText('Blocks on “Home”');

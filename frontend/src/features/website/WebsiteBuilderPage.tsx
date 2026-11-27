@@ -266,7 +266,8 @@ export const WebsiteBuilderPage: React.FC = () => {
           items={page.blocks}
           getId={(b) => b.id}
           getLabel={(b) => blockLabel(t, b.type)}
-          onMove={(from, to) => setPageBlocks((blocks) => moveItem(blocks, from, to))}
+          readOnly={!canEdit}
+          onMove={(from, to) => { if (canEdit) setPageBlocks((blocks) => moveItem(blocks, from, to)); }}
           renderItem={(b) => {
             const Icon = BLOCK_ICONS[b.type];
             return (

@@ -23,13 +23,19 @@ interface RowProps {
   onMove: (from: number, to: number) => void;
   children: React.ReactNode;
   selected?: boolean;
+  readOnly?: boolean;
 }
 
 const iconButton = 'inline-flex items-center justify-center w-7 h-7 rounded-md text-faint hover:text-body hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent';
 
-const Row: React.FC<RowProps> = ({ id, index, count, label, onMove, children, selected }) => {
+const Row: React.FC<RowProps> = ({ id, index, count, label, onMove, children, selected, readOnly }) => {
   const { t } = useTranslation();
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: readOnly });
+  if (readOnly) {
+    return (
+      <li className={`rounded-lg border bg-panel px-1.5 py-1 ${selected ? 'border-accent' : 'border-line'}`}>{children}</li>
+    );
+  }
   return (
     <li
       ref={setNodeRef}
@@ -66,9 +72,11 @@ interface SortableListProps<T> {
   onMove: (from: number, to: number) => void;
   renderItem: (item: T, index: number) => React.ReactNode;
   selectedId?: string | null;
+  /** Shown in order, without the handle and the move buttons. */
+  readOnly?: boolean;
 }
 
-export function SortableList<T>({ items, getId, getLabel, onMove, renderItem, selectedId }: SortableListProps<T>) {
+export function SortableList<T>({ items, getId, getLabel, onMove, renderItem, selectedId, readOnly = false }: SortableListProps<T>) {
   const { t } = useTranslation();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -76,7 +84,7 @@ export function SortableList<T>({ items, getId, getLabel, onMove, renderItem, se
   );
   const ids = items.map(getId);
   const onDragEnd = ({ active, over }: DragEndEvent) => {
-    if (!over || active.id === over.id) return;
+    if (readOnly || !over || active.id === over.id) return;
     onMove(ids.indexOf(String(active.id)), ids.indexOf(String(over.id)));
   };
   return (
@@ -94,7 +102,7 @@ export function SortableList<T>({ items, getId, getLabel, onMove, renderItem, se
       <SortableContext items={ids} strategy={verticalListSortingStrategy}>
         <ol className="space-y-1.5">
           {items.map((item, index) => (
-            <Row key={getId(item)} id={getId(item)} index={index} count={items.length} label={getLabel(item)} onMove={onMove} selected={selectedId === getId(item)}>
+            <Row key={getId(item)} id={getId(item)} index={index} count={items.length} label={getLabel(item)} onMove={onMove} selected={selectedId === getId(item)} readOnly={readOnly}>
               {renderItem(item, index)}
             </Row>
           ))}
