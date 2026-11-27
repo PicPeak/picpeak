@@ -188,7 +188,12 @@ describe('a JPEG named like a camera RAW', () => {
   });
 });
 
-describe('embedded images of the source', () => {
+// Metadata goes onto an edited render through exiftool (an allowlist): the
+// CI installs it; elsewhere these run where it is on PATH.
+const HAVE_EXIFTOOL = !require('child_process').spawnSync('exiftool', ['-ver'], { stdio: 'ignore' }).error;
+const describeExif = HAVE_EXIFTOOL || process.env.PICPEAK_REQUIRE_DCRAW === 'true' ? describe : describe.skip;
+
+describeExif('embedded images of the source', () => {
   /** An EXIF block (little-endian TIFF) with a camera name in IFD0 and `thumb` as the IFD1 thumbnail. */
   const exifWithThumbnail = (thumb) => {
     const make = Buffer.from('Leakcam\0', 'latin1');
@@ -221,9 +226,38 @@ describe('embedded images of the source', () => {
     expect(buffer.indexOf(thumb)).toBe(-1);
     expect(buffer.indexOf('U0VDUkVUVEhVTUI=')).toBe(-1);
     expect(await require('exifr').thumbnail(buffer)).toBeUndefined();
-    // The text metadata stays.
+    // The camera stays; tags off the allowlist go.
     expect(buffer.indexOf('Leakcam')).toBeGreaterThan(-1);
-    expect(buffer.indexOf('CreatorTool="Studio"')).toBeGreaterThan(-1);
+    expect(buffer.indexOf('CreatorTool')).toBe(-1);
+  });
+
+  it('keeps only the allowlisted metadata: no face regions, people, keywords, embedded XMP images or maker notes', async () => {
+    const exif = await sharp(originalBytes).withExif({
+      IFD0: { Artist: 'Ann Photographer', Copyright: '(c) Studio Ann', Make: 'Leakcam', Model: 'L1' },
+      IFD2: { DateTimeOriginal: '2026:06:01 09:45:03', ISOSpeedRatings: '160', MakerNote: 'SECRETMAKERNOTE' },
+    }).jpeg().toBuffer();
+    const xmp = Buffer.from('<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+      + '<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:mwg-rs="http://www.metadataworkinggroup.com/schemas/regions/"'
+      + ' xmlns:stArea="http://ns.adobe.com/xmp/sType/Area#" xmlns:Iptc4xmpExt="http://iptc.org/std/Iptc4xmpExt/2008-02-29/"'
+      + ' xmlns:GImage="http://ns.google.com/photos/1.0/image/" GImage:Mime="image/jpeg" GImage:Data="SECRETGIMAGEDATA">'
+      + '<dc:creator><rdf:Seq><rdf:li>Ann Photographer</rdf:li></rdf:Seq></dc:creator>'
+      + '<dc:rights><rdf:Alt><rdf:li xml:lang="x-default">All rights reserved</rdf:li></rdf:Alt></dc:rights>'
+      + '<dc:subject><rdf:Bag><rdf:li>secretkeyword</rdf:li></rdf:Bag></dc:subject>'
+      + '<Iptc4xmpExt:PersonInImage><rdf:Bag><rdf:li>Secret Person</rdf:li></rdf:Bag></Iptc4xmpExt:PersonInImage>'
+      + '<mwg-rs:Regions rdf:parseType="Resource"><mwg-rs:RegionList><rdf:Bag><rdf:li rdf:parseType="Resource">'
+      + '<mwg-rs:Name>Secret Face</mwg-rs:Name><mwg-rs:Type>Face</mwg-rs:Type></rdf:li></rdf:Bag></mwg-rs:RegionList></mwg-rs:Regions>'
+      + '</rdf:Description></rdf:RDF></x:xmpmeta>', 'utf8');
+    const meta = await sharp(exif).metadata();
+    const source = require('../../src/services/imageProcessor').withSourceMetadata(originalBytes, { exif: meta.exif, xmp });
+    fs.writeFileSync(storagePath('events/active/edit-card/tagged.jpg'), source);
+    const photo = { ...(await row()), path: 'edit-card/tagged.jpg', edit_rev: 1 };
+    const { buffer } = await photoEdits().renderEditedJpeg(photo, validated({ exposure: 0.2 }));
+    for (const secret of ['Secret Face', 'Secret Person', 'secretkeyword', 'SECRETGIMAGEDATA', 'SECRETMAKERNOTE', 'RegionList', 'PersonInImage']) {
+      expect(buffer.indexOf(secret)).toBe(-1);
+    }
+    for (const kept of ['Ann Photographer', '(c) Studio Ann', 'All rights reserved', '2026:06:01 09:45:03', 'Leakcam']) {
+      expect(buffer.indexOf(kept)).toBeGreaterThan(-1);
+    }
   });
 });
 

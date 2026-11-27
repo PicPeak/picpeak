@@ -343,7 +343,7 @@ async function applyContainerOrientation(previewPath, orientation, previewOrient
  * @param {Buffer} jpeg     the finished rendition
  * @returns {Promise<Buffer>}
  */
-async function withRawContainerTags(rawPath, jpeg, { withoutImages = false } = {}) {
+async function withRawContainerTags(rawPath, jpeg) {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-rawtags-'));
   const target = path.join(dir, 'download.jpg');
   try {
@@ -356,11 +356,6 @@ async function withRawContainerTags(rawPath, jpeg, { withoutImages = false } = {
     await runExiftool([
       '-m', '-TagsFromFile', source, '-all:all',
       '--Orientation', '--ThumbnailImage', '--PreviewImage', '--JpgFromRaw',
-      // An edited render (issue 2619) carries no image of the original at
-      // all: no thumbnail group, maker note (camera previews), MPF or
-      // embedded XMP / Photoshop thumbnails.
-      ...(withoutImages ? ['--IFD1:all', '--MakerNotes:all', '--MPF:all', '--Photoshop:all', '--ThumbnailTIFF', '--PreviewTIFF',
-        '--OtherImage', '--XMP-xmp:Thumbnails*', '--XMP-photoshop:all'] : []),
       '-overwrite_original', target,
     ]);
     return await fsp.readFile(target);
@@ -370,6 +365,51 @@ async function withRawContainerTags(rawPath, jpeg, { withoutImages = false } = {
       `Could not copy the metadata of ${path.basename(rawPath)} onto its download: `
       + `${err.message}. It ships without its EXIF, XMP and IPTC.`
     );
+    return jpeg;
+  } finally {
+    await removeTempDir(dir);
+  }
+}
+
+/**
+ * The metadata an edited photo (issue 2619) carries of its source: an
+ * allowlist. Camera, lens and exposure, the capture date, the author,
+ * copyright, title and description, in EXIF, XMP (dc) and IPTC. Nothing
+ * else: no face regions, people, keywords, GPS, maker notes or embedded
+ * images (thumbnails, previews, Google depth or image data), any of which
+ * can show or name what the edit cropped away. No orientation either: the
+ * render is upright.
+ */
+const EDIT_METADATA_TAGS = [
+  'EXIF:Make', 'EXIF:Model', 'EXIF:LensMake', 'EXIF:LensModel',
+  'EXIF:ExposureTime', 'EXIF:FNumber', 'EXIF:ISO', 'EXIF:FocalLength', 'EXIF:FocalLengthIn35mmFormat',
+  'EXIF:ExposureProgram', 'EXIF:ExposureCompensation', 'EXIF:MeteringMode', 'EXIF:Flash', 'EXIF:WhiteBalance',
+  'EXIF:DateTimeOriginal', 'EXIF:CreateDate', 'EXIF:OffsetTime', 'EXIF:OffsetTimeOriginal', 'EXIF:OffsetTimeDigitized',
+  'EXIF:SubSecTimeOriginal', 'EXIF:Artist', 'EXIF:Copyright', 'EXIF:ImageDescription',
+  'XMP-dc:Creator', 'XMP-dc:Rights', 'XMP-dc:Title', 'XMP-dc:Description',
+  'IPTC:By-line', 'IPTC:CopyrightNotice', 'IPTC:Caption-Abstract',
+];
+
+/**
+ * `jpeg` (an edited render, no metadata of its own) with the allowlisted
+ * metadata of the file at `sourcePath`, a JPEG, HEIC or camera RAW. When
+ * exiftool cannot copy it the render goes out without metadata, never with
+ * more.
+ */
+async function withAllowedMetadata(sourcePath, jpeg) {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-edittags-'));
+  const target = path.join(dir, 'edited.jpg');
+  try {
+    await fsp.writeFile(target, jpeg);
+    // A link under a fixed name: exiftool reads %d, %f and %e in a
+    // -TagsFromFile name as a format (see withRawContainerTags).
+    const source = path.join(dir, `source${path.extname(sourcePath)}`);
+    await fsp.symlink(path.resolve(sourcePath), source);
+    await runExiftool(['-m', '-TagsFromFile', source, ...EDIT_METADATA_TAGS.map((tag) => `-${tag}`), '-overwrite_original', target]);
+    return await fsp.readFile(target);
+  } catch (err) {
+    if (isResourceError(err)) throw err;
+    logger.warn(`Could not copy the metadata of ${path.basename(sourcePath)} onto its edit: ${err.message}. It ships without metadata.`);
     return jpeg;
   } finally {
     await removeTempDir(dir);
@@ -2991,6 +3031,7 @@ module.exports = {
   extractRawPreview,
   withProcessableImage,
   withRawContainerTags,
+  withAllowedMetadata,
   withSourceMetadata,
   heifStandIn,
   prefixedBasename,
