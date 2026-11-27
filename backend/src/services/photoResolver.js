@@ -4,6 +4,19 @@ const { safePathJoin } = require('../utils/fileSecurityUtils');
 
 const { getStoragePath } = require('../config/storage');
 
+// The marker photoEdits.deliveredPhoto sets on its copy of a row; never a
+// column, so a row read from the database cannot carry it. Checked against
+// the render key shape, the only files it may name.
+const DELIVERY_KEY = 'edit_delivery_key';
+const RENDER_KEY = /^edits\/edit_p(\d+)_r\d+_[0-9a-f]{12}\.jpg$/;
+function deliveredKey(photo) {
+  const key = photo[DELIVERY_KEY];
+  if (key === undefined) return null;
+  const match = typeof key === 'string' && RENDER_KEY.exec(key);
+  if (!match || Number(match[1]) !== Number(photo.id)) throw new Error(`Invalid edited render key for photo ${photo.id}`);
+  return key;
+}
+
 /**
  * Resolve a managed photo's relative key under the storage backend.
  * Returns null for external-mode photos (those never live in the managed
@@ -19,6 +32,10 @@ const { getStoragePath } = require('../config/storage');
  */
 function resolvePhotoStorageKey(event, photo) {
   if (!event || !photo) throw new Error('resolvePhotoStorageKey requires event and photo');
+  // A row as guests receive it (photoEdits.deliveredPhoto, issue 2619) names
+  // the edited render in managed storage.
+  const delivered = deliveredKey(photo);
+  if (delivered) return delivered;
 
   const mode = (photo.source_origin || event.source_mode || 'managed');
   if (mode === 'reference' || mode === 'external') {
@@ -49,6 +66,8 @@ function isManagedOriginalKey(key) {
  */
 function resolvePhotoFilePath(event, photo) {
   if (!event || !photo) throw new Error('resolvePhotoFilePath requires event and photo');
+  const delivered = deliveredKey(photo);
+  if (delivered) return safePathJoin(getStoragePath(), delivered);
 
   // IMPORTANT: photo.source_origin takes precedence over event.source_mode
   // This allows events in "reference" mode to have mixed sources:
@@ -93,6 +112,9 @@ function resolvePhotoFilePath(event, photo) {
 }
 
 module.exports = {
+  DELIVERY_KEY,
+  RENDER_KEY,
+  deliveredKey,
   isManagedOriginalKey,
   resolvePhotoFilePath,
   resolvePhotoStorageKey,

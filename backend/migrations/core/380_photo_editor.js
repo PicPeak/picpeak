@@ -1,0 +1,62 @@
+/**
+ * Issue 2619: a non-destructive basic photo editor in the admin.
+ *
+ * photos.edit_params is the edit as a small JSON parameter set (see
+ * src/utils/photoEditMath.js); NULL is no edit. The original file is never
+ * rewritten. edit_rev counts saves (an edit, a batch copy and a reset each
+ * add one) and rides in guest image URLs, so a browser fetches the new image;
+ * edit_applied_rev is the revision whose renditions are in place. A row with
+ * edit_rev > edit_applied_rev is the background queue (photoEdits.js), so a
+ * restart picks up where it stopped.
+ *
+ * edit_render_path is the full-size edited JPEG guests download, a cache
+ * rendered from the original and the params (rebuilt when it is missing);
+ * edit_width / edit_height its size, which guests are shown. photos.width /
+ * height stay the original's: face boxes are in its pixels.
+ *
+ * photo_edit_presets are the studio's saved edits, shared by every admin.
+ * feature_flags.photoEditor gates the editor, default off.
+ *
+ * Additive only; down() drops what up() added.
+ */
+exports.up = async function up(knex) {
+  const columns = [
+    ['edit_params', (t) => t.text('edit_params').nullable()],
+    ['edit_rev', (t) => t.integer('edit_rev').notNullable().defaultTo(0)],
+    ['edit_applied_rev', (t) => t.integer('edit_applied_rev').notNullable().defaultTo(0)],
+    ['edit_render_path', (t) => t.string('edit_render_path', 512).nullable()],
+    ['edit_width', (t) => t.integer('edit_width').nullable()],
+    ['edit_height', (t) => t.integer('edit_height').nullable()],
+  ];
+  for (const [name, add] of columns) {
+    if (!(await knex.schema.hasColumn('photos', name))) {
+      await knex.schema.alterTable('photos', add);
+    }
+  }
+  if (!(await knex.schema.hasTable('photo_edit_presets'))) {
+    await knex.schema.createTable('photo_edit_presets', (t) => {
+      t.increments('id').primary();
+      t.string('name', 80).notNullable();
+      t.text('params').notNullable();
+      t.integer('created_by_admin_id').nullable();
+      t.timestamp('created_at').defaultTo(knex.fn.now());
+      t.timestamp('updated_at').defaultTo(knex.fn.now());
+    });
+  }
+  if (await knex.schema.hasTable('feature_flags')) {
+    const flag = await knex('feature_flags').where({ key: 'photoEditor' }).first();
+    if (!flag) await knex('feature_flags').insert({ key: 'photoEditor', value: false });
+  }
+};
+
+exports.down = async function down(knex) {
+  if (await knex.schema.hasTable('feature_flags')) {
+    await knex('feature_flags').where({ key: 'photoEditor' }).del();
+  }
+  await knex.schema.dropTableIfExists('photo_edit_presets');
+  for (const name of ['edit_height', 'edit_width', 'edit_render_path', 'edit_applied_rev', 'edit_rev', 'edit_params']) {
+    if (await knex.schema.hasColumn('photos', name)) {
+      await knex.schema.alterTable('photos', (t) => t.dropColumn(name));
+    }
+  }
+};
