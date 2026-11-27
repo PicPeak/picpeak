@@ -190,4 +190,20 @@ describe('gallery archive and the download-all cache', () => {
     expect(photo.external_relpath).toBe('shoot/raw/photo-0.jpg');
     expect(Boolean(photo.selection_hidden)).toBe(true);
   });
+
+  it('drops a RAW develop preview of a photo that has no edited render (issue 2619)', async () => {
+    const id = await makeEvent('archive-raw-preview', 0);
+    const key = `events/active/archive-raw-preview/individual/shot.cr3`;
+    await storage.put(key, Buffer.from('raw bytes'), { contentType: 'image/x-canon-cr3' });
+    const photoId = unwrap(await db('photos').insert({
+      event_id: id, filename: 'shot.cr3', path: key, type: 'individual', size_bytes: 9,
+      source_origin: 'managed', mime_type: 'image/x-canon-cr3', uploaded_at: new Date().toISOString(),
+    }).returning('id'));
+    // Opening the editor on a RAW caches its develop preview; nothing was saved.
+    const previewKey = require('../../src/services/rawDevelop').previewKey(await db('photos').where({ id: photoId }).first());
+    await storage.put(previewKey, Buffer.from('PPDV preview'));
+    await archiveEvent(await db('events').where({ id }).first());
+    expect(await storage.stat(previewKey)).toBeFalsy();
+  });
 });
+
