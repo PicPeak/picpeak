@@ -122,7 +122,9 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
   const [display, setDisplay] = useState({ width: 0, height: 0 });
 
   const stageRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Holds the renderer's canvas: the renderer picks it (a fallback needs a
+  // fresh one), so React does not own it.
+  const canvasHostRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<EditRenderer | null>(null);
   const frameRef = useRef(0);
   const latest = useRef({ params, mode: 'edit' as ViewMode });
@@ -140,17 +142,18 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
       try {
         const state = await photoEditorService.get(eventId, photo.id);
         // An answer for a photo no longer shown changes nothing.
-        if (abort.signal.aborted || !canvasRef.current) return;
+        if (abort.signal.aborted || !canvasHostRef.current) return;
         let renderer: EditRenderer | null = null;
         rendererRef.current?.dispose();
         rendererRef.current = null;
+        canvasHostRef.current.replaceChildren();
         // A RAW the server develops: its 16-bit linear develop, on WebGL2.
         // Without WebGL2 it falls back to the 8-bit base (the camera's preview).
         if (state.raw) {
           const develop = await photoEditorService.developPreview(eventId, photo.id, state.source_version, abort.signal);
-          if (abort.signal.aborted || !canvasRef.current) return;
+          if (abort.signal.aborted || !canvasHostRef.current) return;
           try {
-            renderer = new EditRenderer(canvasRef.current, develop);
+            renderer = new EditRenderer(develop);
           } catch {
             renderer = null;
           }
@@ -158,9 +161,12 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
         if (!renderer) {
           const blob = await photoEditorService.baseImage(eventId, photo.id, state.source_version, abort.signal);
           const bitmap = await createImageBitmap(blob);
-          if (abort.signal.aborted || !canvasRef.current) return;
-          renderer = new EditRenderer(canvasRef.current, bitmap);
+          if (abort.signal.aborted || !canvasHostRef.current) return;
+          // Throws when this browser has no way to draw it: a load error.
+          renderer = new EditRenderer(bitmap);
         }
+        renderer.canvas.className = 'block w-full h-full';
+        canvasHostRef.current.replaceChildren(renderer.canvas);
         rendererRef.current = renderer;
         setRaw(state.raw);
         setBackend(renderer.backend);
@@ -471,10 +477,10 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
         {/* Stage */}
         <div ref={stageRef} className="relative flex flex-1 min-h-[40vh] min-w-0 items-center justify-center p-4">
           <div className="relative" style={{ width: display.width || undefined, height: display.height || undefined }}>
-            <canvas
-              key={photo.id}
-              ref={canvasRef}
-              className="block w-full h-full"
+            <div
+              ref={canvasHostRef}
+              role="img"
+              className="h-full w-full"
               aria-label={before ? t('photoEditor.canvas.before', 'Original') : t('photoEditor.canvas.after', 'Edited preview')}
               data-backend={backend}
             />

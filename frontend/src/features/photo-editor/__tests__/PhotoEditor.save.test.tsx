@@ -41,6 +41,7 @@ vi.mock('../renderer', () => ({
     width = 600;
     height = 400;
     linear = false;
+    canvas = document.createElement('canvas');
     render() { return { width: 600, height: 400, crop: { left: 0, top: 0, width: 600, height: 400 } }; }
     toneStats() { return { p005: -8, p10: -6, p50: -3, p99: -0.5, p995: -0.2, mean: -3, clipped: 0 }; }
     dispose() {}

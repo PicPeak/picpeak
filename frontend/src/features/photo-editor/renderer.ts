@@ -78,7 +78,12 @@ export class EditRenderer {
   /** True when the base is a RAW develop (linear light, the RAW look). */
   readonly linear: boolean;
   readonly exposureBias: number;
-  private readonly canvas: HTMLCanvasElement;
+  /**
+   * The canvas it draws on, its own: the editor mounts it. A canvas keeps the
+   * kind of context it first gave out, so each fallback below needs a fresh
+   * one; a canvas the caller passed in could not be swapped.
+   */
+  readonly canvas: HTMLCanvasElement;
   /** The base as linear light, RGB: textures, statistics and the CPU path read it. */
   private readonly light: Float32Array;
   private gl: GL | null = null;
@@ -89,8 +94,7 @@ export class EditRenderer {
   private ctx2d: CanvasRenderingContext2D | null = null;
   private prepared: { params: EditParams; prep: Prepared } | null = null;
 
-  constructor(canvas: HTMLCanvasElement, source: Source | RawBase, { allowGl = true } = {}) {
-    this.canvas = canvas;
+  constructor(source: Source | RawBase, { allowGl = true } = {}) {
     const raw = 'data' in source ? source : null;
     this.linear = Boolean(raw);
     this.exposureBias = raw ? raw.exposureBias : 0;
@@ -105,15 +109,28 @@ export class EditRenderer {
       this.light = linearPixels({ rgba: readRgba(image, this.width, this.height) }, this.width * this.height);
     }
     const options = { antialias: false, premultipliedAlpha: false, preserveDrawingBuffer: true, alpha: false };
+    let canvas = document.createElement('canvas');
     const gl2 = allowGl ? (canvas.getContext('webgl2', options) as WebGL2RenderingContext | null) : null;
-    const gl1 = !gl2 && allowGl && !raw ? (canvas.getContext('webgl', options) as WebGLRenderingContext | null) : null;
     if (gl2 && this.initGl(gl2, source, true)) this.backend = 'webgl2';
-    else if (gl1 && this.initGl(gl1, source, false)) this.backend = 'webgl';
     else {
       if (raw) throw new Error('A RAW develop needs WebGL 2');
-      this.backend = 'canvas';
-      this.ctx2d = canvas.getContext('2d');
+      if (gl2) {
+        this.release(gl2);
+        canvas = document.createElement('canvas');
+      }
+      const gl1 = allowGl ? (canvas.getContext('webgl', options) as WebGLRenderingContext | null) : null;
+      if (gl1 && this.initGl(gl1, source, false)) this.backend = 'webgl';
+      else {
+        if (gl1) {
+          this.release(gl1);
+          canvas = document.createElement('canvas');
+        }
+        this.ctx2d = canvas.getContext('2d');
+        if (!this.ctx2d) throw new Error('This browser cannot draw the preview');
+        this.backend = 'canvas';
+      }
     }
+    this.canvas = canvas;
   }
 
   /** Levels of the base for Auto tone (linear luminance, after the RAW baseline). */
@@ -294,12 +311,16 @@ export class EditRenderer {
   }
 
   dispose() {
-    const gl = this.gl;
-    if (gl) {
-      for (const texture of this.textures) gl.deleteTexture(texture);
-      if (this.program) gl.deleteProgram(this.program);
-      gl.getExtension('WEBGL_lose_context')?.loseContext();
-    }
+    if (this.gl) this.release(this.gl);
+  }
+
+  /** Free a context's resources: a failed set-up's too, browsers cap live contexts. */
+  private release(gl: GL) {
+    for (const texture of this.textures) gl.deleteTexture(texture);
+    if (this.program) gl.deleteProgram(this.program);
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    this.textures = [];
+    this.program = null;
     this.gl = null;
   }
 }
