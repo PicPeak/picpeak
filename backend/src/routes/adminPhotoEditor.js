@@ -5,7 +5,7 @@
  *   GET  /:eventId/photos/:photoId/edit/base   the unedited photo at 1920 px, the editor's canvas
  *   PUT  /:eventId/photos/:photoId/edit        save an edit ({ params }), or reset it ({ params: null })
  *   POST /:eventId/photos/edit/batch           copy settings to photos ({ photo_ids, params, parts })
- *   GET  /:eventId/photos/edit/status          the background apply's progress for the gallery (?ids= for given photos)
+ *   POST /:eventId/photos/edit/retry           try failed renders again now ({ photo_ids })
  *   POST /:eventId/photos/edit/develop         develop RAW photos with the default look ({ photo_ids } or { all: true })
  *   GET  /:eventId/photos/:photoId/edit/develop  a RAW photo's 16-bit linear develop preview, the editor's canvas for it
  *
