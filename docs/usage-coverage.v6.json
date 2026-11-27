@@ -2270,6 +2270,42 @@
         "POST /requests",
         "GET /requests/status/:token"
       ]
+    },
+    "adminWebsite.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Website builder admin (issue 2618) is not reported as its own capability: no page content, slugs, blocks, images, gallery opt-ins or publish counts.",
+      "route_signatures": [
+        "GET /",
+        "PUT /draft",
+        "POST /publish",
+        "POST /discard",
+        "POST /preview",
+        "POST /media/resolve",
+        "GET /galleries",
+        "PUT /galleries/:id",
+        "GET /galleries/:id/photos",
+        "GET /assets",
+        "POST /assets",
+        "DELETE /assets/:id",
+        "GET /packages"
+      ]
+    },
+    "publicWebsite.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public website visitor surface (contact form): no product-usage middleware, counters, visitor data or submission counts.",
+      "route_signatures": [
+        "POST /contact"
+      ]
+    },
+    "publicWebsiteMedia.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public website image and video delivery: visitor traffic, no product-usage middleware, counters or report triggers.",
+      "route_signatures": [
+        "GET /:token/:size"
+      ]
     }
   },
   "feature_flags": {
@@ -2459,6 +2495,10 @@
     "embed": {
       "signals": [],
       "reason": "Excluded: the website embed is not reported as its own capability; no flag value, embedding websites or view counts."
+    },
+    "websiteBuilder": {
+      "signals": [],
+      "reason": "Excluded: the website builder is not reported as its own capability; no flag value, pages, visitors or submissions."
     }
   },
   "excluded_runtime": [

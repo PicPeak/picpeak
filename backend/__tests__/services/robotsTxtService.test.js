@@ -16,6 +16,11 @@ jest.mock('../../src/database/db', () => ({
   })),
 }));
 
+// The website builder (issue 2618) is off unless a case turns it on.
+const mockWebsiteActive = jest.fn(async () => false);
+jest.mock('../../src/services/website/service', () => ({ isWebsiteActive: () => mockWebsiteActive() }));
+jest.mock('../../src/utils/frontendUrl', () => ({ getFrontendBaseUrl: async () => 'https://studio.example' }));
+
 const { generateRobotsTxt, clearRobotsTxtCache } = require('../../src/services/robotsTxtService');
 
 const robots = async (settings) => {
@@ -47,11 +52,20 @@ describe('robots.txt', () => {
 
   it('with indexing off blocks the media paths, which carry no noindex', async () => {
     expect(forEveryone(await robots({ seo_allow_indexing: false })))
-      .toEqual(['Disallow: /api', 'Disallow: /photos', 'Disallow: /thumbnails', 'Disallow: /uploads', 'Disallow: /og']);
+      .toEqual(['Disallow: /api', 'Disallow: /photos', 'Disallow: /thumbnails', 'Disallow: /uploads', 'Disallow: /og', 'Disallow: /site-media']);
   });
 
   it('with indexing on blocks the API only', async () => {
     expect(forEveryone(await robots({ seo_allow_indexing: true }))).toEqual(['Disallow: /api']);
+  });
+
+  it('names the website sitemap while the website is live and indexable', async () => {
+    mockWebsiteActive.mockResolvedValue(true);
+    expect(await robots({ seo_allow_indexing: true })).toContain('Sitemap: https://studio.example/sitemap.xml');
+    expect(await robots({ seo_allow_indexing: false })).not.toContain('Sitemap: https://studio.example/sitemap.xml');
+    expect(await robots({ seo_allow_indexing: true, seo_sitemap_url: 'https://cdn.example/s.xml' })).not.toContain('Sitemap: https://studio.example/sitemap.xml');
+    mockWebsiteActive.mockResolvedValue(false);
+    expect(await robots({ seo_allow_indexing: true })).not.toContain('Sitemap: https://studio.example/sitemap.xml');
   });
 
   it('still shuts AI crawlers out entirely', async () => {

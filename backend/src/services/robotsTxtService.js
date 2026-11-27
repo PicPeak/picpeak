@@ -43,7 +43,16 @@ async function generateRobotsTxt() {
   const customRules = Array.isArray(settings.seo_custom_rules)
     ? settings.seo_custom_rules
     : [];
-  const sitemapUrl = settings.seo_sitemap_url || '';
+  let sitemapUrl = settings.seo_sitemap_url || '';
+  // A live website (issue 2618) brings its own sitemap; an explicit URL in
+  // the SEO settings still wins.
+  if (!sitemapUrl && allowIndexing) {
+    const website = require('./website/service');
+    if (await website.isWebsiteActive().catch(() => false)) {
+      const base = await require('../utils/frontendUrl').getFrontendBaseUrl().catch(() => '');
+      if (base) sitemapUrl = `${base}/sitemap.xml`;
+    }
+  }
 
   const lines = [];
 
@@ -66,6 +75,7 @@ async function generateRobotsTxt() {
     lines.push('Disallow: /thumbnails');
     lines.push('Disallow: /uploads');
     lines.push('Disallow: /og');
+    lines.push('Disallow: /site-media');
     lines.push('');
   }
 

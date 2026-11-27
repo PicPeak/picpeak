@@ -469,8 +469,55 @@ function buildPublicSiteDocument(payload) {
 </html>`;
 }
 
+// The website builder's pages (issue 2618). Same headers as the single
+// page; the CSP adds media-src for a hero video. Answers 304 on a matching
+// validator, and the noindex header travels with the cached page.
+const WEBSITE_CSP = 'default-src \'self\'; frame-ancestors \'none\'; img-src \'self\' data: https:; media-src \'self\'; style-src \'self\' \'unsafe-inline\' https:; font-src \'self\' https: data:; object-src \'none\'; script-src \'none\'; form-action \'self\'; base-uri \'none\'';
+function sendWebsitePage(req, res, page) {
+  if (page.status === 301) {
+    res.redirect(301, page.location);
+    return;
+  }
+  if (page.noindex) res.setHeader('X-Robots-Tag', 'noindex');
+  if (req.headers['if-none-match'] === page.etag) {
+    res.status(304).end();
+    return;
+  }
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=30, must-revalidate');
+  res.setHeader('ETag', page.etag);
+  res.setHeader('Vary', 'Accept-Encoding');
+  res.setHeader('Content-Security-Policy', WEBSITE_CSP);
+  res.status(200).send(page.html);
+}
+
+// `/<slug>` of a published website page. Anything else (the flag off, no such
+// page) falls through to the routes below exactly as before.
+async function handleWebsitePageRequest(req, res, next) {
+  try {
+    // Paths the app owns (/health, /admin, ...) never cost a lookup.
+    if (require('./src/services/website/document').RESERVED_SLUGS.has(req.params[0])) return next();
+    const page = await require('./src/services/website/service').resolvePublicPage(req.params[0]);
+    if (!page) return next();
+    return sendWebsitePage(req, res, page);
+  } catch (error) {
+    logger.error('Failed to render website page', { error: error.message });
+    return next();
+  }
+}
+
 async function handlePublicSiteRequest(req, res, next) {
   try {
+    const websitePage = await require('./src/services/website/service').resolvePublicPage('')
+      .catch((error) => {
+        logger.error('Failed to render website home page', { error: error.message });
+        return null;
+      });
+    if (websitePage) {
+      sendWebsitePage(req, res, websitePage);
+      return;
+    }
+
     const payload = await getPublicSitePayload();
 
     if (!payload.enabled) {
@@ -834,6 +881,29 @@ app.get('/robots.txt', async (req, res) => {
   }
 });
 
+// sitemap.xml of the published website (issue 2618); 404 while the builder
+// is not live, as before.
+app.get('/sitemap.xml', async (req, res, next) => {
+  try {
+    const xml = await require('./src/services/website/service').sitemapXml();
+    if (!xml) return next();
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return res.status(200).send(xml);
+  } catch (error) {
+    logger.error('Failed to generate sitemap.xml', { error: error.message });
+    return next();
+  }
+});
+
+// Website images: signed rendition URLs only (issue 2618).
+app.use('/site-media', require('./src/routes/publicWebsiteMedia'));
+
+// Website builder pages at a single clean path segment (issue 2618). Only
+// slug-shaped paths reach the handler; it hands everything it does not own
+// on to the SPA routes below.
+app.get(/^\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/, handleWebsitePageRequest);
+
 // Dynamic favicon endpoints. Browsers — notably Safari — request
 // /favicon.ico and /apple-touch-icon*.png directly at the site root and are
 // unreliable about honouring JS-injected <link rel="icon"> tags. Serving the
@@ -996,6 +1066,8 @@ app.use('/api/admin/document-attachments', require('./src/routes/adminDocumentAt
 app.use('/api/admin/projects',   require('./src/routes/adminProjects'));
 // Project briefs (issue 2678): templates, project and customer briefs.
 app.use('/api/admin/briefs',     require('./src/routes/adminBriefs'));
+// Website builder (issue 2618), behind the websiteBuilder flag.
+app.use('/api/admin/website',    require('./src/routes/adminWebsite'));
 app.use('/api/admin/calendar',   require('./src/routes/adminCalendar'));
 // Client booking requests (#2440): admin side and the public booking page.
 app.use('/api/admin/booking', require('./src/routes/adminBooking'));
@@ -1054,6 +1126,7 @@ app.use('/api/v1', require('./src/middleware/productUsage').productUsageApi, req
 app.use('/api/invite', require('./src/routes/acceptInvite'));
 app.use('/api/public/settings', require('./src/routes/publicSettings'));
 app.use('/api/public/fonts', require('./src/routes/publicFonts'));
+app.use('/api/public/website', require('./src/routes/publicWebsite'));
 app.use('/api/public', require('./src/routes/publicCMS'));
 
 // Optional: Serve built frontend (native installs and the all-in-one image, #1042)

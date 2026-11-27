@@ -1,0 +1,153 @@
+/**
+ * Images and hero videos uploaded in the website builder (issue 2618).
+ *
+ * An image goes through the ordinary preview pipeline
+ * (imageProcessor.generatePreviewImage): one rendition per media tier,
+ * EXIF-stripped and orientation-corrected, written through the storage
+ * abstraction as previews/preview_[wN_]site_<publicId>.jpg|webp. A video is
+ * remuxed (or transcoded when a browser could not play it) without its
+ * container metadata, so a phone's recording location never reaches the
+ * public site. The uploaded originals are not kept.
+ */
+const crypto = require('crypto');
+const fs = require('fs').promises;
+const path = require('path');
+const sharp = require('sharp');
+const { db } = require('../../database/db');
+const { AppError } = require('../../utils/errors');
+const { getStorage } = require('../storage');
+const { getStoragePath } = require('../../config/storage');
+const { sniffImageFileType, validateFileContent } = require('../../utils/fileSecurityUtils');
+const { generatePreviewImage, orientedDimensions } = require('../imageProcessor');
+const { MEDIA_WIDTHS, parseRenditionKeys, mediaBase } = require('./media');
+
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const MAX_VIDEO_SECONDS = 120;
+
+function publicAsset(row) {
+  const ref = { source: 'asset', id: row.public_id };
+  const keys = parseRenditionKeys(row);
+  return {
+    id: row.public_id,
+    kind: row.kind,
+    width: row.width,
+    height: row.height,
+    originalFilename: row.original_filename,
+    sizeBytes: Number(row.size_bytes) || null,
+    createdAt: row.created_at,
+    previewUrl: row.kind === 'image' && keys[640] ? `${mediaBase(ref)}/640` : null,
+    videoUrl: row.kind === 'video' ? `${mediaBase(ref)}/video` : null,
+  };
+}
+
+async function listAssets() {
+  const rows = await db('website_assets').orderBy('created_at', 'desc').orderBy('id', 'desc').limit(500);
+  return rows.map(publicAsset);
+}
+
+async function insertAsset(values) {
+  await db('website_assets').insert({ ...values, created_at: new Date().toISOString() });
+  return publicAsset(await db('website_assets').where({ public_id: values.public_id }).first());
+}
+
+async function createImageAsset(file, adminId) {
+  const sniffed = await sniffImageFileType(file.path);
+  if (!IMAGE_TYPES.includes(sniffed)) {
+    throw new AppError('Upload a JPEG, PNG, WebP or GIF image', 400, 'WEBSITE_ASSET_TYPE');
+  }
+  let metadata;
+  try {
+    metadata = await sharp(file.path, { limitInputPixels: 268402689 }).metadata();
+  } catch {
+    throw new AppError('The image could not be read', 400, 'WEBSITE_ASSET_UNREADABLE');
+  }
+  const { width, height } = orientedDimensions(metadata);
+  const publicId = crypto.randomBytes(12).toString('hex');
+  const keys = {};
+  for (const tier of MEDIA_WIDTHS) {
+    // eslint-disable-next-line no-await-in-loop -- one tier at a time keeps peak memory at one decode
+    const key = await generatePreviewImage(file.path, { outputBasename: `site_${publicId}`, longEdge: tier, regenerate: true });
+    if (!key) {
+      await removeKeys(keys);
+      throw new AppError('The image could not be processed', 400, 'WEBSITE_ASSET_UNREADABLE');
+    }
+    keys[tier] = key;
+  }
+  return insertAsset({
+    public_id: publicId,
+    kind: 'image',
+    mime_type: sniffed,
+    width,
+    height,
+    rendition_keys: JSON.stringify(keys),
+    original_filename: String(file.originalname || '').slice(0, 255),
+    size_bytes: file.size,
+    created_by: adminId,
+  });
+}
+
+async function createVideoAsset(file, adminId) {
+  if (!(await validateFileContent(file.path, 'video/mp4'))) {
+    throw new AppError('Upload an MP4 video', 400, 'WEBSITE_ASSET_TYPE');
+  }
+  const video = require('../videoRenditionService');
+  const probed = await video.probe(file.path).catch(() => null);
+  if (!probed) throw new AppError('The video could not be read', 400, 'WEBSITE_ASSET_UNREADABLE');
+  const duration = Number(probed.duration);
+  if (Number.isFinite(duration) && duration > MAX_VIDEO_SECONDS) {
+    throw new AppError(`A hero video can be at most ${MAX_VIDEO_SECONDS} seconds long`, 400, 'WEBSITE_ASSET_TOO_LONG');
+  }
+  const publicId = crypto.randomBytes(12).toString('hex');
+  const tmpOut = path.join(getStoragePath(), 'temp', `site_${publicId}.mp4`);
+  try {
+    await video.transcode(file.path, tmpOut, { remux: video.playsInBrowser(probed, true), duration });
+    const key = `website/${publicId}.mp4`;
+    await getStorage().putFromFile(key, tmpOut, { contentType: 'video/mp4' });
+    const stat = await fs.stat(tmpOut);
+    return insertAsset({
+      public_id: publicId,
+      kind: 'video',
+      mime_type: 'video/mp4',
+      width: probed.width || null,
+      height: probed.height || null,
+      rendition_keys: JSON.stringify({ video: key }),
+      original_filename: String(file.originalname || '').slice(0, 255),
+      size_bytes: stat.size,
+      created_by: adminId,
+    });
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    throw new AppError('The video could not be processed', 400, 'WEBSITE_ASSET_UNREADABLE');
+  } finally {
+    await fs.unlink(tmpOut).catch(() => {});
+  }
+}
+
+async function removeKeys(keys) {
+  const storage = getStorage();
+  for (const key of Object.values(keys)) {
+    // eslint-disable-next-line no-await-in-loop -- a handful of keys
+    await storage.delete(key).catch(() => {});
+  }
+}
+
+/** Whether a stored document (draft or published) still uses the asset. */
+async function isAssetInUse(publicId) {
+  const rows = await db('website_documents').select('state', 'document');
+  return rows.filter((row) => row.document.includes(`"id":"${publicId}"`)).map((row) => row.state);
+}
+
+async function deleteAsset(publicId) {
+  const row = await db('website_assets').where({ public_id: publicId }).first();
+  if (!row) throw new AppError('Upload not found', 404, 'WEBSITE_ASSET_NOT_FOUND');
+  const usedBy = await isAssetInUse(publicId);
+  if (usedBy.length) {
+    const err = new AppError('The image is still used on the website. Remove it from the page first.', 409, 'WEBSITE_ASSET_IN_USE');
+    err.details = { usedBy };
+    throw err;
+  }
+  await db('website_assets').where({ id: row.id }).del();
+  await removeKeys(parseRenditionKeys(row));
+}
+
+module.exports = { listAssets, createImageAsset, createVideoAsset, deleteAsset, publicAsset, IMAGE_TYPES };

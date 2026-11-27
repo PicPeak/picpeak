@@ -258,6 +258,9 @@ async function getPublicSitePayload({ bypassCache = false } = {}) {
 function clearPublicSiteCache() {
   cachedPayload = null;
   cacheExpiresAt = 0;
+  // The website builder's pages (issue 2618) read the same branding and
+  // settings, so whatever invalidates the single page invalidates them too.
+  require('./website/cache').clearWebsiteCache();
 }
 
 async function getDefaultPublicSitePayload() {
@@ -303,6 +306,11 @@ module.exports = {
   clearPublicSiteCache,
   getDefaultPublicSitePayload,
   getRawPublicSiteSettings,
+  // The website builder (issue 2618) renders its custom-HTML block and its
+  // theme from the same sanitiser and branding as the single page.
+  sanitizeHtmlPayload,
+  applyBrandTokens,
+  fetchBrandingContext,
   // Exposed for tests only — the token-escaping and URL-scheme rules
   // (GHSA-j347) are worth pinning directly rather than through the cache.
   _internal: { applyBrandTokens, sanitizeBrandUrl }
