@@ -154,6 +154,22 @@ describe('capture-date ordering on SQLite (#1172)', () => {
     expect(await orderedFilenames('asc')).toEqual(['captured-2020.jpg', 'epoch-upload-2028.jpg']);
   });
 
+  test('a same-second burst orders by the camera\'s file name, then by id (issue 2617)', async () => {
+    // Inserted against the camera counter, so id order is the reverse.
+    const ids = [];
+    for (const name of ['IMG_0003.jpg', 'IMG_0002.jpg', 'IMG_0001.jpg', 'IMG_0001.jpg']) {
+      ids.push(await addPhoto(`stored-${ids.length}.jpg`, managed('2026-06-03T13:15:42Z'), '2026-09-01 00:00:00'));
+      await db('photos').where({ id: ids[ids.length - 1] }).update({ original_filename: name });
+    }
+    const orderedIds = async (order) => {
+      const res = await request(app).get(`/api/gallery/${SLUG}/photos?sort=capture_date&order=${order}`);
+      expect(res.status).toBe(200);
+      return res.body.photos.map((p) => p.id);
+    };
+    expect(await orderedIds('asc')).toEqual([ids[2], ids[3], ids[1], ids[0]]);
+    expect(await orderedIds('desc')).toEqual([ids[0], ids[1], ids[3], ids[2]]);
+  });
+
   test('all three storage classes order together correctly', async () => {
     await addPhoto('c-managed-2026-08.jpg', managed('2026-08-15T12:00:00Z'), '2026-09-01 00:00:00');
     await addPhoto('a-external-2026-06.jpg', '2026-06-03T01:15:00.000Z', '2026-09-01 00:00:00');

@@ -2074,7 +2074,10 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
     // inside a tie is whatever the engine returns, which moves rows under a
     // shift-click range from one load to the next.
     if (sort === 'capture_date') {
-      query = query.orderByRaw(`${captureDateOrderSql(db.client.config.client)} ${order}`);
+      // A burst shares one EXIF second: the camera's file counter orders it
+      // before id does (issue 2617), as in the gallery.
+      query = query.orderByRaw(`${captureDateOrderSql(db.client.config.client)} ${order}`)
+        .orderBy('photos.original_filename', order);
     } else if (sort === 'size') {
       query = query.orderBy('photos.size_bytes', order);
     } else if (sort === 'rating') {

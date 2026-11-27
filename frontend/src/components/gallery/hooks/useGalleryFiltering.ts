@@ -179,7 +179,11 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAl
         case 'capture_date': {
           const captureDateA = a.captured_at || a.uploaded_at;
           const captureDateB = b.captured_at || b.uploaded_at;
-          return flip * (new Date(captureDateB).getTime() - new Date(captureDateA).getTime());
+          // A burst shares one EXIF second: the camera's file counter, then
+          // id, order it the way the server's capture-date sort does (issue 2617).
+          return flip * (new Date(captureDateB).getTime() - new Date(captureDateA).getTime()
+            || (b.original_filename || '').localeCompare(a.original_filename || '', undefined, { numeric: true })
+            || b.id - a.id);
         }
         case 'date':
         default:

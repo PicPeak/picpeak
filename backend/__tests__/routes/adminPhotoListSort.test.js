@@ -153,6 +153,17 @@ describe('admin photo list sorting (issue 1739)', () => {
         'managed-2027.jpg', 'no-exif-2026.jpg', 'imported-2020.jpg', 'managed-2019.jpg',
       ]);
     });
+
+    it('orders a same-second burst by the camera\'s file name, then by id (issue 2617)', async () => {
+      // Inserted against the camera counter, so id order is the reverse.
+      const at = managed('2026-06-03T13:15:42.000Z');
+      const ids = [];
+      for (const name of ['IMG_0003.jpg', 'IMG_0002.jpg', 'IMG_0001.jpg', 'IMG_0001.jpg']) {
+        ids.push(await addPhoto(`stored-${ids.length}.jpg`, { original_filename: name, captured_at: at }));
+      }
+      expect((await list('sort=capture_date&order=asc')).map((p) => p.id)).toEqual([ids[2], ids[3], ids[1], ids[0]]);
+      expect((await list('sort=capture_date&order=desc')).map((p) => p.id)).toEqual([ids[0], ids[1], ids[3], ids[2]]);
+    });
   });
 
   it('returns the capture time as a zone-less wall clock in the server zone', async () => {

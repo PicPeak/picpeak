@@ -200,9 +200,11 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   if (sort === 'capture_date') {
     // Sort by capture date, falling back to uploaded_at if capture date is
     // null. The expression is engine-specific, see utils/captureDateSql.
+    // A burst shares one EXIF second: the camera's file counter orders it
+    // before id does (issue 2617).
     photosQuery = photosQuery
       .orderByRaw(`${captureDateOrderSql(db.client.config.client)} ${sortOrder}`);
-    photosQuery = photosQuery.orderBy('photos.id', sortOrder);
+    photosQuery = photosQuery.orderBy('photos.original_filename', sortOrder).orderBy('photos.id', sortOrder);
   } else if (sort === 'filename') {
     photosQuery = photosQuery.orderBy('photos.filename', sortOrder).orderBy('photos.id', sortOrder);
   } else {
