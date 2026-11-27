@@ -7,7 +7,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
+  DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent, type Modifier,
 } from '@dnd-kit/core';
 import {
   SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy,
@@ -65,6 +65,20 @@ const Row: React.FC<RowProps> = ({ id, index, count, label, onMove, children, se
   );
 };
 
+/**
+ * Dragging moves an item up and down within its list only: no sideways
+ * drift, and not past the list's ends (what @dnd-kit/modifiers'
+ * restrictToVerticalAxis and restrictToParentElement do together).
+ */
+export const verticalWithinList: Modifier = ({ transform, draggingNodeRect, containerNodeRect }) => {
+  const next = { ...transform, x: 0 };
+  if (!draggingNodeRect || !containerNodeRect) return next;
+  const minY = containerNodeRect.top - draggingNodeRect.top;
+  const maxY = containerNodeRect.bottom - draggingNodeRect.bottom;
+  next.y = Math.min(Math.max(transform.y, minY), maxY);
+  return next;
+};
+
 interface SortableListProps<T> {
   items: T[];
   getId: (item: T) => string;
@@ -91,6 +105,7 @@ export function SortableList<T>({ items, getId, getLabel, onMove, renderItem, se
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
+      modifiers={[verticalWithinList]}
       onDragEnd={onDragEnd}
       accessibility={{
         screenReaderInstructions: {
