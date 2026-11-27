@@ -115,7 +115,7 @@ async function initialDocument() {
   return {
     imported: true,
     document: {
-      pages: [{ id: newPageId(), slug: 'home', title: 'Home', isHome: true, blocks: [{ type: 'customHtml', html }] }],
+      pages: [{ id: newPageId(), slug: 'home', title: 'Home', isHome: true, blocks: [{ type: 'customHtml', html, legacy: true }] }],
       customCss: `${DEFAULT_PUBLIC_SITE_CSS}\n\n${css}`.trim(),
     },
   };

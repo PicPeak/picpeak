@@ -381,10 +381,15 @@ function renderSpacer(block, ctx) {
   return section(block, block.divider ? '<div class="pp-wrap"><hr class="pp-rule"></div>' : '', ctx);
 }
 
+// The imported single-page site keeps the containers the old page wrapped
+// it in (server.js buildPublicSiteDocument), so its stylesheet, written
+// against .site-shell and .site-main, applies unchanged. Divs, not <main>:
+// the page has its own.
 function renderCustomHtml(block, ctx) {
   const html = ctx.sanitizeCustomHtml(block.html);
   if (!html && !ctx.preview) return '';
-  return section(block, `<div class="pp-custom">${html}</div>`, ctx);
+  const inner = block.legacy ? `<div class="site-shell"><div class="site-main">${html}</div></div>` : html;
+  return section(block, `<div class="pp-custom">${inner}</div>`, ctx);
 }
 
 const RENDERERS = {

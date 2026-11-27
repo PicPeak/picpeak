@@ -249,6 +249,8 @@ const BLOCK_FIELDS = {
   }),
   customHtml: (b) => ({
     html: typeof b.html === 'string' ? capText(b.html, MAX_CUSTOM_HTML, 'html') : '',
+    // The imported single-page site: rendered in its old containers.
+    ...(bool(b.legacy) ? { legacy: true } : {}),
   }),
 };
 

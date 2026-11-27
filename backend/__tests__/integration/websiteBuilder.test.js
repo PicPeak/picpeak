@@ -144,6 +144,35 @@ describe('admin API', () => {
     await setSetting('general_public_site_enabled', false);
   });
 
+  test('an imported landing page renders inside the containers its stylesheet was written for', async () => {
+    const { parseDocument, DomUtils } = require('htmlparser2');
+    const { DEFAULT_PUBLIC_SITE_CSS } = require('../../src/constants/publicSiteDefaults');
+    await setSetting('general_public_site_html', '<section class="hero" id="old-hero"><h1>Old site</h1></section>');
+    await setSetting('general_public_site_enabled', true);
+    let raw; let imported;
+    try {
+      ({ document: raw, imported } = await service._internal.initialDocument());
+    } finally {
+      await setSetting('general_public_site_enabled', false);
+    }
+    expect(imported).toBe(true);
+    const { document } = require('../../src/services/website/document').normalizeDocument(raw);
+    expect(document.pages[0].blocks[0]).toMatchObject({ type: 'customHtml', legacy: true });
+    const html = (await request(app).post('/api/admin/website/preview').set(auth(adminId)).send({ document, pageId: document.pages[0].id })).body.html;
+    const dom = parseDocument(html);
+    const byClass = (name) => DomUtils.findAll((el) => (el.attribs?.class || '').split(/\s+/).includes(name), dom.children);
+    const [main] = byClass('site-main');
+    expect(main).toBeTruthy();
+    // The old page sits in .site-main inside .site-shell, as / served it.
+    expect(DomUtils.findOne((el) => el.attribs?.id === 'old-hero', [main], true)).toBeTruthy();
+    expect(byClass('site-shell').some((shell) => DomUtils.findOne((el) => el === main, shell.children, true))).toBe(true);
+    // ...and the stylesheet's .site-main rule is still there to apply.
+    // (The sanitiser rewrites whitespace, so compare without it.)
+    const squeeze = (text) => text.replace(/\s+/g, '');
+    const rule = DEFAULT_PUBLIC_SITE_CSS.match(/\.site-main \{[^}]*\}/)[0];
+    expect(squeeze(html)).toContain(squeeze(rule));
+  });
+
   test('imports the single-page site into the first draft', async () => {
     await setSetting('general_public_site_html', '<section class="hero"><h1>Old site {{company_name}}</h1></section>');
     await setSetting('general_public_site_custom_css', '.legacy-rule{color:red}');

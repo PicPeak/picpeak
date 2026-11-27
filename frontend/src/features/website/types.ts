@@ -70,7 +70,8 @@ export interface InstagramBlock extends BlockBase {
   images: ImageRef[];
 }
 export interface SpacerBlock extends BlockBase { type: 'spacer'; divider: boolean }
-export interface CustomHtmlBlock extends BlockBase { type: 'customHtml'; html: string }
+// `legacy`: the imported single-page site, rendered in its old containers.
+export interface CustomHtmlBlock extends BlockBase { type: 'customHtml'; html: string; legacy?: boolean }
 
 export type Block =
   | HeroBlock | TextBlock | ImageTextBlock | GalleryBlock | FeaturedGalleriesBlock | TestimonialsBlock
