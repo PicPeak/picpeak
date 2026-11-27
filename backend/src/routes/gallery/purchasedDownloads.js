@@ -153,7 +153,8 @@ router.get('/purchased-downloads/:accessToken/photos/:photoId', noStoreCache, as
     }
     // An edited photo (issue 2619) is sold as its edited render.
     const photo = event
-      ? await photoEdits.deliveredPhoto(await sellablePhotos(db, event.id).where('photos.id', photoId).first('photos.*'))
+      ? await photoEdits.deliveredPhoto(await sellablePhotos(db, event.id).where('photos.id', photoId).first('photos.*'),
+        { headOnly: req.method === 'HEAD' })
       : null;
     if (!photo) return res.status(404).json({ error: 'Photo not found' });
 

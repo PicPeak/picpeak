@@ -1160,7 +1160,8 @@ async function streamTransferFile(transfer, rawFileId, res, { beforeStream = nul
     )
     .first()
     // An edited photo (issue 2619) goes out as its edited render.
-    .then((found) => photoEdits.deliveredPhoto(found));
+    // A HEAD request never starts a render.
+    .then((found) => photoEdits.deliveredPhoto(found, { headOnly: res.req?.method === 'HEAD' }));
   if (!row) return false;
 
   const event = {

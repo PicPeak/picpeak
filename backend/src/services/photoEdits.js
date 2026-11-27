@@ -435,7 +435,7 @@ async function renderAndRecord(photo, params, options) {
  * process); null for a photo without an edit. Throws when the render fails:
  * a caller must never fall back to the original, which the edit may crop.
  */
-async function ensureEditedSource(photo, { interactive = false, retryFailed = false } = {}) {
+async function ensureEditedSource(photo, { interactive = false, retryFailed = false, headOnly = false } = {}) {
   photo = await withEditColumns(photo);
   let params = paramsOf(photo);
   if (!params) return null;
@@ -460,6 +460,8 @@ async function ensureEditedSource(photo, { interactive = false, retryFailed = fa
         if (require('./storage/storageErrors').isStorageUnavailableError(err)) throw err;
       }
     }
+    // A HEAD request answers from what is there; it never starts a render.
+    if (headOnly) throw Object.assign(new Error(`The edit of photo ${photo.id} is not rendered yet`), { status: 503, code: 'EDIT_PENDING' });
     const flightKey = `${photo.edit_view === 'applied' ? 'applied' : 'current'}:${photo.id}:${photo.edit_rev}`;
     let flight = renderFlights.get(flightKey);
     if (!flight) {

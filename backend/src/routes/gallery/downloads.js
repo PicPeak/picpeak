@@ -275,7 +275,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     }
 
     // An edited photo (issue 2619) downloads as its edited render.
-    photo = await photoEdits.deliveredPhoto(photo, { interactive: true });
+    photo = await photoEdits.deliveredPhoto(photo, { interactive: true, headOnly: req.method === 'HEAD' });
 
     // A HEAD is a metadata probe, not a download. Answering it below the
     // counters recorded every probe as a real download, and answering it below

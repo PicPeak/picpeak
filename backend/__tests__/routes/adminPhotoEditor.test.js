@@ -563,3 +563,29 @@ describe('a geometry edit whose render keeps failing', () => {
     }
   });
 });
+
+describe('a HEAD request for an edited photo not rendered yet', () => {
+  it('answers 503 without drawing the render; GET draws it', async () => {
+    const id = unwrap(await db('photos').insert({
+      event_id: event.id, filename: 'head.jpg', path: 'edit-route/beach.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      size_bytes: originalBytes.length, processing_status: 'complete', uploaded_at: new Date().toISOString(), width: 800, height: 600,
+      edit_params: JSON.stringify({ v: 1, exposure: 0.5 }), edit_rev: 1, edit_applied_rev: 1,
+    }).returning('id'));
+    try {
+      for (const url of [`/download/${id}`, `/photo/${id}`]) {
+        const head = await guest('head', url);
+        expect(head.status).toBe(503);
+        expect(head.headers['cache-control']).toBe('no-store');
+        expect((await row(id)).edit_render_path).toBeNull();
+      }
+      const adminHead = await auth(request(adminApp).head(`/api/admin/photos/${event.id}/photo/${id}`));
+      expect(adminHead.status).toBe(503);
+      expect((await row(id)).edit_render_path).toBeNull();
+      expect((await guest('get', `/photo/${id}`)).status).toBe(200);
+      expect((await row(id)).edit_render_path).toBeTruthy();
+      expect((await guest('head', `/photo/${id}`)).status).toBe(200);
+    } finally {
+      await db('photos').where({ id }).delete();
+    }
+  });
+});

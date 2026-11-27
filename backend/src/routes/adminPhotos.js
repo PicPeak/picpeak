@@ -1869,7 +1869,7 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
       return res.status(404).json({ error: 'Photo not found' });
     }
     // The original, always, unless the edit (issue 2619) is asked for.
-    const photo = req.query.edited === '1' ? await photoEdits.deliveredPhoto(row, { interactive: true }) : row;
+    const photo = req.query.edited === '1' ? await photoEdits.deliveredPhoto(row, { interactive: true, headOnly: req.method === 'HEAD' }) : row;
     
     const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../services/photoResolver');
     const event = await db('events').where('id', eventId).first();
@@ -2283,7 +2283,7 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
     }
     // An edited photo (issue 2619) shows its edit, as guests see it, unless
     // the original is asked for.
-    const photo = req.query.original === '1' ? row : await photoEdits.deliveredPhoto(row, { interactive: true });
+    const photo = req.query.original === '1' ? row : await photoEdits.deliveredPhoto(row, { interactive: true, headOnly: req.method === 'HEAD' });
     // Kept by the browser only under the URL the listing gives for what is
     // served: the edit's revision for an edited photo, none for the
     // original. A URL naming another revision is answered, never kept.

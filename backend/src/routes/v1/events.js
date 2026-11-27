@@ -2023,7 +2023,8 @@ router.get(
       // One answer for unknown, malformed and other-event ids. An edited
       // photo goes out as its edit (issue 2619), like a gallery download.
       const photo = isRowId(req.params.photoId)
-        ? await photoEdits.deliveredPhoto(await livePhotos(db).where({ id: Number(req.params.photoId), event_id: event.id }).first())
+        ? await photoEdits.deliveredPhoto(await livePhotos(db).where({ id: Number(req.params.photoId), event_id: event.id }).first(),
+          { headOnly: req.method === 'HEAD' })
         : null;
       if (!photo) return res.status(404).json({ error: 'Photo not found' });
 
