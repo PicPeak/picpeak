@@ -7,8 +7,23 @@
  */
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { buildResourceUrl } from '../../utils/url';
 
 export type PreviewDevice = 'desktop' | 'phone';
+
+/**
+ * The page's /site-media, /fonts and /uploads paths are root-relative. In a
+ * srcdoc they resolve against the admin's origin, which in a split-origin
+ * install (absolute VITE_API_URL) is not the backend's; a <base> on the
+ * backend's resource origin (buildResourceUrl) points them there. The frame
+ * runs no scripts and its clicks are cancelled, so the base only moves where
+ * resources load from.
+ */
+export function withResourceBase(html: string): string {
+  const base = new URL(buildResourceUrl('/'), window.location.href).href;
+  const tag = `<base href="${base.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}">`;
+  return /<head>/i.test(html) ? html.replace(/<head>/i, `<head>\n${tag}`) : `${tag}${html}`;
+}
 
 const DESKTOP_WIDTH = 1280;
 const PHONE_WIDTH = 390;
@@ -87,7 +102,7 @@ export const PreviewFrame: React.FC<PreviewFrameProps> = ({ html, device, select
           <iframe
             ref={frame}
             title={t('website.preview.title', 'Preview of the page')}
-            srcDoc={html}
+            srcDoc={withResourceBase(html)}
             sandbox="allow-same-origin"
             onLoad={onLoad}
             className={`origin-top-left bg-panel ${device === 'phone' ? 'border-x border-line shadow-lg' : ''}`}

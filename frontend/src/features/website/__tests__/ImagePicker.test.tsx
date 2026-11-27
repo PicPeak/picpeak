@@ -15,6 +15,10 @@ vi.mock('react-i18next', () => ({
 }));
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('../../../hooks/usePermission', () => ({ usePermission: () => true }));
+vi.mock('../../../utils/url', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../utils/url')>()),
+  buildResourceUrl: (path: string) => `https://api.example.com${path}`,
+}));
 vi.mock('../../../services/website.service', () => ({
   websiteService: { listGalleries: vi.fn(), setGalleryOnWebsite: vi.fn(), listAssets: vi.fn() },
   mediaKey: (r: { source: string; id: string | number }) => `${r.source}:${r.id}`,
@@ -67,6 +71,8 @@ describe('UploadsPane', () => {
     });
     wrap(<UploadsPane kind="image" isSelected={() => false} onToggle={() => {}} />);
     expect(await screen.findByRole('button', { name: 'one.jpg' })).toBeInTheDocument();
+    // Thumbnails come from the backend's origin in a split-origin install.
+    expect(screen.getByRole('button', { name: 'one.jpg' }).querySelector('img')?.getAttribute('src')).toBe('https://api.example.com/m/a');
     fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
     expect(await screen.findByRole('button', { name: 'two.jpg' })).toBeInTheDocument();
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'beach' } });

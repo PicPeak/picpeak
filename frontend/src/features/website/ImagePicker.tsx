@@ -16,6 +16,7 @@ import { AdminAuthenticatedImage } from '../../components/admin/AdminAuthenticat
 import { usePermission } from '../../hooks/usePermission';
 import { websiteService } from '../../services/website.service';
 import { apiErrorText } from '../../utils/apiErrorText';
+import { buildResourceUrl } from '../../utils/url';
 import type { ImageRef, WebsiteAsset, WebsiteGallery } from './types';
 import { SearchField, useDebounced } from './search';
 
@@ -195,7 +196,7 @@ export const UploadsPane: React.FC<{ kind: 'image' | 'video'; isSelected: (ref: 
               <li key={asset.id} className="relative group">
                 <button type="button" className={tileClass(isSelected(ref))} onClick={() => onToggle(ref)} aria-pressed={isSelected(ref)} aria-label={label}>
                   {asset.previewUrl
-                    ? <img src={asset.previewUrl} alt="" loading="lazy" className="w-full h-full object-cover" />
+                    ? <img src={buildResourceUrl(asset.previewUrl)} alt="" loading="lazy" className="w-full h-full object-cover" />
                     : <span className="flex w-full h-full items-center justify-center text-faint"><Film className="w-8 h-8" aria-hidden="true" /></span>}
                   {isSelected(ref) && <SelectedMark />}
                 </button>

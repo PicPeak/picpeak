@@ -21,6 +21,11 @@ vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+// A split-origin install: resources live on the API's origin.
+vi.mock('../../../utils/url', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../utils/url')>()),
+  buildResourceUrl: (path: string) => `https://api.example.com${path}`,
+}));
 vi.mock('../../../hooks/usePermission', () => ({ usePermission: vi.fn() }));
 vi.mock('../../../contexts/FeatureFlagsContext', () => ({
   useFeatureFlags: () => ({ flags: { messaging: true, calendarBooking: false, quotes: false } }),
@@ -229,6 +234,12 @@ describe('WebsiteBuilderPage', () => {
     saved.draft.revision = 4;
     finishSave(saved);
     await waitFor(() => expect(websiteService.publish).toHaveBeenCalledWith(4));
+  });
+
+  it('resolves the preview\'s images and fonts against the backend origin', async () => {
+    renderPage();
+    const frame = await screen.findByTitle('Preview of the page');
+    await waitFor(() => expect(frame.getAttribute('srcdoc')).toContain('<base href="https://api.example.com/">'));
   });
 });
 

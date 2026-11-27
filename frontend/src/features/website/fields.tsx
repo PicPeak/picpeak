@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { ImageOff, ImagePlus, Plus, X } from 'lucide-react';
 import { Button, Input } from '../../components/common';
 import { mediaKey } from '../../services/website.service';
+import { buildResourceUrl } from '../../utils/url';
 import { ImagePicker } from './ImagePicker';
 import type { Background, ImageRef } from './types';
 
@@ -149,8 +150,9 @@ const Thumb: React.FC<{ refValue: ImageRef | { source: 'asset'; id: string }; cl
     );
   }
   if (!url) return <span className={`block bg-fill animate-pulse ${className}`} />;
-  if (/\/video$/.test(url)) return <video src={url} muted className={`object-cover ${className}`} />;
-  return <img src={url} alt="" loading="lazy" className={`object-cover ${className}`} />;
+  // Root-relative /site-media paths live on the backend's resource origin.
+  if (/\/video$/.test(url)) return <video src={buildResourceUrl(url)} muted className={`object-cover ${className}`} />;
+  return <img src={buildResourceUrl(url)} alt="" loading="lazy" className={`object-cover ${className}`} />;
 };
 
 /** One image with its alt text. */

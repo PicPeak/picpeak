@@ -889,8 +889,10 @@ app.get('/sitemap.xml', async (req, res, next) => {
   }
 });
 
-// Website images: signed rendition URLs only (issue 2618).
-app.use('/site-media', require('./src/routes/publicWebsiteMedia'));
+// Website images: signed rendition URLs only (issue 2618). Cross-origin
+// loadable like /fonts: the editor's preview takes them from the backend's
+// origin when the admin runs on another one.
+app.use('/site-media', setCorsHeaders, require('./src/routes/publicWebsiteMedia'));
 
 // Website builder pages at a single clean path segment (issue 2618). Only
 // slug-shaped paths reach the handler; it hands everything it does not own

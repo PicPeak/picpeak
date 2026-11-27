@@ -104,4 +104,6 @@ test('the public site switch still turns the website off', async () => {
 test('the image endpoint is mounted and refuses an unsigned path', async () => {
   const res = await request(app).get('/site-media/p1.00000000000000000000000000000000/640');
   expect(res.status).toBe(404);
+  // Loadable from the admin's origin in a split-origin install, like /fonts.
+  expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
 });
