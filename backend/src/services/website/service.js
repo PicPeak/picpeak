@@ -176,8 +176,19 @@ async function editorState(draft, published) {
   };
 }
 
+/**
+ * The editor's state. Opening it writes the first draft (with the legacy
+ * import) only for an admin who may change the website: a view-only admin
+ * sees the starting document, and nothing is stored until an editor opens
+ * or saves it.
+ */
 async function getEditorState(adminId) {
-  const draft = await ensureDraft(adminId);
+  let draft = await readRow('draft');
+  if (!draft && await userHasAllPermissions(adminId, ['cms.edit'])) draft = await ensureDraft(adminId);
+  if (!draft) {
+    const { document } = normalizeDocument((await initialDocument()).document);
+    draft = { document: JSON.stringify(document), revision: 1, updated_at: null };
+  }
   return editorState(draft, await readRow('published'));
 }
 

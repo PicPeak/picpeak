@@ -1485,3 +1485,22 @@ describe('which photo URLs work', () => {
     }
   });
 });
+
+describe('opening the editor', () => {
+  test('a view-only admin sees the starting document, and nothing is written until an editor opens or saves', async () => {
+    await setFeatureFlags(db, { websiteBuilder: true });
+    const kept = await db('website_documents').where({ state: 'draft' }).first();
+    await db('website_documents').where({ state: 'draft' }).del();
+    try {
+      const viewed = await request(app).get('/api/admin/website').set(auth(viewerId));
+      expect(viewed.status).toBe(200);
+      expect(viewed.body.document.pages.length).toBeGreaterThan(0);
+      expect(await db('website_documents').where({ state: 'draft' }).first()).toBeUndefined();
+      expect((await request(app).get('/api/admin/website').set(auth(adminId))).status).toBe(200);
+      expect(await db('website_documents').where({ state: 'draft' }).first()).toBeTruthy();
+    } finally {
+      await db('website_documents').where({ state: 'draft' }).del();
+      await db('website_documents').insert(kept);
+    }
+  });
+});
