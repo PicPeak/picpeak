@@ -619,6 +619,11 @@ async function saveEdits(changes, { onlyUnedited = false } = {}) {
   });
   const storage = getStorage();
   await Promise.all([...new Set(unreachable)].map((key) => storage.delete(key).catch(() => {})));
+  // The prebuilt download-all ZIP holds the saved edits' renders: it goes now,
+  // not when the render lands, which may never happen if it keeps failing.
+  const zip = require('./downloadZipService');
+  const events = new Set(changes.filter(({ photo }) => revisions[photo.id] !== undefined).map(({ photo }) => Number(photo.event_id)));
+  for (const eventId of events) await zip.invalidateIfBuilt(eventId).catch(() => {});
   requestPass();
   return revisions;
 }

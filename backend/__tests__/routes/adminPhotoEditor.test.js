@@ -185,15 +185,16 @@ describe('an edit, saved and applied', () => {
     expect(res.body.params).toMatchObject({ rotate: 90, exposure: 0.5 });
     const listed = (await auth(request(adminApp).get(`/api/admin/photos/${event.id}/photos`))).body.photos;
     expect(listed.find((p) => p.id === photoId)).toMatchObject({ edit_rev: 1, edit_applied_rev: 0, edit_failed: false });
-    // A download job's identity follows the revision whose previews and
-    // renditions are in place: a preview-only job built now packages the
-    // old previews and must not be reused once the edit lands.
+    // A preview-only job's identity follows the revision whose previews are
+    // in place: one built now packages the old previews and must not be
+    // reused once the edit lands. A full-size one follows the saved edit.
     const jobs = require('../../src/services/downloadJobService');
-    expect(await jobs.editStamp([photoId])).toBe(0);
+    expect(await jobs.editStamp([photoId], { applied: true })).toBe(0);
+    expect(await jobs.editStamp([photoId])).toBe(1);
     const zip = require('../../src/services/downloadZipService');
     const invalidate = jest.spyOn(zip, 'invalidateIfBuilt');
     await applyEdits();
-    expect(await jobs.editStamp([photoId])).toBe(1);
+    expect(await jobs.editStamp([photoId], { applied: true })).toBe(1);
     expect(invalidate).toHaveBeenCalledWith(event.id);
     invalidate.mockRestore();
     expect(await row()).toMatchObject({ edit_rev: 1, edit_applied_rev: 1, edit_width: 300, edit_height: 400 });
@@ -496,6 +497,32 @@ describe('listed sizes while an edit is pending', () => {
       }
     } finally {
       await db('photos').whereIn('id', [turned, fresh]).delete();
+    }
+  });
+});
+
+describe('archives after an edit is saved', () => {
+  it('a full-size archive is not reused once an edit is saved, even if its render then fails', async () => {
+    const jobs = require('../../src/services/downloadJobService');
+    const zip = require('../../src/services/downloadZipService');
+    const fresh = await db('events').where({ id: event.id }).first();
+    const first = await jobs.createJob({ event: fresh, resolution: 'original', photoIds: [secondId], accessLevel: 'guest' });
+    await jobs.liveBuilds.get(first.id);
+    const invalidate = jest.spyOn(zip, 'invalidateIfBuilt');
+    try {
+      await auth(request(adminApp).put(editUrl(secondId)).send({ params: { exposure: 0.3 } })).expect(200);
+      // The prebuilt download-all ZIP goes at once, not when the render lands.
+      expect(invalidate).toHaveBeenCalledWith(event.id);
+      // No pass has run: the saved revision is not applied, and no job of the old one is handed out.
+      const second = await jobs.createJob({ event: fresh, resolution: 'original', photoIds: [secondId], accessLevel: 'guest' });
+      expect(second.id).not.toBe(first.id);
+      await jobs.liveBuilds.get(second.id);
+      // A preview-only archive keeps following the applied revision.
+      expect(await jobs.editStamp([secondId], { applied: true })).toBe(Number((await row(secondId)).edit_applied_rev));
+    } finally {
+      invalidate.mockRestore();
+      await auth(request(adminApp).put(editUrl(secondId)).send({ params: null }));
+      await applyEdits();
     }
   });
 });

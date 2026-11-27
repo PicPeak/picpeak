@@ -144,19 +144,20 @@ class DownloadJobService {
   }
 
   /**
-   * The applied edit revisions of these photos added up (issue 2619): the
-   * revisions whose previews and renditions are in place, which is what a
-   * preview-only or priced job packages. A revision only ever grows, so an
-   * edit that lands after a job was built changes the sum and with it the
-   * job's identity: that archive is no longer reused or delivered. (A
-   * full-size job built while an edit is pending already holds the newer
-   * render; it is built again once the revision is applied.)
+   * The edit revisions of these photos added up (issue 2619), part of a
+   * job's identity. A full-size job packages the saved edit's render, so it
+   * sums the saved revisions (edit_rev): a job built before a save is not
+   * reused after it, even while that edit's render keeps failing. A
+   * preview-only or priced job packages previews, which show the applied
+   * revision (`applied`). A revision only ever grows, so either sum changes
+   * with every edit that matters to the archive.
    */
-  async editStamp(photoIds) {
+  async editStamp(photoIds, { applied = false } = {}) {
     let sum = 0;
     const ids = [...photoIds].map(Number);
+    const column = applied ? 'edit_applied_rev' : 'edit_rev';
     for (let i = 0; i < ids.length; i += 500) {
-      const row = await db('photos').whereIn('id', ids.slice(i, i + 500)).sum({ total: 'edit_applied_rev' }).first();
+      const row = await db('photos').whereIn('id', ids.slice(i, i + 500)).sum({ total: column }).first();
       sum += Number(row?.total) || 0;
     }
     return sum;
@@ -234,7 +235,7 @@ class DownloadJobService {
       ? { download: watermark, sales: await resolveForcedWatermarkSettingsForPhoto(event) } : watermark;
     // v3 retires archives whose v2 boundaries came from archive.pointer().
     const dedupKey = this.dedupKey(event.id, resolution, resolvedIds, identityWatermark, scope, isGalleryPriced(event),
-      { version: 3, previewOnly, edits: await this.editStamp(resolvedIds) });
+      { version: 3, previewOnly, edits: await this.editStamp(resolvedIds, { applied: previewOnly || isGalleryPriced(event) }) });
 
     const existing = await this.findReusable(event.id, dedupKey);
     if (existing) return existing;
@@ -424,7 +425,7 @@ class DownloadJobService {
       ? { download: watermark, sales: await resolveForcedWatermarkSettingsForPhoto(event) } : watermark;
     const expected = this.dedupKey(
       job.event_id, job.resolution, ids, identityWatermark, visibilityScope(accessLevel), isGalleryPriced(event),
-      { version: job.policy_version || 1, previewOnly: !!job.preview_only, edits: await this.editStamp(ids) }
+      { version: job.policy_version || 1, previewOnly: !!job.preview_only, edits: await this.editStamp(ids, { applied: !!job.preview_only || isGalleryPriced(event) }) }
     );
     return expected === job.dedup_key ? visible : null;
   }
