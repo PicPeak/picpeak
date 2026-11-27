@@ -22,10 +22,14 @@ export function mediaOriginDiffers(): boolean {
 
 /**
  * The published website's address: the backend renders it, so in a
- * split-origin install or the Vite dev server it is on the backend's
- * resource origin, not the admin's (where / is the admin app).
+ * split-origin install it is on the backend's resource origin, not the
+ * admin's (where / is the admin app). On the Vite dev server without an API
+ * URL the resources come through its proxy, but / does not: there it is the
+ * backend the proxy targets.
  */
 export function publicSiteUrl(): string {
+  const devOrigin = typeof __PICPEAK_DEV_SITE_ORIGIN__ === 'string' ? __PICPEAK_DEV_SITE_ORIGIN__ : '';
+  if (devOrigin && !mediaOriginDiffers()) return new URL('/', devOrigin).href;
   return new URL(buildResourceUrl('/'), window.location.href).href;
 }
 
@@ -38,7 +42,7 @@ export function publicSiteUrl(): string {
  * resources load from.
  */
 export function withResourceBase(html: string): string {
-  const base = publicSiteUrl();
+  const base = new URL(buildResourceUrl('/'), window.location.href).href;
   const tag = `<base href="${base.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}">`;
   return /<head>/i.test(html) ? html.replace(/<head>/i, `<head>\n${tag}`) : `${tag}${html}`;
 }

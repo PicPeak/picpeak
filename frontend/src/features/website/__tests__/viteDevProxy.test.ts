@@ -10,7 +10,8 @@ import { expect, it } from 'vitest';
 it('proxies the website paths to the backend next to /api', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '../../../../vite.config.ts'), 'utf8');
   const proxy = source.slice(source.indexOf('proxy: {'));
+  expect(source).toContain("const DEV_BACKEND = 'http://localhost:3001'");
   for (const prefix of ['/api', '/site-media', '/sitemap.xml', '/fonts']) {
-    expect(proxy).toMatch(new RegExp(`'${prefix.replace('.', '\\.')}': \\{\\s*target: 'http://localhost:3001',`));
+    expect(proxy).toMatch(new RegExp(`'${prefix.replace('.', '\\.')}': \\{\\s*target: DEV_BACKEND,`));
   }
 });
