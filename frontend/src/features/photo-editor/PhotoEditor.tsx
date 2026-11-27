@@ -510,7 +510,6 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
             />
             {cropMode && effective && !before && ready && (
               <CropOverlay
-                crop={params.crop}
                 effective={effective}
                 aspect={overlayAspect}
                 onChange={(crop) => edit({ type: 'crop', crop })}

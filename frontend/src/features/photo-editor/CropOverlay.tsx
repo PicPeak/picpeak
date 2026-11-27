@@ -3,9 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { MIN_CROP, type CropRect } from './editMath';
 
 interface CropOverlayProps {
-  /** The crop as requested, fractions of the frame (null: the whole frame). */
-  crop: CropRect | null;
-  /** The crop as rendered (shrunk onto a straightened photo), fractions of the frame. */
+  /** The crop as rendered (the one asked for, shrunk onto a straightened photo), fractions of the frame; drags start from it. */
   effective: CropRect;
   /** width / height of the crop in frame fractions that keeps the chosen aspect, or null for free. */
   aspect: number | null;
@@ -41,7 +39,7 @@ export function dragCrop(start: CropRect, handle: Handle, dx: number, dy: number
 }
 
 /** The crop frame drawn over the turned photo in crop mode (issue 2619). */
-export const CropOverlay: React.FC<CropOverlayProps> = ({ crop, effective, aspect, onChange }) => {
+export const CropOverlay: React.FC<CropOverlayProps> = ({ effective, aspect, onChange }) => {
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
   const start = (handle: Handle) => (event: React.PointerEvent) => {
@@ -50,7 +48,10 @@ export const CropOverlay: React.FC<CropOverlayProps> = ({ crop, effective, aspec
     event.preventDefault();
     event.stopPropagation();
     const origin = { x: event.clientX, y: event.clientY };
-    const from = crop || { x: 0, y: 0, w: 1, h: 1 };
+    // From the frame as drawn: on a straightened photo the crop asked for
+    // (or the whole frame, with none) is shrunk to what renders, and a drag
+    // from the larger rectangle would have no room to move.
+    const from = effective;
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     const move = (e: PointerEvent) => {
