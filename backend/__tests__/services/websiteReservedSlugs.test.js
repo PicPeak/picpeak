@@ -16,11 +16,12 @@ test('the backend validates against the shared list', () => {
   expect(sorted(RESERVED_SLUGS)).toEqual(sorted(canonical));
 });
 
-test('the nginx website location excludes exactly the shared list', () => {
+test('the nginx website location excludes exactly the shared list, less the legal pages the website renders', () => {
+  const { LEGAL_SLUGS } = require('../../src/services/website/document');
   const conf = fs.readFileSync(path.join(root, 'frontend/nginx.conf'), 'utf8');
   const match = conf.match(/location ~ "\^\/\(\?!\(\?:([a-z0-9|-]+)\)\/\?\$\)\[a-z0-9\]\+/);
   expect(match).not.toBeNull();
-  expect(sorted(match[1].split('|'))).toEqual(sorted(canonical));
+  expect(sorted(match[1].split('|'))).toEqual(sorted(canonical.filter((slug) => !LEGAL_SLUGS.includes(slug))));
 });
 
 test('the frontend page editor checks the shared list', () => {

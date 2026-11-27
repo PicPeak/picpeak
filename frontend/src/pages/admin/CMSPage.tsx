@@ -7,14 +7,14 @@ import { Link } from 'react-router-dom';
 import { Card, Loading, Notice, useConfirm } from '../../components/common';
 import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
 import { CmsPageEditor } from '../../components/admin/cms/CmsPageEditor';
-import { cmsService, LEGAL_PAGE_SLUGS } from '../../services/cms.service';
+import { cmsService } from '../../services/cms.service';
 import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
 
 /**
  * Settings › CMS: the CMS pages (legal pages, error pages). The single-page
  * landing editor that used to sit here moved into the website builder
- * (issue 2618). While the website is on, its Pages panel edits the legal
- * pages (the same data, the same editor) and this tab links there.
+ * (issue 2618). While the website is on, its Pages panel edits all of them
+ * (the same data, the same editor) and this tab links each one there.
  */
 export const CMSPage: React.FC = () => {
   const { t } = useTranslation();
@@ -27,8 +27,9 @@ export const CMSPage: React.FC = () => {
     queryKey: ['cms-pages'],
     queryFn: cmsService.getPages,
   });
-  const listed = (pages || []).filter((page) => !(websiteBuilderOn && LEGAL_PAGE_SLUGS.includes(page.slug)));
+  const listed = pages || [];
   const selectedPage = selected && listed.some((p) => p.slug === selected) ? selected : listed[0]?.slug || null;
+  const pageTitle = (page: { slug: string; title_en: string }) => t(`legal.${page.slug}`, { defaultValue: page.title_en || page.slug });
 
   if (isLoading) {
     return (
@@ -47,22 +48,29 @@ export const CMSPage: React.FC = () => {
       />
 
       {websiteBuilderOn && (
-        <div className="mb-6">
-          <Notice
-            tone="info"
-            size="sm"
-            action={(
-              <Link to="/admin/website?panel=pages" className="text-sm font-medium text-accent hover:underline">
-                {t('cms.legalInWebsiteLink', 'Edit them in Website › Pages')}
-              </Link>
-            )}
-          >
-            {t('cms.legalInWebsite', 'The website is on: its Pages panel edits the legal pages (Impressum, privacy policy, terms), the same pages the galleries link to.')}
+        <Card padding="md">
+          <Notice tone="info" size="sm">
+            {t('cms.managedInWebsite', 'These pages are managed under Website › Pages while the website is on, and shown in its design.')}
           </Notice>
-        </div>
+          <ul className="mt-4 space-y-2">
+            {listed.map((page) => (
+              <li key={page.slug}>
+                <Link to={`/admin/website?panel=pages&cms=${page.slug}`}
+                  className="flex items-center gap-3 rounded-lg border border-line px-4 py-3 hover:bg-hover">
+                  <FileText className="w-5 h-5 flex-shrink-0 text-soft" aria-hidden="true" />
+                  <span className="flex-1 min-w-0">
+                    <span className="block font-medium text-heading truncate">{pageTitle(page)}</span>
+                    <span className="block text-sm text-muted">/{page.slug}</span>
+                  </span>
+                  <span className="text-sm font-medium text-accent">{t('cms.editInWebsite', 'Edit in Website')}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
       )}
 
-      {selectedPage && (
+      {!websiteBuilderOn && selectedPage && (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Page Selection */}
           <div className="lg:col-span-1">
@@ -94,7 +102,7 @@ export const CMSPage: React.FC = () => {
                           that don't have a fixed translation key (e.g. the new
                           not-found / gallery-not-found error pages). */}
                       <p className="font-medium truncate">
-                        {t(`legal.${page.slug}`, { defaultValue: page.title_en || page.slug })}
+                        {pageTitle(page)}
                       </p>
                       <p className="text-sm text-muted">/{page.slug}</p>
                     </div>

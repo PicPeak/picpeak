@@ -7075,8 +7075,8 @@
     "showInFooterHelp": "Wenn deaktiviert, wird diese Seite in der öffentlichen Galerie-Fußzeile ausgeblendet. Die Seite selbst bleibt über ihre direkte URL erreichbar.",
     "discardOnSwitch": "Ungespeicherte Änderungen an dieser Seite verwerfen?",
     "discardAndSwitch": "Verwerfen und wechseln",
-    "legalInWebsiteLink": "In Website › Seiten bearbeiten",
-    "legalInWebsite": "Die Website ist eingeschaltet: Die rechtlichen Seiten (Impressum, Datenschutz, AGB) bearbeiten Sie in ihrem Bereich Seiten – es sind dieselben Seiten, auf die die Galerien verweisen."
+    "managedInWebsite": "Solange die Website eingeschaltet ist, werden diese Seiten unter Website › Seiten verwaltet und in ihrem Design gezeigt.",
+    "editInWebsite": "In der Website bearbeiten"
   },
   "validation": {
     "eventNameRequired": "Galeriename ist erforderlich",
@@ -13450,9 +13450,11 @@
     "takeOfflineTitle": "Website offline nehmen?",
     "takeOfflineMessage": "Besucher sehen sie nicht mehr an der Hauptadresse; `/` führt stattdessen zur Seite für den Galerie-Code. Die Website und ihr Entwurf bleiben, wie sie sind.",
     "takeOfflineConfirm": "Website offline nehmen",
-    "legal": {
-      "title": "Rechtliche Seiten",
-      "hint": "In der Fusszeile der Website und der Galerien verlinkt. Dieselben Seiten wie unter Einstellungen › CMS."
+    "cmsPages": {
+      "title": "Rechtliche Seiten & Systemseiten",
+      "hint": "Werden im Design der Website gezeigt, solange sie online ist; die Galerien verlinken dieselben Seiten.",
+      "legal": "Rechtliche Seiten",
+      "system": "Systemseiten"
     }
   },
   "websiteNotice": {

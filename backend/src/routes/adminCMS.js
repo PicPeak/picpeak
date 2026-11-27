@@ -138,6 +138,9 @@ router.put('/pages/:slug', adminAuth, requirePermission('cms.edit'), [
     }
 
     await db('cms_pages').where('slug', slug).update(updateFields);
+    // The website renders the legal and not-found pages and links them in
+    // its footer (issue 2618).
+    require('../services/website/cache').clearWebsiteCache();
 
     const updated = await db('cms_pages').where('slug', slug).first();
 

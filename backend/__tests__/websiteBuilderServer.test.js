@@ -100,12 +100,28 @@ test('website subpages and the sitemap are compressed like the home page', async
   expect(health.headers.vary || '').not.toMatch(/Accept-Encoding/);
 });
 
-test('paths the app owns and unknown slugs still reach the SPA', async () => {
-  for (const p of ['/admin', '/setup', '/impressum', '/no-such-page', '/book']) {
+test('paths the app owns still reach the SPA; legal pages and unknown slugs take the website design', async () => {
+  for (const p of ['/admin', '/setup', '/book', '/not-found']) {
     // eslint-disable-next-line no-await-in-loop
     const res = await request(app).get(p);
     expect(res.text).toContain('<div id="root">SPA</div>');
   }
+  const now = new Date().toISOString();
+  for (const [slug, title] of [['impressum', 'Legal Notice'], ['not-found', 'Page Not Found']]) {
+    // eslint-disable-next-line no-await-in-loop
+    await db('cms_pages').where({ slug }).del();
+    // eslint-disable-next-line no-await-in-loop
+    await db('cms_pages').insert({ slug, title_en: title, title_de: title, content_en: `<p>${title} text</p>`, content_de: '', updated_at: now });
+  }
+  require('../src/services/website/cache').clearWebsiteCache();
+  const legal = await request(app).get('/impressum');
+  expect(legal.status).toBe(200);
+  expect(legal.text).toContain('Legal Notice text');
+  expect(legal.text).toContain('class="pp-header"');
+  expect(legal.headers['content-security-policy']).toContain('script-src \'none\'');
+  const missing = await request(app).get('/no-such-page');
+  expect(missing.text).toContain('Page Not Found text');
+  expect(missing.headers['x-robots-tag']).toBe('noindex');
 });
 
 test('the public site switch still turns the website off', async () => {
@@ -162,6 +178,7 @@ describe('website page views', () => {
     await request(app).get('/').set('User-Agent', 'Mozilla/5.0 (compatible; Googlebot/2.1)');
     await request(app).head('/').set('User-Agent', BROWSER);
     await request(app).get('/nope').set('User-Agent', BROWSER);
+    await request(app).get('/impressum').set('User-Agent', BROWSER);
     await settle();
     expect(await rows()).toEqual([]);
   });

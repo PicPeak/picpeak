@@ -19,15 +19,15 @@ const { userHasAllPermissions } = require('../../middleware/permissions');
 const { listFonts } = require('../fontsService');
 const publicSite = require('../publicSiteService');
 const {
-  normalizeDocument, collectReferences, legacyImport, newPageId, LIMIT_CODES, MAX_CUSTOM_CSS,
+  normalizeDocument, collectReferences, legacyImport, newPageId, LIMIT_CODES, MAX_CUSTOM_CSS, LEGAL_SLUGS,
 } = require('./document');
 const media = require('./media');
 const { livePhotos } = require('../../utils/photoVisibility');
-const { renderPage, renderedImages, pageHref } = require('./renderer');
+const { renderPage, renderSystemPage, renderedImages, pageHref } = require('./renderer');
+const { sanitizeCmsHtml } = require('./richText');
 const { cacheGeneration, getCached, setCached, clearWebsiteCache } = require('./cache');
 
 const FLAG = 'websiteBuilder';
-const LEGAL_SLUGS = ['impressum', 'datenschutz', 'agb'];
 
 // A boolean setting as stored: JSON true, or 1/0 where the settings writer
 // went through formatBoolean on SQLite.
@@ -685,12 +685,47 @@ async function resolvePublicPage(slug) {
     else if (page) result = { status: 200, page };
   }
   if (result && result.status === 200) {
-    const html = renderPage(await buildContext(document, result.page));
-    result = { status: 200, html, etag: `W/"${crypto.createHash('sha1').update(html).digest('hex')}"`, noindex: /name="robots" content="[^"]*noindex/.test(html) };
+    result = withEtag(renderPage(await buildContext(document, result.page)));
+  } else if (!result && slug) {
+    // A legal page, or the not-found page for any other address, in the
+    // website's design while the website is live (the app shows them otherwise).
+    result = LEGAL_SLUGS.includes(slug) ? await systemPage(document, slug) : await notFoundPage(document, generation);
   }
   // Misses are cached too, so a crawler walking random slugs costs one
   // lookup per slug and TTL, not a document parse per request.
   setCached(key, result, generation);
+  return result;
+}
+
+function withEtag(html, extra = {}) {
+  return { status: 200, html, etag: `W/"${crypto.createHash('sha1').update(html).digest('hex')}"`, noindex: /name="robots" content="[^"]*noindex/.test(html), ...extra };
+}
+
+/**
+ * A CMS page (legal or not-found) rendered in the website's header, footer
+ * and fonts. Null when the CMS has no such page; an external address the
+ * page points to is a redirect, as in the app.
+ */
+async function systemPage(document, slug, { notFound = false } = {}) {
+  const row = await db('cms_pages').where({ slug }).first();
+  if (!row) return null;
+  const { safeUrl } = require('./document');
+  const external = !notFound && flag(row.use_external_url) && /^https?:\/\//i.test(row.external_url || '') ? safeUrl(row.external_url) : '';
+  if (external) return { status: 302, location: external };
+  const ctx = await buildContext(document, { id: `system-${slug}`, slug, title: '', navLabel: '', blocks: [], seo: { title: '', description: '', image: null } });
+  const de = ctx.locale === 'de';
+  ctx.page.title = (de ? row.title_de : row.title_en) || row.title_en || row.title_de || slug;
+  if (notFound) ctx.robots = 'noindex';
+  const content = sanitizeCmsHtml((de ? row.content_de : row.content_en) || row.content_en || '');
+  return withEtag(renderSystemPage(ctx, { content, canonical: !notFound }), { system: true, ...(notFound ? { notFound: true } : {}) });
+}
+
+// One rendering of the not-found page for every unknown address.
+async function notFoundPage(document, generation) {
+  const cached = getCached('system:not-found');
+  if (cached !== undefined) return cached;
+  const result = await systemPage(document, 'not-found', { notFound: true });
+  setCached('system:not-found', result, generation);
   return result;
 }
 

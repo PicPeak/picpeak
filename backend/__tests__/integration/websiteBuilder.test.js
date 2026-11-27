@@ -388,8 +388,10 @@ describe('public pages', () => {
     expect(await service.resolvePublicPage('')).toMatchObject({ status: 200 });
     expect((await service.resolvePublicPage('about')).html).toContain('About us');
     expect(await service.resolvePublicPage('home')).toEqual({ status: 302, location: '/' });
-    expect(await service.resolvePublicPage('hidden')).toBeNull();
-    expect(await service.resolvePublicPage('nope')).toBeNull();
+    // A hidden page or no page at that address: the not-found page, in the
+    // website's design (see 'legal and system pages').
+    expect((await service.resolvePublicPage('hidden')).notFound).toBe(true);
+    expect((await service.resolvePublicPage('nope')).notFound).toBe(true);
 
     await setFeatureFlags(db, { websiteBuilder: false });
     cache.clearWebsiteCache();
@@ -480,8 +482,10 @@ describe('public pages', () => {
     publishDuringNextRender();
     // The render already under way may still answer with what it read...
     expect(await service.resolvePublicPage('about')).toMatchObject({ status: 200 });
-    // ...but it must not keep serving it from the cache.
-    expect(await service.resolvePublicPage('about')).toBeNull();
+    // ...but it must not keep serving it from the cache: the address has no
+    // page any more (the not-found page, or nothing without one).
+    const after = await service.resolvePublicPage('about');
+    expect(after === null || after.notFound === true).toBe(true);
   });
 
   test('a sitemap that overlaps a publish does not put the old list back in the cache', async () => {
@@ -1839,5 +1843,71 @@ describe('uploading a font in the branding settings', () => {
     expect((await request(app).delete('/api/admin/settings/fonts/Studio%20Serif').set(auth(adminId))).status).toBe(204);
     expect((await request(app).delete('/api/admin/settings/fonts/Inter').set(auth(adminId))).status).toBe(404);
     expect(fs.existsSync(path.join(process.env.STORAGE_PATH, 'fonts', 'Studio-Serif'))).toBe(false);
+  });
+});
+
+describe('legal and system pages in the website design', () => {
+  const upsertCms = async (slug, row) => {
+    const existing = await db('cms_pages').where({ slug }).first();
+    const data = { title_en: slug, title_de: slug, content_en: '', content_de: '', updated_at: new Date().toISOString(), ...row };
+    if (existing) await db('cms_pages').where({ slug }).update(data);
+    else await db('cms_pages').insert({ slug, ...data });
+  };
+
+  beforeAll(async () => {
+    const state = (await request(app).get('/api/admin/website').set(auth(adminId))).body;
+    const document = { pages: [{ id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [] }, { id: 'about', title: 'About us', slug: 'about', blocks: [] }] };
+    const saved = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document, revision: state.draft.revision }).expect(200);
+    await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({ revision: saved.body.draft.revision }).expect(200);
+    await upsertCms('impressum', { title_en: 'Legal Notice', content_en: '<h2>Studio AG</h2><p>Bahnhofstrasse 1</p><script>alert(1)</script><img src="x" onerror="alert(2)">', use_external_url: false });
+    await upsertCms('datenschutz', { title_en: 'Privacy Policy', content_en: '<p>Our policy</p>', use_external_url: true, external_url: 'https://legal.example/privacy' });
+    await upsertCms('agb', { title_en: 'Terms', content_en: '<p>Terms</p>', use_external_url: true, external_url: 'javascript:alert(1)' });
+    await upsertCms('not-found', { title_en: 'Page Not Found', content_en: '<p>Nothing lives here.</p>' });
+  });
+
+  test('a legal page renders in the website design with its CMS content kept to an allowlist', async () => {
+    const page = await service.resolvePublicPage('impressum');
+    expect(page.status).toBe(200);
+    expect(page.system).toBe(true);
+    expect(page.html).toContain('class="pp-header"');
+    expect(page.html).toContain('<h1>Legal Notice</h1>');
+    expect(page.html).toContain('<h2>Studio AG</h2><p>Bahnhofstrasse 1</p>');
+    expect(page.html).not.toMatch(/<script>|onerror/);
+    expect(page.html).toContain('href="/about"');
+  });
+
+  test('a legal page with an external address leads there, a bad address renders the page', async () => {
+    expect(await service.resolvePublicPage('datenschutz')).toEqual({ status: 302, location: 'https://legal.example/privacy' });
+    const agb = await service.resolvePublicPage('agb');
+    expect(agb.status).toBe(200);
+    expect(agb.html).toContain('<p>Terms</p>');
+  });
+
+  test('an address with no page shows the not-found page, noindex, in the website design', async () => {
+    const page = await service.resolvePublicPage('no-such-page');
+    expect(page).toMatchObject({ status: 200, notFound: true, noindex: true, system: true });
+    expect(page.html).toContain('Nothing lives here.');
+    expect(page.html).toContain('class="pp-footer"');
+    expect(page.html).toContain('content="noindex');
+    // One rendering for every unknown address.
+    expect((await service.resolvePublicPage('another-one')).html).toBe(page.html);
+  });
+
+  test('while the website is not live, legal and unknown addresses stay with the app', async () => {
+    await setFeatureFlags(db, { websiteBuilder: false });
+    cache.clearWebsiteCache();
+    expect(await service.resolvePublicPage('impressum')).toBeNull();
+    expect(await service.resolvePublicPage('no-such-page')).toBeNull();
+    await setFeatureFlags(db, { websiteBuilder: true });
+  });
+
+  test('saving a CMS page refreshes the website', async () => {
+    const before = await service.resolvePublicPage('impressum');
+    expect(before.html).toContain('Bahnhofstrasse 1');
+    const cmsApp = express();
+    cmsApp.use(express.json());
+    cmsApp.use('/api/admin/cms', require('../../src/routes/adminCMS'));
+    await request(cmsApp).put('/api/admin/cms/pages/impressum').set(auth(adminId)).send({ content_en: '<p>Seestrasse 9</p>' }).expect(200);
+    expect((await service.resolvePublicPage('impressum')).html).toContain('Seestrasse 9');
   });
 });

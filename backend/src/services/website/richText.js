@@ -70,4 +70,33 @@ function sanitizeRichText(html) {
   return sanitizeHtml(typeof html === 'string' ? html : '', RICH_TEXT_OPTIONS);
 }
 
-module.exports = { inline, richText, linkAttrs, sanitizeRichText };
+// CMS pages (legal, not-found) are written in the CMS editor, which allows
+// more than the text block: the tags the app's own legal page renders.
+const CMS_OPTIONS = {
+  allowedTags: ['p', 'br', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'blockquote', 'a', 'em', 'strong', 'u', 'b', 'i',
+    'code', 'pre', 'hr', 'div', 'span', 'img', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
+  allowedAttributes: { a: ['href', 'title', 'target', 'rel'], img: ['src', 'alt', 'title', 'width', 'height'], '*': ['style'] },
+  allowedStyles: { '*': { 'text-align': [/^(left|center|right|justify)$/] } },
+  allowedSchemes: ['http', 'https', 'mailto', 'tel'],
+  allowedSchemesByTag: { img: ['https'] },
+  allowProtocolRelative: false,
+  nonTextTags: NON_TEXT_TAGS,
+  transformTags: {
+    a: (tagName, attribs) => {
+      const href = attribs.href ? safeUrl(attribs.href) : '';
+      const out = {};
+      if (href) out.href = href;
+      if (attribs.title) out.title = attribs.title;
+      if (href && attribs.target === '_blank') { out.target = '_blank'; out.rel = 'noopener noreferrer'; }
+      return { tagName, attribs: out };
+    },
+  },
+};
+
+/** CMS page HTML kept to an allowlist, for the website's design of it. */
+function sanitizeCmsHtml(html) {
+  return sanitizeHtml(String(html || ''), CMS_OPTIONS);
+}
+
+module.exports = {
+  sanitizeCmsHtml, inline, richText, linkAttrs, sanitizeRichText };

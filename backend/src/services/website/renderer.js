@@ -683,7 +683,7 @@ function renderHead(ctx, body) {
   if (description) tags.push(`<meta name="description" content="${esc(description)}">`);
   // A relative canonical is still a canonical; the Host header is never used
   // for it, because the page is cached and shared between requests.
-  tags.push(`<link rel="canonical" href="${esc(canonical || pageHref(page))}">`);
+  if (!ctx.noCanonical) tags.push(`<link rel="canonical" href="${esc(canonical || pageHref(page))}">`);
   if (ctx.robots) tags.push(`<meta name="robots" content="${esc(ctx.robots)}">`);
   tags.push(`<meta property="og:type" content="website"><meta property="og:title" content="${esc(title)}"><meta property="og:site_name" content="${esc(siteName)}">`);
   if (description) tags.push(`<meta property="og:description" content="${esc(description)}">`);
@@ -733,6 +733,22 @@ ${renderFooter(ctx)}`;
   return renderHead(ctx, body);
 }
 
+/**
+ * A CMS page (legal, not-found) in the website's design: the context of
+ * renderPage with a page of no blocks, and `content`, CMS HTML already kept
+ * to its allowlist (sanitizeCmsHtml).
+ */
+function renderSystemPage(input, { content, canonical = true }) {
+  const ctx = { ...input, resolved: [], noCanonical: !canonical };
+  const body = `<a class="pp-skip" href="#main">Skip to content</a>
+${renderHeader(ctx)}
+<main id="main">
+<section class="pp-section"><div class="pp-wrap pp-narrow"><h1>${esc(ctx.page.title)}</h1><div class="pp-prose pp-system">${content}</div></div></section>
+</main>
+${renderFooter(ctx)}`;
+  return renderHead(ctx, body);
+}
+
 /** The images (photo and upload refs) a rendered page shows, in page order. */
 function renderedImages(input) {
   const resolved = [];
@@ -742,6 +758,7 @@ function renderedImages(input) {
 
 module.exports = {
   renderPage,
+  renderSystemPage,
   renderedImages,
   richText,
   inline,

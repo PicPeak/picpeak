@@ -34,6 +34,9 @@ const MAX_CUSTOM_CSS = MAX_CSS_SIZE + DEFAULT_PUBLIC_SITE_CSS.length + 2;
 // list is shared: nginx.conf and the frontend page editor keep copies that
 // __tests__/services/websiteReservedSlugs.test.js holds to this file.
 const RESERVED_SLUGS = new Set(require('./reservedSlugs.json'));
+// Reserved for pages, but the website renders them in its design while it
+// is live (the CMS legal pages); the app's own page otherwise.
+const LEGAL_SLUGS = ['impressum', 'datenschutz', 'agb'];
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_SLUG_LENGTH = 60;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
@@ -489,6 +492,7 @@ module.exports = {
   BLOCK_TYPES,
   BLOCK_VARIANTS,
   RESERVED_SLUGS,
+  LEGAL_SLUGS,
   normalizeDocument,
   normalizeBlock,
   normalizeSlug,

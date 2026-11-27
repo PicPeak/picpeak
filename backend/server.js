@@ -471,7 +471,8 @@ function sendWebsitePage(req, res, page, slug) {
     return;
   }
   // Counted server-side (no cookie, no script); a revalidation is a view too.
-  if (req.method === 'GET') {
+  // Legal and not-found pages are not the website's own pages: not counted.
+  if (req.method === 'GET' && !page.system) {
     require('./src/services/website/pageViews').recordPageView({
       slug, userAgent: req.get('user-agent'), referer: req.get('referer'), host: req.get('host'),
       ip: require('./src/utils/clientIp').clientIpForAudit(req), gpc: req.get('Sec-GPC'), dnt: req.get('DNT'),
@@ -492,12 +493,21 @@ function sendWebsitePage(req, res, page, slug) {
   res.status(200).send(page.html);
 }
 
-// `/<slug>` of a published website page. Anything else (the flag off, no such
-// page) falls through to the routes below exactly as before.
+// A path the app answers itself. The legal pages are reserved too, but the
+// live website shows them in its design.
+function ownedByApp(slug) {
+  const { RESERVED_SLUGS, LEGAL_SLUGS } = require('./src/services/website/document');
+  return RESERVED_SLUGS.has(slug) && !LEGAL_SLUGS.includes(slug);
+}
+
+// `/<slug>` of a published website page, a legal page, or, for any other
+// address, the not-found page, all while the website is live. Anything else
+// (the flag off, the site not live) falls through to the routes below
+// exactly as before.
 async function handleWebsitePageRequest(req, res, next) {
   try {
     // Paths the app owns (/health, /admin, ...) never cost a lookup.
-    if (require('./src/services/website/document').RESERVED_SLUGS.has(req.params[0])) return next();
+    if (ownedByApp(req.params[0])) return next();
     const page = await require('./src/services/website/service').resolvePublicPage(req.params[0]);
     if (!page) return next();
     return sendWebsitePage(req, res, page, req.params[0]);
@@ -910,8 +920,7 @@ app.use('/site-media', setCorsHeaders, require('./src/routes/publicWebsiteMedia'
 // slug-shaped paths reach the handler; it hands everything it does not own
 // on to the SPA routes below.
 // Paths the app owns (/health, /api, /admin, ...) pass by untouched.
-const compressWebsitePage = (req, res, next) => (
-  require('./src/services/website/document').RESERVED_SLUGS.has(req.params[0]) ? next() : websiteCompression(req, res, next));
+const compressWebsitePage = (req, res, next) => (ownedByApp(req.params[0]) ? next() : websiteCompression(req, res, next));
 app.get(/^\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/, compressWebsitePage, handleWebsitePageRequest);
 
 // Dynamic favicon endpoints. Browsers — notably Safari — request

@@ -6392,8 +6392,8 @@
     "showInFooterHelp": "When off, this page is hidden from the public gallery footer. The page itself remains accessible at its direct URL.",
     "discardOnSwitch": "Discard your unsaved changes to this page?",
     "discardAndSwitch": "Discard and switch",
-    "legalInWebsiteLink": "Edit them in Website › Pages",
-    "legalInWebsite": "The website is on: its Pages panel edits the legal pages (Impressum, privacy policy, terms), the same pages the galleries link to."
+    "managedInWebsite": "These pages are managed under Website › Pages while the website is on, and shown in its design.",
+    "editInWebsite": "Edit in Website"
   },
   "eventTypes": {
     "title": "Event Types",
@@ -13485,9 +13485,11 @@
     "takeOfflineTitle": "Take the website offline?",
     "takeOfflineMessage": "Visitors no longer see it at the site root; `/` leads to the gallery code page instead. The website and its draft stay as they are.",
     "takeOfflineConfirm": "Take the website offline",
-    "legal": {
-      "title": "Legal pages",
-      "hint": "Linked in the website’s footer and the galleries’. The same pages as in Settings › CMS."
+    "cmsPages": {
+      "title": "Legal & system pages",
+      "hint": "Shown in the website’s design while it is live; the galleries link the same pages.",
+      "legal": "Legal pages",
+      "system": "System pages"
     }
   },
   "websiteNotice": {
