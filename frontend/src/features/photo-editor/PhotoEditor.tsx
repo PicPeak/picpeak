@@ -514,7 +514,9 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
         </div>
 
         {/* Panel */}
-        <aside className="w-full lg:w-80 shrink-0 overflow-y-auto border-t border-line bg-shell p-4 lg:border-l lg:border-t-0" aria-label={t('photoEditor.panel', 'Adjustments')}>
+        {/* Stacked under the photo (below lg) it gets at most 45% of the
+            height and scrolls; side by side it takes the full height. */}
+        <aside className="w-full lg:w-80 shrink-0 min-h-0 max-h-[45%] lg:max-h-none overflow-y-auto border-t border-line bg-shell p-4 lg:border-l lg:border-t-0" aria-label={t('photoEditor.panel', 'Adjustments')}>
           <fieldset disabled={!ready} className="space-y-4 min-w-0 disabled:opacity-60">
           <Section
             title={t('photoEditor.sections.crop', 'Crop and rotate')}

@@ -146,6 +146,18 @@ describe('background progress', () => {
   });
 });
 
+describe('layout', () => {
+  it('bounds the adjustments panel stacked under the photo, so it scrolls instead of running off-screen', async () => {
+    await open();
+    const panel = screen.getByRole('complementary', { name: 'Adjustments' });
+    const classes = panel.className.split(/\s+/);
+    expect(classes).toEqual(expect.arrayContaining(['overflow-y-auto', 'min-h-0']));
+    expect(classes.some((c) => /^max-h-/.test(c))).toBe(true);
+    // Side by side from lg on, it takes the full height.
+    expect(classes).toContain('lg:max-h-none');
+  });
+});
+
 describe('copy to photos', () => {
   it('sends more than a request takes in parts and adds up the result', async () => {
     const many = Array.from({ length: 1500 }, (_, i) => ({ id: i + 10, filename: `x${i}.jpg`, media_type: 'image' })) as any;
