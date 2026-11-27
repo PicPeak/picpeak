@@ -144,6 +144,32 @@ describe('capture date backfill (#1172)', () => {
     expect((await request(app).post('/api/admin/photos/repair-capture-dates')).body.count).toBe(0);
   });
 
+  it('drops the gallery\'s prebuilt archive once it has dated a photo (issue 2617)', async () => {
+    // The archive dates its entries by capture time; one built before the
+    // backfill carries the upload time for these photos.
+    const zips = require('../../src/services/downloadZipService');
+    const invalidate = jest.spyOn(zips, 'invalidate').mockImplementation(() => {});
+    try {
+      const { eventId } = await seed({ relpath: 'zipped.jpg', exifIso: '2026-06-01T09:45:03Z' });
+      await db('events').where({ id: eventId }).update({ download_zip_path: 'events/active/capfill/.download-cache/all.zip' });
+      await request(app).post('/api/admin/photos/repair-capture-dates');
+      await settle();
+      expect(invalidate).toHaveBeenCalledWith(eventId);
+
+      // A pass that dates nothing leaves the archive alone.
+      invalidate.mockClear();
+      const plain = await seed({ relpath: 'undated.jpg', exifIso: '2026-06-01T09:45:03Z', writeFile: false });
+      await sharp({ create: { width: 40, height: 30, channels: 3, background: { r: 1, g: 1, b: 1 } } })
+        .jpeg().toFile(path.join(mediaRoot, 'trip', 'undated.jpg'));
+      await db('events').where({ id: plain.eventId }).update({ download_zip_path: 'events/active/capfill/.download-cache/all.zip' });
+      await request(app).post('/api/admin/photos/repair-capture-dates');
+      await settle();
+      expect(invalidate).not.toHaveBeenCalled();
+    } finally {
+      invalidate.mockRestore();
+    }
+  });
+
   it('counts a photo with no EXIF separately from a failure', async () => {
     // "The mount is broken" and "these files carry no date" need different
     // answers from an operator, so they are not the same number.

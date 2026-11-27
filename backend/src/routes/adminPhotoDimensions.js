@@ -22,6 +22,19 @@ const { JOB_DIMENSION_REPAIR, JOB_CAPTURE_DATE_BACKFILL, JOB_ORIENTATION_BACKFIL
 
 const { startLeaseKeeper } = maintenanceJobs;
 
+// The prebuilt Download All archive dates its entries by capture time (issue
+// 2617), so a pass that wrote capture dates leaves it stale in those galleries.
+async function invalidateDownloadArchives(eventIds) {
+  const downloadZipService = require('../services/downloadZipService');
+  for (const eventId of eventIds) {
+    try {
+      await downloadZipService.invalidateIfBuilt(eventId);
+    } catch (err) {
+      logger.warn(`Download zip invalidation failed for event ${eventId}: ${err.message}`);
+    }
+  }
+}
+
 // Query modifiers (`.modify(...)`) shared by the jobs below.
 
 // Not a video, by all three markers, because no single one is reliable.
@@ -344,6 +357,7 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
       let errorCount = 0;
       let skippedCount = 0;
       let lostClaim = false;
+      const datedEvents = new Set();
 
       // Same reasoning as the dimension repair: detached from the request, so
       // an unexpected throw must not leave the claim held.
@@ -427,10 +441,12 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
             // capture (the file could not be read) writes nothing. A photo
             // still without a date gets it with the date below.
             if (!needsDate && needsWall && capture) {
-              wallCount += await db('photos')
+              const walled = await db('photos')
                 .where({ id: photo.id, path: photo.path, filename: photo.filename })
                 .whereNull('captured_at_wall')
                 .update({ captured_at_wall: capture.wall || '' });
+              wallCount += walled;
+              if (walled) datedEvents.add(photo.event_id);
             }
 
             // The counters below are about capture dates; a photo that was
@@ -474,7 +490,12 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
             // Neither is an error and neither needs a retry: captured_at is
             // still NULL for the fenced case, so the status endpoint keeps
             // reporting it as backlog and the next run picks it up.
-            if (updated) successCount++; else skippedCount++;
+            if (updated) {
+              successCount++;
+              datedEvents.add(photo.event_id);
+            } else {
+              skippedCount++;
+            }
 
             if (successCount % 50 === 0 && successCount > 0) {
               logger.info(`Capture date backfill progress: ${successCount} updated...`);
@@ -485,6 +506,7 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
           }
         }
 
+        await invalidateDownloadArchives(datedEvents);
         if (lostClaim) {
           logger.warn(`Capture date backfill stopped: claim taken over after ${successCount} updated, ${errorCount} errors`);
           return;
@@ -669,6 +691,7 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
       let lostClaim = false;
       let videoDated = 0;
       let videoPosters = 0;
+      const datedEvents = new Set();
 
       // A video stored before issue 2263 was fixed: dimensions as coded, not
       // as displayed (a portrait phone clip reads as landscape), no capture
@@ -701,7 +724,10 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
         if (Object.keys(values).length) {
           // Dated only while still undated, as in the capture-date backfill.
           if (values.captured_at && await db('photos').where(fence).whereNull('captured_at')
-            .update({ captured_at: values.captured_at })) videoDated++;
+            .update({ captured_at: values.captured_at })) {
+            videoDated++;
+            datedEvents.add(photo.event_id);
+          }
           delete values.captured_at;
           if (Object.keys(values).length && await db('photos').where(fence).update(values)) corrected++;
         }
@@ -946,6 +972,7 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
           }
         }
 
+        await invalidateDownloadArchives(datedEvents);
         if (lostClaim) {
           logger.warn(`Orientation backfill stopped: claim taken over after ${corrected} corrected`);
           return;

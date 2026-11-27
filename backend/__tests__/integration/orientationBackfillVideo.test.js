@@ -101,7 +101,7 @@ describe('orientation backfill for videos (issue 2263)', () => {
       width, height, captured_at: capturedAt, thumbnail_path: poster,
       uploaded_at: new Date().toISOString(),
     }).returning('id');
-    return { photoId: typeof p === 'object' ? p.id : p, poster };
+    return { photoId: typeof p === 'object' ? p.id : p, poster, eventId };
   }
 
   it('turns a portrait clip, dates it and rebuilds its squashed poster, once', async () => {
@@ -138,6 +138,26 @@ describe('orientation backfill for videos (issue 2263)', () => {
     expect(ensureThumbnail).not.toHaveBeenCalled();
     expect(done.body.lastResult).toMatchObject({ checked: 1, corrected: 0, videoDated: 0, videoPosters: 0 });
     expect(row.orientation_checked_at).toBeTruthy();
+  });
+
+  it('drops the gallery\'s prebuilt archive only when it dated a clip (issue 2617)', async () => {
+    const zips = require('../../src/services/downloadZipService');
+    const invalidate = jest.spyOn(zips, 'invalidateIfBuilt').mockResolvedValue();
+    try {
+      const { eventId } = await seed({ width: 1080, height: 1920, posterWidth: 169, posterHeight: 300 });
+      probe.mockResolvedValue({ width: 1080, height: 1920, capturedAt: '2025-06-15T12:30:00.000Z' });
+      await run();
+      await settle();
+      expect(invalidate).toHaveBeenCalledWith(eventId);
+
+      invalidate.mockClear();
+      await seed({ width: 1080, height: 1920, posterWidth: 169, posterHeight: 300, capturedAt: '2024-01-01T00:00:00.000Z' });
+      await run();
+      await settle();
+      expect(invalidate).not.toHaveBeenCalled();
+    } finally {
+      invalidate.mockRestore();
+    }
   });
 
   it('keeps the square poster of a square clip', async () => {
