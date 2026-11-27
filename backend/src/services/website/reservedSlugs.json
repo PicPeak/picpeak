@@ -5,6 +5,7 @@
   "app",
   "assets",
   "book",
+  "cgi-bin",
   "code",
   "contract",
   "customer",
@@ -23,6 +24,7 @@
   "payment-check",
   "photo-checkout",
   "photos",
+  "phpmyadmin",
   "purchased-downloads",
   "quote",
   "robots",
@@ -34,5 +36,8 @@
   "thumbnails",
   "transfer",
   "transfer-upload",
-  "uploads"
+  "uploads",
+  "wp-admin",
+  "wp-content",
+  "wp-includes"
 ]

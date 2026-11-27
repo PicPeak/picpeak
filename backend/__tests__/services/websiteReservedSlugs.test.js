@@ -30,3 +30,13 @@ test('the frontend page editor checks the shared list', () => {
   const slugs = [...block[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
   expect(sorted(slugs)).toEqual(sorted(canonical));
 });
+
+test('every path the nginx scanner block answers 404 is reserved too', () => {
+  // Such a page would preview fine and never be reachable on the website.
+  const conf = fs.readFileSync(path.join(root, 'frontend/nginx.conf'), 'utf8');
+  const match = conf.match(/location ~\* \^\/\(([a-z0-9|-]+)\)\(\/\|\$\) \{\s*return 404;/);
+  expect(match).not.toBeNull();
+  const blocked = match[1].split('|');
+  expect(blocked.length).toBeGreaterThan(0);
+  expect(blocked.filter((slug) => !canonical.includes(slug))).toEqual([]);
+});

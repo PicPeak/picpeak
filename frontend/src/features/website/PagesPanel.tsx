@@ -16,11 +16,12 @@ import type { ValidationProblem, WebsiteDocument, WebsitePage } from './types';
 // backend/__tests__/services/websiteReservedSlugs.test.js. The server is the
 // gate; this only answers early.
 export const RESERVED_SLUGS = new Set([
-  'admin', 'agb', 'api', 'app', 'assets', 'book', 'code', 'contract', 'customer',
-  'datenschutz', 'favicon', 'fonts', 'gallery', 'health', 'impressum', 'index',
-  'invite', 'login', 'logout', 'not-found', 'og', 'payment-check', 'photo-checkout',
-  'photos', 'purchased-downloads', 'quote', 'robots', 's', 'setup', 'site-media',
-  'sitemap', 'static', 'thumbnails', 'transfer', 'transfer-upload', 'uploads',
+  'admin', 'agb', 'api', 'app', 'assets', 'book', 'cgi-bin', 'code', 'contract',
+  'customer', 'datenschutz', 'favicon', 'fonts', 'gallery', 'health', 'impressum',
+  'index', 'invite', 'login', 'logout', 'not-found', 'og', 'payment-check',
+  'photo-checkout', 'photos', 'phpmyadmin', 'purchased-downloads', 'quote', 'robots',
+  's', 'setup', 'site-media', 'sitemap', 'static', 'thumbnails', 'transfer',
+  'transfer-upload', 'uploads', 'wp-admin', 'wp-content', 'wp-includes',
 ]);
 
 export function slugProblem(doc: WebsiteDocument, page: WebsitePage): 'empty' | 'reserved' | 'duplicate' | null {
