@@ -359,6 +359,10 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
                       : t('feedback.annotation.show', 'Show drawing')}
                   </button>
                 )}
+                {/* A later crop of the photo removed part of it (issue 2619). */}
+                {comment.annotation_clipped && (
+                  <p className="mt-1 text-xs text-muted-theme">{t('feedback.annotation.outsideCrop', 'Part of the drawing is outside the current crop.')}</p>
+                )}
               </div>
             </div>
             );

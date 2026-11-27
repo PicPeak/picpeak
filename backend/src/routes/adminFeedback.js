@@ -17,6 +17,7 @@ const {
 } = require('../utils/feedbackValidation');
 const { requireEventOwnership, canAccessEvent } = require('../middleware/ownership');
 const { withParsedAnnotation } = require('../utils/photoAnnotation');
+const photoEdits = require('../services/photoEdits');
 const { adminThumbnailUrl, ADMIN_THUMBNAIL_COLUMNS } = require('../utils/adminThumbnailUrl');
 
 // Get event feedback settings
@@ -121,6 +122,9 @@ router.get('/events/:eventId/feedback',
           'photo_feedback.*',
           'photos.filename',
           'photos.path',
+          // What a drawing is moved onto (issue 2619): the original's size and
+          // the applied edit.
+          'photos.width as photo_width', 'photos.height as photo_height', 'photos.edit_applied_params as photo_edit_applied_params',
           ...ADMIN_THUMBNAIL_COLUMNS
         )
         .modify(applyFilters);
@@ -147,8 +151,11 @@ router.get('/events/:eventId/feedback',
         // thumbnail_url is versioned like the photo grid's (issue 2276); the
         // columns that version it stay out of the payload.
         // edit_applied_rev stays in: the annotation preview names it (issue 2619).
-        feedback: feedback.map(({ processing_error, poster_offset_seconds, focal_x, focal_y, edit_applied_rev, ...row }) => ({
-          ...withParsedAnnotation(row),
+        feedback: feedback.map(({ processing_error, poster_offset_seconds, focal_x, focal_y, edit_applied_rev, photo_width, photo_height, photo_edit_applied_params, ...row }) => ({
+          ...withParsedAnnotation(row, {
+            width: photo_width, height: photo_height,
+            appliedParams: photoEdits.paramsOf({ edit_params: photo_edit_applied_params }),
+          }),
           thumbnail_url: adminThumbnailUrl(eventId, { id: row.photo_id, processing_error, poster_offset_seconds, focal_x, focal_y, edit_applied_rev }),
           edit_applied_rev: Number(edit_applied_rev) || 0,
         })),

@@ -7363,7 +7363,8 @@
       "clear": "Alles löschen",
       "done": "Fertig",
       "limitReached": "Eine Zeichnung kann höchstens {{max}} Striche enthalten.",
-      "overlayLabel": "Zeichnung auf dem Foto"
+      "overlayLabel": "Zeichnung auf dem Foto",
+      "outsideCrop": "Ein Teil der Zeichnung liegt außerhalb des aktuellen Zuschnitts."
     }
   },
   "filter": {

@@ -1061,6 +1061,10 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                                   : t('feedback.annotation.show', 'Show drawing')}
                               </button>
                             )}
+                            {/* A later crop of the photo removed part of it (issue 2619). */}
+                            {comment.annotation_clipped && (
+                              <p className="text-xs text-neutral-400 mb-3">{t('feedback.annotation.outsideCrop', 'Part of the drawing is outside the current crop.')}</p>
+                            )}
                             
                             {/* Moderation Actions */}
                             <div className="flex gap-2">

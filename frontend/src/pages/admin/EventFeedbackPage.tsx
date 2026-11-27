@@ -297,6 +297,7 @@ export const EventFeedbackPanel: React.FC<{ eventId: string }> = ({ eventId }) =
                               photoId={item.photo_id}
                               annotation={item.annotation}
                               editAppliedRev={item.edit_applied_rev}
+                              clipped={item.annotation_clipped}
                               alt={item.filename || 'Photo'}
                               className="mt-2"
                             />

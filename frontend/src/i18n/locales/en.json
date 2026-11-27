@@ -7418,7 +7418,8 @@
       "clear": "Clear",
       "done": "Done",
       "limitReached": "A drawing can have up to {{max}} strokes.",
-      "overlayLabel": "Drawing on the photo"
+      "overlayLabel": "Drawing on the photo",
+      "outsideCrop": "Part of the drawing is outside the current crop."
     }
   },
   "filter": {

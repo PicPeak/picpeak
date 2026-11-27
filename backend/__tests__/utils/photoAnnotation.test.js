@@ -130,3 +130,58 @@ describe('photoAnnotation', () => {
     expect(withParsedAnnotation({ id: 4, feedback_type: 'comment' }).annotation).toBeNull();
   });
 });
+
+// Issue 2619: a drawing is made on the image shown at the time, which an
+// edit may have turned, flipped or cropped since. It is recorded with the
+// applied edit's geometry and moved to the current one when shown.
+describe('a drawing after the photo was edited', () => {
+  const { annotationGeometry, displayAnnotation } = require('../../src/utils/photoAnnotation');
+  const math = require('../../src/utils/photoEditMath');
+  const params = (input) => math.validateEditParams(input).params;
+  const photo = (edit) => ({ width: 600, height: 400, appliedParams: edit ? params(edit) : null });
+  const arrow = (from, to) => ({ v: 1, strokes: [{ t: 'arrow', c: 0, p: [from, to] }] });
+  const stored = (a) => JSON.stringify(a);
+
+  it('records the geometry of the applied edit, nothing for a photo shown unedited', () => {
+    expect(annotationGeometry(null)).toBeNull();
+    expect(annotationGeometry(params({ exposure: 1 }))).toBeNull();
+    expect(JSON.parse(annotationGeometry(params({ rotate: 90, exposure: 1 })))).toMatchObject({ rotate: 90, crop: null });
+  });
+
+  it('turns with a rotation made after it', () => {
+    const shown = displayAnnotation(stored(arrow([0.1, 0.2], [0.5, 0.5])), null, photo({ rotate: 90 }));
+    expect(shown.clipped).toBe(false);
+    // Turned clockwise: x' = 1 - y, y' = x.
+    expect(shown.annotation.strokes[0].p).toEqual([[0.8, 0.1], [0.5, 0.5]]);
+  });
+
+  it('mirrors with a flip', () => {
+    const shown = displayAnnotation(stored(arrow([0.1, 0.2], [0.3, 0.4])), null, photo({ flipH: true }));
+    expect(shown.annotation.strokes[0].p).toEqual([[0.9, 0.2], [0.7, 0.4]]);
+  });
+
+  it('hides what a crop removed and says so', () => {
+    const drawing = { v: 1, strokes: [
+      { t: 'arrow', c: 0, p: [[0.1, 0.5], [0.2, 0.5]] },
+      { t: 'free', c: 1, p: [[0.3, 0.5], [0.6, 0.5], [0.8, 0.5], [0.9, 0.5]] },
+    ] };
+    const shown = displayAnnotation(stored(drawing), null, photo({ crop: { x: 0.5, y: 0, w: 0.5, h: 1 } }));
+    expect(shown.clipped).toBe(true);
+    // The arrow was in the left half: gone. The line keeps what is in the right half.
+    expect(shown.annotation.strokes).toEqual([{ t: 'free', c: 1, p: [[0.2, 0.5], [0.6, 0.5], [0.8, 0.5]] }]);
+  });
+
+  it('goes back to the original after a reset, and nothing is shown when all of it was cropped away', () => {
+    const turned = annotationGeometry(params({ rotate: 90 }));
+    const back = displayAnnotation(stored(arrow([0.8, 0.1], [0.5, 0.5])), turned, photo(null));
+    expect(back.annotation.strokes[0].p).toEqual([[0.1, 0.2], [0.5, 0.5]]);
+    const gone = displayAnnotation(stored(arrow([0.1, 0.1], [0.2, 0.2])), null, photo({ crop: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 } }));
+    expect(gone).toEqual({ annotation: null, clipped: true });
+  });
+
+  it('leaves a drawing on an unchanged geometry as it was', () => {
+    const turned = annotationGeometry(params({ rotate: 90 }));
+    const same = displayAnnotation(stored(arrow([0.1, 0.2], [0.3, 0.4])), turned, photo({ rotate: 90, exposure: 0.5 }));
+    expect(same).toEqual({ annotation: arrow([0.1, 0.2], [0.3, 0.4]), clipped: false });
+  });
+});

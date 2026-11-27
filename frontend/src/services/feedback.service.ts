@@ -122,6 +122,8 @@ export interface PhotoFeedback {
    * only ever drawn after parseAnnotation (utils/photoAnnotation.ts).
    */
   annotation?: unknown;
+  /** Part of the drawing is outside the photo's current crop (issue 2619). */
+  annotation_clipped?: boolean;
   guest_name?: string;
   guest_email?: string;
   is_approved: boolean;

@@ -351,6 +351,38 @@ describe('noise reduction on a sensor developed at half size', () => {
   });
 });
 
+describe('a guest\'s drawing on an edited photo', () => {
+  it('is stored with the applied edit\'s geometry and shown on the photo as it is edited now', async () => {
+    const feedbackService = require('../../src/services/feedbackService');
+    const id = unwrap(await db('photos').insert({
+      event_id: eventId, filename: 'drawn.jpg', path: 'edit-card/card.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      width: 600, height: 400, size_bytes: 1, processing_status: 'complete', uploaded_at: new Date().toISOString(),
+      edit_params: math.canonicalJson(validated({ rotate: 90 })), edit_rev: 1, edit_applied_rev: 1,
+      edit_applied_params: math.canonicalJson(validated({ rotate: 90 })),
+    }).returning('id'));
+    try {
+      // Drawn on the turned photo guests see.
+      await feedbackService.submitFeedback(id, eventId, {
+        feedback_type: 'comment', comment_text: 'look here', guest_name: 'Ann',
+        annotation: { v: 1, strokes: [{ t: 'arrow', c: 0, p: [[0.8, 0.1], [0.5, 0.5]] }] },
+      }, 'guest-ann');
+      const stored = await db('photo_feedback').where({ photo_id: id }).first();
+      expect(JSON.parse(stored.annotation_geometry)).toMatchObject({ rotate: 90 });
+      // Shown as drawn while the edit stands...
+      let [shown] = await feedbackService.getPhotoFeedback(id, { feedback_type: 'comment' });
+      expect(shown).toMatchObject({ annotation: { strokes: [{ p: [[0.8, 0.1], [0.5, 0.5]] }] }, annotation_clipped: false });
+      expect(shown).not.toHaveProperty('annotation_geometry');
+      // ...and on the original after a reset is applied.
+      await db('photos').where({ id }).update({ edit_params: null, edit_rev: 2, edit_applied_rev: 2, edit_applied_params: null });
+      [shown] = await feedbackService.getPhotoFeedback(id, { feedback_type: 'comment' });
+      expect(shown.annotation.strokes[0].p).toEqual([[0.1, 0.2], [0.5, 0.5]]);
+    } finally {
+      await db('photo_feedback').where({ photo_id: id }).delete();
+      await db('photos').where({ id }).delete();
+    }
+  });
+});
+
 describe('renditions while a newer edit is being applied', () => {
   it('show the applied revision, as its URL and face boxes do, until the pass applies the new one', async () => {
     fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath('events/active/edit-card/tier-pending.jpg'));

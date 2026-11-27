@@ -25,4 +25,15 @@ describe('AnnotatedPhotoPreview', () => {
     rerender(<AnnotatedPhotoPreview eventId={7} photoId={42} annotation={annotation} alt="shot" editAppliedRev={0} />);
     expect(screen.getByRole('img', { name: 'shot' })).toHaveAttribute('src', '/admin/photos/7/preview/42');
   });
+
+  it('says when part of the drawing is outside the current crop, also when none of it is left', () => {
+    const { rerender } = render(<AnnotatedPhotoPreview eventId={7} photoId={42} annotation={annotation} alt="shot" clipped />);
+    expect(screen.getByRole('img', { name: 'shot' })).toBeInTheDocument();
+    expect(screen.getByText('Part of the drawing is outside the current crop.')).toBeInTheDocument();
+    rerender(<AnnotatedPhotoPreview eventId={7} photoId={42} annotation={null} alt="shot" clipped />);
+    expect(screen.queryByRole('img', { name: 'shot' })).toBeNull();
+    expect(screen.getByText('Part of the drawing is outside the current crop.')).toBeInTheDocument();
+    rerender(<AnnotatedPhotoPreview eventId={7} photoId={42} annotation={null} alt="shot" />);
+    expect(screen.queryByText('Part of the drawing is outside the current crop.')).toBeNull();
+  });
 });

@@ -25,6 +25,10 @@
  * on the row so every replica reports the failure and a retry on any replica
  * clears it. A failure counts only while it names the current edit_rev.
  *
+ * photo_feedback.annotation_geometry is the geometry of the edit applied
+ * when a guest drew on the photo (null: the unedited original), so the
+ * drawing is moved onto the photo as an edit turns or crops it later.
+ *
  * photo_edit_presets are the studio's saved edits, shared by every admin.
  * feature_flags.photoEditor gates the editor, default off.
  *
@@ -51,6 +55,9 @@ exports.up = async function up(knex) {
       await knex.schema.alterTable('photos', add);
     }
   }
+  if (await knex.schema.hasTable('photo_feedback') && !(await knex.schema.hasColumn('photo_feedback', 'annotation_geometry'))) {
+    await knex.schema.alterTable('photo_feedback', (t) => t.text('annotation_geometry').nullable());
+  }
   if (!(await knex.schema.hasTable('photo_edit_presets'))) {
     await knex.schema.createTable('photo_edit_presets', (t) => {
       t.increments('id').primary();
@@ -72,6 +79,9 @@ exports.down = async function down(knex) {
     await knex('feature_flags').where({ key: 'photoEditor' }).del();
   }
   await knex.schema.dropTableIfExists('photo_edit_presets');
+  if (await knex.schema.hasTable('photo_feedback') && await knex.schema.hasColumn('photo_feedback', 'annotation_geometry')) {
+    await knex.schema.alterTable('photo_feedback', (t) => t.dropColumn('annotation_geometry'));
+  }
   const hasPhotos = await knex.schema.hasTable('photos');
   for (const name of ['edit_error', 'edit_failed_rev', 'edit_applied_render_path', 'edit_applied_height', 'edit_applied_width', 'edit_applied_params', 'edit_height', 'edit_width', 'edit_render_path', 'edit_applied_rev', 'edit_rev', 'edit_params']) {
     if (hasPhotos && await knex.schema.hasColumn('photos', name)) {
