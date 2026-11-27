@@ -35,8 +35,10 @@ const router = express.Router();
 
 const CONTENT_TYPES = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4' };
 
+// Never cached: a URL that is not served now may be served after the next
+// publish (and the other way round).
 function notFound(res) {
-  res.status(404).type('text/plain').send('Not found');
+  res.status(404).set('Cache-Control', 'no-store').type('text/plain').send('Not found');
 }
 
 // A photo's rendition as { key, view }, or { redirect } when a public URL
@@ -158,7 +160,7 @@ router.get('/:token/:size', async (req, res) => {
       return res.status(503).type('text/plain').send('Try again shortly');
     }
     logger.error('Website media failed', { error: error.message });
-    if (!res.headersSent) res.status(500).type('text/plain').send('Internal server error');
+    if (!res.headersSent) res.status(500).set('Cache-Control', 'no-store').type('text/plain').send('Internal server error');
   }
 });
 

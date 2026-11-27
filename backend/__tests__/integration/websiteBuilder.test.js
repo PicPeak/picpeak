@@ -1620,10 +1620,19 @@ describe('the published set is what the pages show', () => {
     }
   });
 
-  test('a not-found answer is never cached', async () => {
+  test('a not-found or failed answer is never cached', async () => {
     const res = await request(app).get(publicUrl(quotePhoto)).redirects(1);
     expect(res.status).toBe(404);
     expect(res.headers['cache-control']).toBe('no-store');
+    const storage = require('../../src/services/storage').getStorage();
+    const spy = jest.spyOn(storage, 'stat').mockRejectedValue(new Error('disk gone'));
+    try {
+      const failed = await request(app).get(publicUrl(galleryPhoto)).redirects(1);
+      expect(failed.status).toBe(500);
+      expect(failed.headers['cache-control']).toBe('no-store');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test('a new pick from a gallery that is not on the website is refused, for its owner too', async () => {
