@@ -469,16 +469,18 @@ function sendWebsitePage(req, res, page) {
     res.redirect(301, page.location);
     return;
   }
+  // Every header before the conditional answer: a 304 updates the cached
+  // copy's headers, so it must carry this page's policy, not Helmet's.
   if (page.noindex) res.setHeader('X-Robots-Tag', 'noindex');
+  res.setHeader('Cache-Control', 'public, max-age=30, must-revalidate');
+  res.setHeader('ETag', page.etag);
+  res.setHeader('Vary', 'Accept-Encoding');
+  res.setHeader('Content-Security-Policy', WEBSITE_CSP);
   if (req.headers['if-none-match'] === page.etag) {
     res.status(304).end();
     return;
   }
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, max-age=30, must-revalidate');
-  res.setHeader('ETag', page.etag);
-  res.setHeader('Vary', 'Accept-Encoding');
-  res.setHeader('Content-Security-Policy', WEBSITE_CSP);
   res.status(200).send(page.html);
 }
 

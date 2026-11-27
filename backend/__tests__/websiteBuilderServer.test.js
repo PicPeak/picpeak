@@ -68,6 +68,11 @@ test('with the flag on and a published site, / and /<slug> are server-rendered p
 
   const again = await request(app).get('/').set('If-None-Match', root.headers.etag);
   expect(again.status).toBe(304);
+  // A revalidation carries the page's own headers, or the browser merges
+  // Helmet's generic policy into its cached copy.
+  for (const header of ['content-security-policy', 'cache-control', 'etag', 'x-robots-tag', 'vary']) {
+    expect(again.headers[header]).toBe(root.headers[header]);
+  }
 
   const about = await request(app).get('/about');
   expect(about.status).toBe(200);
