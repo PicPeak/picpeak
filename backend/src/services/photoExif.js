@@ -12,6 +12,7 @@
  */
 
 const path = require('path');
+const fsp = require('fs').promises;
 const exifr = require('exifr');
 const logger = require('../utils/logger');
 
@@ -21,18 +22,50 @@ const MAX_TEXT_LENGTH = 100;
 // exifr's Node build reads the first 64 KB of a file and, when only EXIF tags
 // are asked for, no further: a JPEG whose EXIF segment sits behind large XMP,
 // ICC or Photoshop blocks (some editors' exports) comes back empty (issue
-// 2617). The retry reads a larger window, still a fixed size so a big TIFF or
-// RAW without the tags is not read whole, and only after a pass found none.
-const RETRY_FIRST_CHUNK_SIZE = 4 * 1024 * 1024;
+// 2617). Only JPEG has that gap, so only a JPEG is looked at again, and not
+// through exifr, which reads whole segments: the marker chain is walked with
+// 4-byte reads and the one EXIF segment (64 KB at most) is read on its own.
+const JPEG_SOI = Buffer.from([0xff, 0xd8]);
+const JPEG_EOI = Buffer.from([0xff, 0xd9]);
+const MAX_JPEG_SEGMENTS = 256;
+
+/** The EXIF APP1 segment of a JPEG, marker included, or null. */
+async function readJpegExifSegment(filePath) {
+  const handle = await fsp.open(filePath, 'r');
+  try {
+    const head = Buffer.alloc(4);
+    if ((await handle.read(head, 0, 2, 0)).bytesRead < 2 || !head.subarray(0, 2).equals(JPEG_SOI)) return null;
+    let offset = 2;
+    for (let i = 0; i < MAX_JPEG_SEGMENTS; i += 1) {
+      if ((await handle.read(head, 0, 4, offset)).bytesRead < 4 || head[0] !== 0xff) return null;
+      // Start of scan or end of image: the metadata segments are behind us.
+      if (head[1] === 0xda || head[1] === 0xd9) return null;
+      const length = head.readUInt16BE(2);
+      if (length < 2) return null;
+      if (head[1] === 0xe1 && length >= 8) {
+        const segment = Buffer.alloc(2 + length);
+        const { bytesRead } = await handle.read(segment, 0, segment.length, offset);
+        if (bytesRead === segment.length && segment.toString('latin1', 4, 10) === 'Exif\0\0') return segment;
+      }
+      offset += 2 + length;
+    }
+    return null;
+  } finally {
+    await handle.close();
+  }
+}
 
 /**
- * exifr.parse for a pick of EXIF tags, retried over a 4 MB window when the
- * default read found none of them. Throws what exifr throws.
+ * exifr.parse for a pick of EXIF tags. When the default read found none of
+ * them in a JPEG, parses its EXIF segment found by readJpegExifSegment.
+ * Throws what exifr throws.
  */
 async function parseExif(filePath, options) {
   const found = await exifr.parse(filePath, options);
   if (found) return found;
-  return exifr.parse(filePath, { ...options, firstChunkSize: RETRY_FIRST_CHUNK_SIZE });
+  const segment = await readJpegExifSegment(filePath);
+  // Closed with an end marker: exifr does not reach a segment that ends the buffer.
+  return segment ? exifr.parse(Buffer.concat([JPEG_SOI, segment, JPEG_EOI]), options) : found;
 }
 
 function cleanText(value) {

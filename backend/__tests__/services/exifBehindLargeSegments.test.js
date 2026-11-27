@@ -31,15 +31,17 @@ const appSegment = (marker, id, size) => {
 
 describe('EXIF behind large metadata segments (issue 2617)', () => {
   let tmpDir;
-  const jpeg = async (name, leadingSegments) => {
-    const plain = await sharp({ create: { width: 30, height: 20, channels: 3, background: { r: 5, g: 5, b: 5 } } })
-      .withExif({
+  const jpeg = async (name, leadingSegments, { exif = true } = {}) => {
+    let image = sharp({ create: { width: 30, height: 20, channels: 3, background: { r: 5, g: 5, b: 5 } } });
+    if (exif) {
+      image = image.withExif({
         IFD0: { Make: 'Canon', Model: 'Canon EOS R5' },
         IFD2: { DateTimeOriginal: '2025:06:01 09:45:03', OffsetTimeOriginal: '+02:00' },
-      })
-      .jpeg().toBuffer();
+      });
+    }
+    const plain = await image.jpeg().toBuffer();
     // sharp writes the EXIF APP1 right after SOI; the extra blocks go in front of it.
-    expect(plain.readUInt16BE(2)).toBe(0xffe1);
+    if (exif) expect(plain.readUInt16BE(2)).toBe(0xffe1);
     const extra = Array.from({ length: leadingSegments }, () => appSegment(0xe2, 'ICC_PROFILE\0', 65000));
     const file = path.join(tmpDir, name);
     await fs.writeFile(file, Buffer.concat([plain.subarray(0, 2), ...extra, plain.subarray(2)]));
@@ -66,5 +68,65 @@ describe('EXIF behind large metadata segments (issue 2617)', () => {
   it('reads the camera details behind ~1 MB of leading segments', async () => {
     const file = await jpeg('details.jpg', 16);
     expect(await extractPhotoExif(file)).toEqual({ make: 'Canon', model: 'Canon EOS R5' });
+  });
+
+  describe('bytes read by both readers together', () => {
+    const FIRST_PASS = 64 * 1024; // exifr's own first read, per reader
+    let read;
+    let openSpy;
+    beforeEach(() => {
+      read = 0;
+      const open = require('fs').promises.open;
+      openSpy = jest.spyOn(require('fs').promises, 'open').mockImplementation(async (...args) => {
+        const handle = await open(...args);
+        const plainRead = handle.read.bind(handle);
+        handle.read = async (...readArgs) => {
+          const result = await plainRead(...readArgs);
+          read += result.bytesRead;
+          return result;
+        };
+        return handle;
+      });
+    });
+    afterEach(() => openSpy.mockRestore());
+    const readBoth = async (file) => {
+      await extractCapture(file);
+      await extractPhotoExif(file);
+      return read;
+    };
+
+    // A PNG chunk: length, type, data, CRC (not checked by the readers).
+    const pngChunk = (type, data) => {
+      const length = Buffer.alloc(4);
+      length.writeUInt32BE(data.length);
+      return Buffer.concat([length, Buffer.from(type, 'latin1'), data, Buffer.alloc(4)]);
+    };
+    const png = async (name, textBytes) => {
+      const pixels = Buffer.alloc(300 * 300 * 3, 7);
+      const plain = await sharp(pixels, { raw: { width: 300, height: 300, channels: 3 } }).png({ compressionLevel: 0 }).toBuffer();
+      const iend = plain.length - 12;
+      const text = textBytes ? [pngChunk('tEXt', Buffer.concat([Buffer.from('Comment\0'), Buffer.alloc(textBytes, 0x41)]))] : [];
+      const file = path.join(tmpDir, name);
+      await fs.writeFile(file, Buffer.concat([plain.subarray(0, iend), ...text, plain.subarray(iend)]));
+      return file;
+    };
+
+    it('retries nothing for a PNG without EXIF', async () => {
+      expect(await readBoth(await png('plain.png', 0))).toBeLessThanOrEqual(2 * (FIRST_PASS + 2));
+    });
+
+    it('does not read a huge PNG text chunk', async () => {
+      expect(await readBoth(await png('text.png', 16 * 1024 * 1024))).toBeLessThanOrEqual(2 * (FIRST_PASS + 2));
+    });
+
+    it('only walks the marker chain of a JPEG without EXIF', async () => {
+      const file = await jpeg('noexif.jpg', 16, { exif: false });
+      expect(await readBoth(file)).toBeLessThanOrEqual(2 * (FIRST_PASS + 2 + 4 * 32));
+    });
+
+    it('reads one EXIF segment, not the blocks in front of it', async () => {
+      const file = await jpeg('bounded.jpg', 16);
+      expect(await readBoth(file)).toBeLessThanOrEqual(2 * (FIRST_PASS + 2 + 4 * 32 + 64 * 1024));
+    });
   });
 });
