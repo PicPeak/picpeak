@@ -39,7 +39,12 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
   // The picture the drawing was started on (issue 2619): its photo and edit
   // revision, captured when drawing starts, not when it is finished.
   const [drawnOn, setDrawnOn] = useState<{ photoId: number | undefined; revision: number } | null>(null);
-  const [shown, setShown] = useState<{ commentId: number; annotation: PhotoAnnotation } | null>(null);
+  // The stored drawing picked from the comment list, in the geometry of the
+  // revision it was picked on (issue 2619).
+  const [picked, setShown] = useState<{ commentId: number; annotation: PhotoAnnotation; revision: number } | null>(null);
+  // A newer revision on screen has another geometry: the list refetches the
+  // drawing placed on it, and the old placement is not shown meanwhile.
+  const shown = picked && picked.revision === editRevision ? picked : null;
   const [tool, setTool] = useState<AnnotationTool>('free');
   const [color, setColor] = useState(0);
   // A comment is on its way (reported by the comment form). Its success
@@ -103,6 +108,10 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
     toast.info(t('feedback.annotation.photoUpdated', 'The photo was updated. Please draw again.'));
   }, [staleDrawing, t]);
 
+  useEffect(() => {
+    if (picked && picked.revision !== editRevision) setShown(null);
+  }, [picked, editRevision]);
+
   // Called from a request's success handler, which can arrive late: after
   // the panel was closed and reopened, or on another photo. Only the very
   // draft that was sent goes; a drawing made since is not this comment's.
@@ -115,9 +124,9 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
       setShown(null);
       return;
     }
-    setShown({ commentId, annotation });
+    setShown({ commentId, annotation, revision: editRevision });
     onShowRef.current();
-  }, [shown]);
+  }, [shown, editRevision]);
 
   const hideShown = useCallback(() => setShown(null), []);
 

@@ -66,3 +66,17 @@ describe('useLightboxAnnotation and the edit revision (issue 2619)', () => {
     expect(toast.info).not.toHaveBeenCalled();
   });
 });
+
+describe('a stored drawing on screen and the edit revision (issue 2619)', () => {
+  beforeEach(() => vi.mocked(toast.info).mockClear());
+
+  it('is taken off the photo when the photo moves to a new revision', () => {
+    const { result, rerender } = setup({ photoId: 1, editRevision: 2 });
+    act(() => result.current.context.toggleShown(9, { v: 1, strokes: [stroke as never] }));
+    expect(result.current.visible?.strokes).toHaveLength(1);
+    rerender({ photoId: 1, editRevision: 3 });
+    expect(result.current.visible).toBeNull();
+    expect(result.current.context.shownCommentId).toBeNull();
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+});
