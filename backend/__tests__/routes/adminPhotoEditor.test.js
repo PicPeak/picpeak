@@ -377,3 +377,34 @@ describe('an edited photo whose render fails', () => {
     }
   });
 });
+
+describe('admin image URLs follow the applied revision', () => {
+  it('names it in the preview URL of a reset RAW and caches only that version', async () => {
+    const dir = path.join(process.env.STORAGE_PATH, 'events/active/edit-route');
+    fs.writeFileSync(path.join(dir, 'reset.jpg'), originalBytes);
+    // A RAW whose edit was reset and applied (revision 2), and a JPEG one.
+    const insert = async (filename, mime) => unwrap(await db('photos').insert({
+      event_id: event.id, filename, original_filename: filename, path: `edit-route/${filename === 'reset.cr3' ? 'reset.jpg' : filename}`,
+      type: 'individual', media_type: 'image', mime_type: mime, size_bytes: originalBytes.length, processing_status: 'complete',
+      uploaded_at: new Date().toISOString(), width: 800, height: 600, edit_params: null, edit_rev: 2, edit_applied_rev: 2,
+    }).returning('id'));
+    const rawId = await insert('reset.cr3', 'image/x-canon-cr3');
+    const jpegId = await insert('reset.jpg', 'image/jpeg');
+    try {
+      const listed = (await auth(request(adminApp).get(`/api/admin/photos/${event.id}/photos`))).body.photos;
+      expect(listed.find((p) => p.id === rawId).url).toBe(`/admin/photos/${event.id}/preview/${rawId}?e=2`);
+      const preview = (query) => auth(request(adminApp).get(`/api/admin/photos/${event.id}/preview/${jpegId}${query}`));
+      expect((await preview('?e=2')).headers['cache-control']).toBe('private, max-age=3600');
+      // Another version (an old URL, or none) is answered but never kept.
+      expect((await preview('')).headers['cache-control']).toBe('no-store');
+      expect((await preview('?e=1')).headers['cache-control']).toBe('no-store');
+      const photo = (query) => auth(request(adminApp).get(`/api/admin/photos/${event.id}/photo/${jpegId}${query}`));
+      expect((await photo('')).headers['cache-control']).toBe('private, max-age=3600');
+      // A URL naming an edit the photo no longer has is not cached under that name.
+      expect((await photo('?e=1')).headers['cache-control']).toBe('no-store');
+      expect((await photo('?original=1')).headers['cache-control']).toBe('private, max-age=3600');
+    } finally {
+      await db('photos').whereIn('id', [rawId, jpegId]).delete();
+    }
+  });
+});
