@@ -15,6 +15,15 @@ const {
 
 jest.setTimeout(120000);
 
+// ffmpeg is not part of the test run: the hero video's remux is stood in for
+// by a copy, the probe by a fixed answer.
+const mockProbe = jest.fn();
+jest.mock('../../src/services/videoRenditionService', () => ({
+  probe: (...args) => mockProbe(...args),
+  playsInBrowser: () => true,
+  transcode: (src, out) => require('fs').promises.copyFile(src, out),
+}));
+
 let db; let cleanup; let app;
 let adminId; let viewerId;
 let service; let media; let cache;
@@ -363,6 +372,35 @@ describe('uploads', () => {
     await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document: doc, revision: saved.body.draft.revision }).expect(200);
     expect((await request(app).delete(`/api/admin/website/assets/${uploaded.id}`).set(auth(adminId))).status).toBe(204);
     expect((await request(app).get(uploaded.previewUrl)).status).toBe(404);
+  });
+});
+
+describe('hero video', () => {
+  // An ISO-BMFF header with an mp4 brand, then filler.
+  const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypmp42'), Buffer.alloc(4), Buffer.from('mp42isom'), Buffer.alloc(2000, 7)]);
+
+  test('an uploaded video is served with ranges; an over-long one is refused', async () => {
+    mockProbe.mockResolvedValue({ duration: 12, width: 1920, height: 1080 });
+    const res = await request(app).post('/api/admin/website/assets').set(auth(adminId)).attach('file', mp4, { filename: 'loop.mp4', contentType: 'video/mp4' });
+    expect(res.status).toBe(201);
+    expect(res.body.asset).toMatchObject({ kind: 'video', width: 1920, previewUrl: null });
+    const ranged = await request(app).get(res.body.asset.videoUrl).set('Range', 'bytes=0-9');
+    expect(ranged.status).toBe(206);
+    expect(ranged.headers['content-range']).toBe(`bytes 0-9/${mp4.length}`);
+    expect(ranged.headers['content-type']).toBe('video/mp4');
+    // A video is not an image tier, and an image tier is not a video.
+    expect((await request(app).get(res.body.asset.videoUrl.replace(/\/video$/, '/640'))).status).toBe(404);
+
+    mockProbe.mockResolvedValue({ duration: 600 });
+    const long = await request(app).post('/api/admin/website/assets').set(auth(adminId)).attach('file', mp4, { filename: 'long.mp4', contentType: 'video/mp4' });
+    expect(long.status).toBe(400);
+    expect(long.body.code).toBe('WEBSITE_ASSET_TOO_LONG');
+  });
+
+  test('a file that only claims to be MP4 is refused', async () => {
+    const res = await request(app).post('/api/admin/website/assets').set(auth(adminId)).attach('file', Buffer.from('not a video'), { filename: 'x.mp4', contentType: 'video/mp4' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('WEBSITE_ASSET_TYPE');
   });
 });
 
