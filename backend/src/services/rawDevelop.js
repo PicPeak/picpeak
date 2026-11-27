@@ -20,6 +20,7 @@
  * Tunables (env, all optional):
  *   DCRAW_EMU_PATH            the dcraw_emu binary (default: dcraw_emu on PATH)
  *   RAW_DEVELOP_TIMEOUT_MS    default 180000 per develop
+ *   RAW_DEVELOP_MAX_PIXELS    default 150000000, the largest sensor developed
  *   PREVIEW_REGEN_CONCURRENCY develops at once (default 1), shared with the
  *                             preview regeneration
  */
@@ -47,6 +48,9 @@ const intEnv = (name, fallback) => {
 const binary = () => process.env.DCRAW_EMU_PATH || 'dcraw_emu';
 const identifyBinary = () => process.env.RAW_IDENTIFY_PATH || 'raw-identify';
 const limit = pLimit(Math.min(8, intEnv('PREVIEW_REGEN_CONCURRENCY', 1)));
+const maxSensorPixels = () => intEnv('RAW_DEVELOP_MAX_PIXELS', 150000000);
+// dcraw_emu's PPM header and rounding of a half-size develop.
+const PPM_SLACK = 64 * 1024;
 
 let availability = null;
 /** Whether dcraw_emu can be run here; asked once per process. */
@@ -111,13 +115,29 @@ function parsePpm(buffer) {
 }
 
 /**
+ * The bytes a develop of a sensor of `size` (raw-identify's output size)
+ * writes: 16-bit RGB, 6 bytes a pixel, a quarter of them at half size, plus
+ * the header. A sensor beyond RAW_DEVELOP_MAX_PIXELS is refused before
+ * anything runs; an unknown size gets the budget of the largest one.
+ */
+function outputBudget(size, { half = false } = {}) {
+  const known = size && size.width > 0 && size.height > 0;
+  const pixels = known ? size.width * size.height : maxSensorPixels();
+  if (pixels > maxSensorPixels()) throw new Error(`RAW sensor too large to develop (${size.width} x ${size.height})`);
+  const written = half && known ? Math.ceil(size.width / 2) * Math.ceil(size.height / 2) : (half ? Math.ceil(pixels / 4) : pixels);
+  return written * 6 + PPM_SLACK;
+}
+
+/**
  * Develop the RAW at `file` to 16-bit linear RGB: `{ width, height, data }`
  * (interleaved Uint16, 0..65535). `half`: half the sensor size, the fast
- * demosaic; otherwise AHD at full size. The image is read from a temp file
- * dcraw_emu writes, so its size is bounded by the file budget, not by the
- * runner's pipe.
+ * demosaic; otherwise AHD at full size. `size` is raw-identify's output size,
+ * which sets the file budget (outputBudget). The image is read from a temp
+ * file dcraw_emu writes, so it is bounded by that budget, not the runner's
+ * in-memory one.
  */
-async function developLinear(file, { half = false, nr = 0, signal } = {}) {
+async function developLinear(file, { half = false, nr = 0, size = null, signal } = {}) {
+  const fileBytes = outputBudget(size, { half });
   return limit(async () => {
     const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-raw-'));
     const out = path.join(dir, 'develop.ppm');
@@ -130,8 +150,7 @@ async function developLinear(file, { half = false, nr = 0, signal } = {}) {
         cpuSeconds: 600,
         wallMs: intEnv('RAW_DEVELOP_TIMEOUT_MS', 180000),
         outputBytes: MiB,
-        // 16-bit RGB of a 100 MP sensor, with room.
-        fileBytes: 1024 * MiB,
+        fileBytes,
         signal,
       });
       return parsePpm(await fsp.readFile(out));
@@ -272,10 +291,10 @@ async function developPreview(photo, withOriginal) {
   if (!flight) {
     flight = (async () => {
       const started = Date.now();
-      const { image, info } = await withOriginal(photo, async (file) => ({
-        info: await identify(file),
-        image: await developLinear(file, { half: true }),
-      }), { raw: true });
+      const { image, info } = await withOriginal(photo, async (file) => {
+        const identified = await identify(file);
+        return { info: identified, image: await developLinear(file, { half: true, size: identified }) };
+      }, { raw: true });
       const encoded = encodePreview(shrink(image, PREVIEW_LONG_EDGE), {
         linear: true, primaries: 'srgb', whiteBalance: 'as-shot', highlights: `rebuild-${HIGHLIGHT_MODE}`,
         exposureBias: info.exposureBias, cameraMultipliers: info.multipliers,
@@ -306,6 +325,7 @@ module.exports = {
   developArgs,
   noiseOptions,
   parsePpm,
+  outputBudget,
   developLinear,
   shrink,
   encodePreview,

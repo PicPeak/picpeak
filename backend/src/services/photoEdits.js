@@ -291,7 +291,7 @@ async function renderEditedJpeg(photo, params, { interactive = false } = {}) {
     if (developable && !(await rawDevelop.isOrdinaryImageFile(localPath))) {
       const info = await rawDevelop.identify(localPath);
       const half = Boolean(info.width && info.height && info.width * info.height > 1.5 * limit);
-      const image = await rawDevelop.developLinear(localPath, { half, nr: params.nr });
+      const image = await rawDevelop.developLinear(localPath, { half, nr: params.nr, size: info });
       const out = await renderInWorker(image.data, image.width, image.height, 3, params,
         { maxPixels: limit, linear: true, exposureBias: info.exposureBias });
       // The container's tags, none of the RAW's preview images (a crop must

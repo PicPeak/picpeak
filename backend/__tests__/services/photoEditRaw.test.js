@@ -172,3 +172,39 @@ describeRaw('RAW development (LibRaw dcraw_emu)', () => {
     expect(await photoEdits().queueDefaultDevelop([await row()])).toEqual([]);
   });
 });
+
+// No LibRaw needed: what a real camera file asks of the process budget. The
+// synthetic DNG is tiny; a 24 MP sensor writes 144 MB of 16-bit RGB.
+describe('the output budget of a develop', () => {
+  const rawDevelop = () => require('../../src/services/rawDevelop');
+  const MB = 1024 * 1024;
+
+  it('fits the 16-bit image of a 24 MP sensor, full size and half', () => {
+    const size = { width: 6000, height: 4000 };
+    const full = rawDevelop().outputBudget(size, { half: false });
+    expect(full).toBeGreaterThanOrEqual(6000 * 4000 * 6);
+    expect(full).toBeLessThan(6000 * 4000 * 6 * 1.1);
+    const half = rawDevelop().outputBudget(size, { half: true });
+    expect(half).toBeGreaterThanOrEqual(3000 * 2000 * 6);
+    expect(half).toBeLessThan(full / 3);
+  });
+
+  it('refuses a sensor beyond the pixel cap before anything runs, and caps an unknown size', () => {
+    expect(() => rawDevelop().outputBudget({ width: 20000, height: 20000 }, { half: false })).toThrow(/too large/);
+    const unknown = rawDevelop().outputBudget({ width: null, height: null }, { half: false });
+    expect(unknown).toBeGreaterThan(100 * MB);
+  });
+
+  it('hands that budget to the process as its file budget', async () => {
+    const media = require('../../src/services/mediaProcessService');
+    const run = jest.spyOn(media, 'run').mockRejectedValue(Object.assign(new Error('stop'), { code: 'STOP' }));
+    try {
+      await expect(rawDevelop().developLinear('/nonexistent.cr3', { half: true, size: { width: 6000, height: 4000 } })).rejects.toThrow('stop');
+      const options = run.mock.calls[0][2];
+      expect(options.stdoutPath).toBeTruthy();
+      expect(options.fileBytes).toBe(rawDevelop().outputBudget({ width: 6000, height: 4000 }, { half: true }));
+    } finally {
+      run.mockRestore();
+    }
+  });
+});
