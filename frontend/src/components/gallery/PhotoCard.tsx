@@ -719,6 +719,15 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
                 ? t('gallery.tile.openVideo', 'View video {{name}}', { name: photoLabels.of(photo, photo.filename) })
                 : t('gallery.tile.openPhoto', 'View {{name}}', { name: photoLabels.of(photo, photo.filename) })}
               data-lane-open
+              // Enter or Space arrives as a click without a pointer (detail
+              // 0) and opens at once; a tap goes on to the tile, which on
+              // touch reveals the actions first.
+              onClick={(e) => {
+                if (e.detail !== 0) return;
+                e.stopPropagation();
+                onClick(e);
+                if (isTouchDevice) hideOverlay();
+              }}
             />
           )}
 

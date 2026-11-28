@@ -22,7 +22,8 @@ vi.mock('../../common', () => ({
   AuthenticatedImage: ({ src, alt }: { src: string; alt?: string }) => <img src={src} alt={alt} />,
 }));
 vi.mock('../../../contexts/GuestIdentityContext', () => ({ useGuestIdentityOptional: () => null }));
-vi.mock('../../../hooks/useInputMode', () => ({ useInputMode: () => 'mouse' }));
+const inputMode = vi.hoisted(() => ({ value: 'mouse' }));
+vi.mock('../../../hooks/useInputMode', () => ({ useInputMode: () => inputMode.value }));
 // Interpolated, as the tile's names are ("View {{name}}").
 vi.mock('react-i18next', async () => ({
   ...await vi.importActual('react-i18next'),
@@ -300,6 +301,24 @@ describe('PhotoCard lane mode', () => {
     expect(shade).toHaveClass('pointer-events-none');
     expect(shade.className).not.toContain('pointer-events-auto');
     expect(shade).toHaveClass('opacity-0', 'group-hover:opacity-100');
+  });
+
+  it('opens at once from the keyboard on a touch device, while a tap still reveals first', () => {
+    inputMode.value = 'touch';
+    try {
+      const { onClick } = renderCard();
+      const open = document.querySelector('[data-lane-open]') as HTMLElement;
+      // A tap carries a click count; Enter or Space on the button does not.
+      fireEvent.click(open, { detail: 1 });
+      expect(onClick).not.toHaveBeenCalled();
+      cleanup();
+
+      const again = renderCard();
+      fireEvent.click(document.querySelector('[data-lane-open]') as HTMLElement, { detail: 0 });
+      expect(again.onClick).toHaveBeenCalledTimes(1);
+    } finally {
+      inputMode.value = 'mouse';
+    }
   });
 
   it('leaves the other layouts\' card as it was', () => {
