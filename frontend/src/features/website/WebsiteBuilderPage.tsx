@@ -2,15 +2,15 @@
  * Website builder (issue 2618): pages built from blocks, previewed with the
  * server's own markup, edited as a draft and published in one step.
  */
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import {
-  ArrowLeft, Copy, ExternalLink, FileText, Globe, Layers, Monitor, Palette, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Smartphone, Trash2, Undo2,
+  ExternalLink, FileText, Globe, Layers, Monitor, Palette, PanelLeftClose, PanelLeftOpen, Redo2, Smartphone, Undo2,
 } from 'lucide-react';
-import { Badge, Button, Modal, Notice, Tabs } from '../../components/common';
+import { Badge, Button, Notice, Tabs } from '../../components/common';
 import { ErrorState } from '../../components/common/EmptyState';
 import { Loading } from '../../components/common/Loading';
 import { useConfirm } from '../../components/common/ConfirmDialog';
@@ -21,29 +21,19 @@ import { usePermission } from '../../hooks/usePermission';
 import { mediaKey, websiteService } from '../../services/website.service';
 import { apiErrorCode, apiErrorDetails, apiErrorText } from '../../utils/apiErrorText';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
-import { BLOCK_ICONS, BLOCK_TYPES, blockLabel, collectImageRefs, createBlock, moveItem, newId } from './blocks';
-import { BlockEditor } from './BlockEditor';
-import { WebsiteDocContext } from './LinkTargetField';
+import { collectImageRefs } from './blocks';
+import { AddBlockModal } from './AddBlockModal';
+import { BlocksPanel } from './BlocksPanel';
+import { EditorNotices } from './EditorNotices';
 import { useContactSettingsDraft } from './contactSettingsDraft';
 import { MediaUrlsContext } from './fields';
 import { PagesPanel, slugProblem } from './PagesPanel';
 import { PreviewFrame, mediaOriginDiffers, publicSiteUrl, type PreviewDevice } from './PreviewFrame';
 import { SitePanel } from './SitePanel';
-import { SortableList } from './SortableList';
 import { EDITOR_QUERY_KEY, useWebsiteEditor } from './useWebsiteEditor';
-import type { Block, BlockType, ValidationProblem, WebsiteDocument, WebsitePage } from './types';
+import type { ValidationProblem, WebsiteDocument, WebsitePage } from './types';
 
 type Panel = 'blocks' | 'pages' | 'site';
-
-// Mirrors MAX_BLOCKS in backend/src/services/website/document.js.
-const MAX_BLOCKS = 60;
-
-function blockSummary(block: Block): string {
-  if ('heading' in block && block.heading) return block.heading;
-  if (block.type === 'text') return new DOMParser().parseFromString(block.body, 'text/html').body.textContent?.slice(0, 60) || '';
-  if (block.type === 'gallery' || block.type === 'instagram') return `${block.images.length} ×`;
-  return '';
-}
 
 // Numbers the documents sent for preview, across mounts, so a query key never
 // names an older document's preview.
@@ -97,7 +87,6 @@ export const WebsiteBuilderPage: React.FC = () => {
   const canEdit = usePermission('cms.edit');
   // Showing the website at the site root is a site-wide switch (server: settings.edit too).
   const canSwitchSite = usePermission('settings.edit') && canEdit;
-  const duplicateHintId = useId();
   const { formatDateTime } = useLocalizedDate();
   const editor = useWebsiteEditor();
   const queryClient = useQueryClient();
@@ -162,41 +151,6 @@ export const WebsiteBuilderPage: React.FC = () => {
   if (!draft || !server || !page) {
     return <ErrorState onRetry={() => editor.query.refetch()} message={apiErrorText(editor.query.error)} />;
   }
-
-  const setPageBlocks = (fn: (blocks: Block[]) => Block[], field?: string) => editor.update((d) => ({
-    ...d, pages: d.pages.map((p) => (p.id === page.id ? { ...p, blocks: fn(p.blocks) } : p)),
-  }), field);
-
-  const addBlock = (type: BlockType) => {
-    const created = createBlock(type, t);
-    const at = block ? page.blocks.findIndex((b) => b.id === block.id) + 1 : page.blocks.length;
-    setPageBlocks((blocks) => [...blocks.slice(0, at), created, ...blocks.slice(at)]);
-    setBlockId(created.id);
-    setAdding(false);
-  };
-
-  const duplicateBlock = (b: Block) => {
-    // The server refuses a page over the limit; never build one.
-    if (page.blocks.length >= MAX_BLOCKS) return;
-    const copy = { ...structuredClone(b), id: newId() };
-    setPageBlocks((blocks) => {
-      const at = blocks.findIndex((x) => x.id === b.id) + 1;
-      return [...blocks.slice(0, at), copy, ...blocks.slice(at)];
-    });
-    setBlockId(copy.id);
-  };
-
-  const deleteBlock = async (b: Block) => {
-    const ok = await confirm({
-      title: t('website.blocks.deleteTitle', 'Remove this block?'),
-      message: t('website.blocks.deleteMessage', 'It is removed from the draft. Undo brings it back.'),
-      confirmLabel: t('website.blocks.delete', 'Remove'),
-      variant: 'danger',
-    });
-    if (!ok) return;
-    setPageBlocks((blocks) => blocks.filter((x) => x.id !== b.id));
-    setBlockId(null);
-  };
 
   // Every page's address, the home page's too: the server checks them all.
   const localProblem = draft.pages.some((p) => slugProblem(draft, p));
@@ -299,111 +253,6 @@ export const WebsiteBuilderPage: React.FC = () => {
       ? <Badge tone="warning" dot title={publishedOn}>{t('website.status.changes', 'Unpublished changes')}</Badge>
       : <Badge tone="success" dot title={publishedOn}>{t('website.status.live', 'Published')}</Badge>;
 
-  // One contact form a page (the server refuses a second): a page stored
-  // with more shows only the first.
-  const firstContactId = page.blocks.find((b) => b.type === 'contact')?.id;
-  const isExtraContact = block?.type === 'contact' && block.id !== firstContactId;
-
-  // Why the open block cannot be duplicated, if it cannot.
-  const duplicateBlocked = block?.type === 'contact'
-    ? t('website.blocks.duplicateContact', 'A page has one contact form, so this block cannot be duplicated.') as string
-    : (page.blocks.length >= MAX_BLOCKS ? t('website.blocks.full', 'A page holds at most 60 blocks.') as string : undefined);
-
-  const blocksPanel = block ? (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="ghost" leftIcon={<ArrowLeft className="w-4 h-4" />} onClick={() => setBlockId(null)}>
-          {t('website.blocks.back', 'All blocks')}
-        </Button>
-        <span className="flex-1" />
-        {canEdit && (
-          <>
-            {/* On a wrapper: a disabled button shows no tooltip of its own everywhere. */}
-            <span title={duplicateBlocked}>
-              <Button size="icon-sm" variant="ghost" onClick={() => duplicateBlock(block)} disabled={!!duplicateBlocked}
-                aria-label={t('website.blocks.duplicate', 'Duplicate block') as string}
-                aria-describedby={duplicateBlocked ? duplicateHintId : undefined}>
-                <Copy className="w-4 h-4" />
-              </Button>
-              {duplicateBlocked && <span id={duplicateHintId} className="sr-only">{duplicateBlocked}</span>}
-            </span>
-            <Button size="icon-sm" variant="ghost" onClick={() => deleteBlock(block)} aria-label={t('website.blocks.delete', 'Remove') as string}>
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          </>
-        )}
-      </div>
-      {/* On its own line: next to the buttons a longer name was cut off. */}
-      <h3 className="text-sm font-semibold text-heading">{blockLabel(t, block.type)}</h3>
-      {/* Sections are anchored as #b-<block id>: a button or text link can point here. */}
-      <div className="flex flex-wrap items-center gap-2 rounded-lg bg-subtle border border-line px-3 py-2">
-        <span className="text-xs text-muted">{t('website.blocks.anchor', 'Link to this block')}</span>
-        <code className="text-xs text-body">{`#b-${block.id}`}</code>
-        <Button size="icon-sm" variant="ghost" className="ml-auto" aria-label={t('website.blocks.copyAnchor', 'Copy the link to this block') as string}
-          onClick={() => {
-            navigator.clipboard.writeText(`#b-${block.id}`)
-              .then(() => toast.success(t('website.blocks.anchorCopied', 'Link copied. Paste it as a button or text link.')))
-              .catch(() => toast.error(t('website.blocks.anchorCopyFailed', 'Could not copy the link.')));
-          }}>
-          <Copy className="w-4 h-4" />
-        </Button>
-      </div>
-      {isExtraContact && (
-        <Notice tone="warning" size="sm">
-          {t('website.blocks.extraContact', 'Only one contact form per page is shown, and the draft cannot be saved with two. Remove this one, or move it to another page.')}
-        </Notice>
-      )}
-      <fieldset disabled={!canEdit}>
-        <WebsiteDocContext.Provider value={draft}>
-          {/* Keyed by page and block: each block gets fresh fields, and the rich
-              text editor a fresh undo history (Ctrl+Z in one block never
-              brings back another's text). */}
-          <BlockEditor
-            key={`${page.id}:${block.id}`}
-            block={block}
-            brandColors={server.brandColors}
-            onChange={(next, field) => setPageBlocks((blocks) => blocks.map((b) => (b.id === next.id ? next : b)), field ? `${next.id}.${field}` : undefined)}
-          />
-        </WebsiteDocContext.Provider>
-      </fieldset>
-    </div>
-  ) : (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-heading">{t('website.blocks.title', 'Blocks on “{{name}}”', { name: page.title })}</h3>
-        {canEdit && (
-          <Button size="sm" variant="secondary" leftIcon={<Plus className="w-4 h-4" />} onClick={() => setAdding(true)} disabled={page.blocks.length >= MAX_BLOCKS}>
-            {t('website.blocks.add', 'Add block')}
-          </Button>
-        )}
-      </div>
-      {page.blocks.length === 0 ? (
-        <p className="text-sm text-muted py-6 text-center">{t('website.blocks.empty', 'This page has no blocks yet.')}</p>
-      ) : (
-        <SortableList
-          items={page.blocks}
-          getId={(b) => b.id}
-          getLabel={(b) => blockLabel(t, b.type)}
-          readOnly={!canEdit}
-          onMove={(from, to) => { if (canEdit) setPageBlocks((blocks) => moveItem(blocks, from, to)); }}
-          renderItem={(b) => {
-            const Icon = BLOCK_ICONS[b.type];
-            return (
-              <button type="button" className="w-full flex items-center gap-2.5 px-1 py-1 text-left" onClick={() => setBlockId(b.id)}>
-                <span className="inline-flex w-8 h-8 flex-none items-center justify-center rounded-md bg-inset text-soft"><Icon className="w-4 h-4" aria-hidden="true" /></span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium text-heading">{blockLabel(t, b.type)}</span>
-                  {blockSummary(b) && <span className="block text-xs text-muted truncate">{blockSummary(b)}</span>}
-                </span>
-              </button>
-            );
-          }}
-        />
-      )}
-      <p className="text-xs text-muted">{t('website.blocks.hint', 'Click a block here or in the preview to edit it. Drag to change the order.')}</p>
-    </div>
-  );
-
   return (
     <MediaUrlsContext.Provider value={media.data || {}}>
       <div className="space-y-4 lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
@@ -434,58 +283,8 @@ export const WebsiteBuilderPage: React.FC = () => {
             </div>
           )}
         />
-        {!canEdit && <Notice tone="neutral" size="sm">{t('website.readOnly', 'You can see the website but not change it.')}</Notice>}
-        {editor.query.isError && (
-          <Notice
-            tone="warning"
-            size="sm"
-            action={(
-              <Button size="sm" variant="secondary" isLoading={editor.query.isFetching} onClick={() => { void editor.query.refetch(); }}>
-                {t('common.retry', 'Try again')}
-              </Button>
-            )}
-          >
-            {t('website.refreshFailed', 'Could not refresh the website. Your changes here are kept.')}
-          </Notice>
-        )}
-        {editor.conflict && (
-          <Notice
-            tone="warning"
-            size="sm"
-            action={(
-              <Button size="sm" variant="secondary" onClick={() => { void editor.reloadLatest().then(() => setProblems([])); }}>
-                {t('website.conflictReload', 'Load the latest version')}
-              </Button>
-            )}
-          >
-            {t('website.conflict', 'Someone else saved the website since you opened it, so your changes were not saved. Load the latest version to continue from theirs; your unsaved changes here are then dropped.')}
-          </Notice>
-        )}
-        {server.legacyImportRefused && (
-          <Notice tone="warning" size="sm">
-            {t('website.importRefused', 'Your landing page is too long for a custom HTML block ({{length}} of {{max}} characters), so it was not copied into the builder; nothing of it was cut. It stays live at the site root until you publish here. To keep it, shorten it and paste it into a custom HTML block.', server.legacyImportRefused)}
-          </Notice>
-        )}
-        {server.legacyLandingLive && (
-          <Notice tone="info" size="sm"
-            action={canSwitchSite && server.publicSiteEnabled ? (
-              <Button size="sm" variant="ghost" isLoading={visibility.isPending} onClick={() => { void takeOffline(); }}>
-                {t('website.landingOffline', 'Take the landing page offline')}
-              </Button>
-            ) : undefined}>
-            {t('website.legacyImported', 'Your previous landing page was imported here. Visitors still see it unchanged at the site root; review it and publish when you are ready, and the website takes its place.')}
-          </Notice>
-        )}
-        {!server.publicSiteEnabled && (
-          <Notice tone="warning" size="sm"
-            action={canSwitchSite ? (
-              <Button size="sm" variant="secondary" isLoading={visibility.isPending} onClick={() => visibility.mutate(true)}>
-                {t('website.showAtRoot', 'Show it at the site root')}
-              </Button>
-            ) : undefined}>
-            {t('website.siteOff', 'The website is not shown at the site root yet: `/` leads to the gallery code page instead.')}
-          </Notice>
-        )}
+        <EditorNotices editor={editor} server={server} canEdit={canEdit} canSwitchSite={canSwitchSite} visibility={visibility}
+          takeOffline={takeOffline} setProblems={setProblems} />
 
         <div className={`grid grid-cols-1 gap-6 lg:flex-1 lg:min-h-0 ${panelOpen ? 'lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[400px_minmax(0,1fr)]' : ''}`}>
           {/* The frame stays put; only its content scrolls, inside the border.
@@ -503,7 +302,10 @@ export const WebsiteBuilderPage: React.FC = () => {
               />
             </div>
             <div className="panel-scroll lg:flex-1 lg:min-h-0 lg:overflow-y-auto px-4 pt-4 pb-8 space-y-4">
-              {panel === 'blocks' && blocksPanel}
+              {panel === 'blocks' && (
+                <BlocksPanel editor={editor} draft={draft} page={page} block={block} canEdit={canEdit} brandColors={server.brandColors}
+                  setBlockId={setBlockId} setAdding={setAdding} />
+              )}
               {panel === 'pages' && (
                 <PagesPanel doc={draft} pageId={page.id} onSelectPage={(id) => { setPageId(id); setBlockId(null); }}
                   update={editor.update} serverProblems={problems} readOnly={!canEdit} />
@@ -555,27 +357,7 @@ export const WebsiteBuilderPage: React.FC = () => {
           </section>
         </div>
 
-        <Modal open={adding} onClose={() => setAdding(false)} size="xl" title={t('website.blocks.addTitle', 'Add a block')}
-          description={t('website.blocks.addDescription', 'It is added below the selected block, or at the end of the page.')}>
-          <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {BLOCK_TYPES.map((type) => {
-              const Icon = BLOCK_ICONS[type];
-              const taken = type === 'contact' && !!firstContactId;
-              return (
-                <li key={type}>
-                  <button type="button" onClick={() => addBlock(type)} disabled={taken}
-                    className="w-full h-full text-left rounded-xl border border-line p-3 hover:border-accent hover:bg-hover-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:hover:border-line disabled:hover:bg-transparent disabled:cursor-not-allowed">
-                    <Icon className="w-5 h-5 text-soft mb-2" aria-hidden="true" />
-                    <span className="block text-sm font-medium text-heading">{blockLabel(t, type)}</span>
-                    <span className="block text-xs text-muted mt-0.5">
-                      {taken ? t('website.blocks.contactTaken', 'This page already has a contact form.') : t(`website.blocks.${type}.description`)}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </Modal>
+        <AddBlockModal editor={editor} page={page} block={block} adding={adding} setAdding={setAdding} setBlockId={setBlockId} />
 
         {canEdit && (
           <SettingsSaveBar
