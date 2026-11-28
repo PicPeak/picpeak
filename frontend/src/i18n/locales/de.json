@@ -13478,7 +13478,8 @@
     "status": {
       "notPublished": "Noch nicht veröffentlicht",
       "changes": "Unveröffentlichte Änderungen",
-      "live": "Veröffentlicht"
+      "live": "Veröffentlicht",
+      "publishedOn": "Veröffentlicht am {{date}}"
     },
     "title": "Website",
     "description": "Ihre öffentliche Website aus Blöcken. Bearbeiten Sie den Entwurf, dann veröffentlichen Sie.",

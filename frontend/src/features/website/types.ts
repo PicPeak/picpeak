@@ -167,7 +167,7 @@ export interface WebsiteDocument {
 
 interface RevisionInfo {
   revision: number;
-  updatedAt: string;
+  /** When this revision was published (the published row); null for the draft. */
   publishedAt: string | null;
 }
 
@@ -214,8 +214,6 @@ export interface WebsiteAsset {
   width: number | null;
   height: number | null;
   originalFilename: string;
-  sizeBytes: number | null;
-  createdAt: string;
   previewUrl: string | null;
   videoUrl: string | null;
 }
@@ -224,7 +222,6 @@ export interface WebsitePackage {
   id: number;
   name: string;
   description: string;
-  currency: string;
   /** Why a quote could not be made from it (and the page leaves it out). */
   unavailable?: 'archived_items' | 'empty' | 'archived' | null;
 }

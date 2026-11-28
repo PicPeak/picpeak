@@ -170,12 +170,11 @@ router.post('/media/resolve', canView, [
 router.get('/galleries', canView, [
   query('q').optional().isString().isLength({ max: 200 }),
   query('page').optional().isInt({ min: 1, max: 100000 }),
-  query('pageSize').optional().isInt({ min: 1, max: 100 }),
   query('onWebsite').optional().isIn(['0', '1']),
   query('ids').optional().matches(/^\d+(,\d+){0,99}$/),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
-  const pageSize = Number(req.query.pageSize) || 50;
+  const pageSize = 50;
   const page = Number(req.query.page) || 1;
   let rows = scopeEventsQuery(db('events'), req.admin, 'events.created_by')
     .where((q) => q.where('is_archived', formatBoolean(false)).orWhereNull('is_archived'));
@@ -263,14 +262,12 @@ router.get('/galleries/:id/photos', canView, [
 router.get('/assets', canView, [
   query('q').optional().isString().isLength({ max: 200 }),
   query('page').optional().isInt({ min: 1, max: 100000 }),
-  query('pageSize').optional().isInt({ min: 1, max: 100 }),
   query('kind').optional().isIn(['image', 'video']),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
   res.json(await assets.listAssets({
     q: typeof req.query.q === 'string' ? req.query.q.trim() : '',
     page: Number(req.query.page) || 1,
-    pageSize: Number(req.query.pageSize) || 60,
     kind: req.query.kind || null,
   }));
 }));
@@ -328,7 +325,7 @@ router.get('/packages', canView, requirePermission('quotes.view'), handleAsync(a
     // A package a quote could not be made from is listed with why; the page
     // leaves it out.
     packages: packages.map((p) => ({
-      id: p.id, name: p.name, description: p.description || '', currency: p.currency,
+      id: p.id, name: p.name, description: p.description || '',
       unavailable: websiteService.packageOffer(p).unavailable,
     })),
   });

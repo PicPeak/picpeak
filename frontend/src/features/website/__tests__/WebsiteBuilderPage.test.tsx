@@ -97,8 +97,8 @@ const STATE: EditorState = {
     customCss: '',
     footer: { columns: [], legal: 'column', copyright: '', background: 'default' }, menu: { layout: 'left', style: 'plain', sticky: true, transparent: false, mobile: 'dropdown', background: null, text: null, items: [{ id: 'mh', label: '', hidden: false, target: { kind: 'page', pageId: 'home' } }, { id: 'ma', label: '', hidden: false, target: { kind: 'page', pageId: 'about' } }] },
   },
-  draft: { revision: 3, updatedAt: '', publishedAt: null },
-  published: { revision: 3, updatedAt: '', publishedAt: '2026-11-27T10:00:00Z' },
+  draft: { revision: 3, publishedAt: null },
+  published: { revision: 3, publishedAt: '2026-11-27T10:00:00Z' },
   hasUnpublishedChanges: false,
   publicSiteEnabled: true,
 };
@@ -262,6 +262,12 @@ describe('WebsiteBuilderPage', () => {
     expect(screen.getByRole('tab', { name: /Blocks/, hidden: true })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Show the editing panel' }));
     expect(screen.getByRole('tab', { name: /Blocks/ })).toBeInTheDocument();
+  });
+
+  it('says when the version visitors see was published', async () => {
+    renderPage();
+    const badge = await screen.findByText('Published');
+    expect(badge.closest('[title]')).toHaveAttribute('title', expect.stringMatching(/^Published on .*2026/));
   });
 
   it('adds a block after the selected one', async () => {

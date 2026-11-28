@@ -160,7 +160,7 @@ describe('a pane that cannot load', () => {
 
 describe('UploadsPane', () => {
   it('loads more uploads and searches by file name', async () => {
-    const asset = (id: string, name: string) => ({ id, kind: 'image' as const, width: 1, height: 1, originalFilename: name, sizeBytes: 1, createdAt: '', previewUrl: `/m/${id}`, videoUrl: null });
+    const asset = (id: string, name: string) => ({ id, kind: 'image' as const, width: 1, height: 1, originalFilename: name, previewUrl: `/m/${id}`, videoUrl: null });
     vi.mocked(websiteService.listAssets).mockImplementation(async ({ page = 1, q = '' } = {}) => {
       if (q) return { assets: [asset('c', 'beach.jpg')], hasMore: false };
       return page === 1 ? { assets: [asset('a', 'one.jpg')], hasMore: true } : { assets: [asset('b', 'two.jpg')], hasMore: false };

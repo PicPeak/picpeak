@@ -20,6 +20,7 @@ import { useFillViewport } from '../../components/admin/fillViewport';
 import { usePermission } from '../../hooks/usePermission';
 import { mediaKey, websiteService } from '../../services/website.service';
 import { apiErrorCode, apiErrorDetails, apiErrorText } from '../../utils/apiErrorText';
+import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { BLOCK_ICONS, BLOCK_TYPES, blockLabel, collectImageRefs, createBlock, moveItem, newId } from './blocks';
 import { BlockEditor } from './BlockEditor';
 import { WebsiteDocContext } from './LinkTargetField';
@@ -97,6 +98,7 @@ export const WebsiteBuilderPage: React.FC = () => {
   // Showing the website at the site root is a site-wide switch (server: settings.edit too).
   const canSwitchSite = usePermission('settings.edit') && canEdit;
   const duplicateHintId = useId();
+  const { formatDateTime } = useLocalizedDate();
   const editor = useWebsiteEditor();
   const queryClient = useQueryClient();
   // Shown at the site root or not: an action like Publish, taken at once.
@@ -287,11 +289,15 @@ export const WebsiteBuilderPage: React.FC = () => {
       ? t('website.unsavedBoth', 'The draft and the contact form settings have unsaved changes. Contact form settings apply as soon as they are saved.')
       : t('website.contact.unsavedBar', 'Contact form settings are not saved yet. They apply as soon as they are saved.'));
 
+  // When the version visitors see went out, as the status badge's tooltip.
+  const publishedOn = server.published?.publishedAt
+    ? t('website.status.publishedOn', 'Published on {{date}}', { date: formatDateTime(server.published.publishedAt) }) as string
+    : undefined;
   const status = !server.published
     ? <Badge tone="neutral">{t('website.status.notPublished', 'Not published yet')}</Badge>
     : server.hasUnpublishedChanges || editor.isDirty
-      ? <Badge tone="warning" dot>{t('website.status.changes', 'Unpublished changes')}</Badge>
-      : <Badge tone="success" dot>{t('website.status.live', 'Published')}</Badge>;
+      ? <Badge tone="warning" dot title={publishedOn}>{t('website.status.changes', 'Unpublished changes')}</Badge>
+      : <Badge tone="success" dot title={publishedOn}>{t('website.status.live', 'Published')}</Badge>;
 
   // One contact form a page (the server refuses a second): a page stored
   // with more shows only the first.

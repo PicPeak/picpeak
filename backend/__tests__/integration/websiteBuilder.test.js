@@ -1120,7 +1120,7 @@ describe('picker inventories page and search', () => {
     let body;
     do {
       // eslint-disable-next-line no-await-in-loop
-      body = (await request(app).get('/api/admin/website/galleries').query({ page, pageSize: 50 }).set(auth(adminId))).body;
+      body = (await request(app).get('/api/admin/website/galleries').query({ page }).set(auth(adminId))).body;
       expect(body.galleries.length).toBeLessThanOrEqual(50);
       body.galleries.forEach((g) => seen.add(g.id));
       page += 1;
@@ -1142,17 +1142,19 @@ describe('picker inventories page and search', () => {
 
   test('the featured-galleries selector lists only galleries on the website and loads chosen ones by id', async () => {
     const some = await insertEvent({ event_name: 'Chosen far back', event_date: '1999-01-01' });
-    const onSite = (await request(app).get('/api/admin/website/galleries').query({ onWebsite: 1, pageSize: 100 }).set(auth(adminId))).body;
+    const onSite = (await request(app).get('/api/admin/website/galleries').query({ onWebsite: 1 }).set(auth(adminId))).body;
     expect(onSite.galleries.every((g) => g.showOnWebsite)).toBe(true);
     const chosen = (await request(app).get('/api/admin/website/galleries').query({ ids: String(some) }).set(auth(adminId))).body;
     expect(chosen.galleries.map((g) => g.id)).toEqual([some]);
   });
 
   test('uploads come in pages and can be searched', async () => {
-    const first = (await request(app).get('/api/admin/website/assets').query({ pageSize: 50 }).set(auth(adminId))).body;
-    expect(first.assets).toHaveLength(50);
+    // One more than a page holds.
+    await db('website_assets').insert({ public_id: crypto.randomBytes(12).toString('hex'), kind: 'image', original_filename: 'upload-60.jpg', rendition_keys: '{}', created_at: new Date(Date.UTC(2020, 0, 1, 1, 0)).toISOString() });
+    const first = (await request(app).get('/api/admin/website/assets').set(auth(adminId))).body;
+    expect(first.assets).toHaveLength(60);
     expect(first.hasMore).toBe(true);
-    const second = (await request(app).get('/api/admin/website/assets').query({ pageSize: 50, page: 2 }).set(auth(adminId))).body;
+    const second = (await request(app).get('/api/admin/website/assets').query({ page: 2 }).set(auth(adminId))).body;
     expect(second.assets.length).toBeGreaterThan(0);
     expect(new Set([...first.assets, ...second.assets].map((a) => a.id)).size).toBe(first.assets.length + second.assets.length);
     const hit = (await request(app).get('/api/admin/website/assets').query({ q: 'upload-7.' }).set(auth(adminId))).body;

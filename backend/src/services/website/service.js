@@ -53,7 +53,6 @@ function rowSummary(row) {
   if (!row) return null;
   return {
     revision: Number(row.revision),
-    updatedAt: row.updated_at,
     publishedAt: row.published_at || null,
   };
 }

@@ -20,7 +20,7 @@ const doc = (title: string): WebsiteDocument => ({
   footer: { columns: [], legal: 'column', copyright: '', background: 'default' }, menu: { layout: 'left', style: 'plain', sticky: true, transparent: false, mobile: 'dropdown', background: null, text: null, items: [] },
 });
 const state = (title: string, revision = 1, extra: Partial<EditorState> = {}): EditorState => ({
-  document: doc(title), draft: { revision, updatedAt: '', publishedAt: null }, published: null,
+  document: doc(title), draft: { revision, publishedAt: null }, published: null,
   hasUnpublishedChanges: true, publicSiteEnabled: true, ...extra,
 });
 const rename = (title: string) => (d: WebsiteDocument) => ({ ...d, pages: [{ ...d.pages[0], title }] });

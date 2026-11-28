@@ -62,7 +62,7 @@ describe('chosen entries that are gone', () => {
   });
 
   it('lists an archived package as unavailable, also while quotes are off, and lets it be removed', async () => {
-    vi.mocked(websiteService.listPackages).mockResolvedValue({ available: true, packages: [{ id: 3, name: 'Full day', description: '', currency: 'CHF' }] });
+    vi.mocked(websiteService.listPackages).mockResolvedValue({ available: true, packages: [{ id: 3, name: 'Full day', description: '' }] });
     const block = { id: 'p', type: 'pricing' as const, variant: 'cards', background: 'default' as const, heading: '', intro: '', packageIds: [3, 99], showPrices: true, buttonLabel: '', buttonTarget: null };
     const onChange = vi.fn();
     const { unmount } = render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={block} onChange={onChange} /></QueryClientProvider>);
@@ -81,8 +81,8 @@ describe('chosen entries that are gone', () => {
 
   it('marks a package with an archived item as not shown, keeps it removable and not newly pickable', async () => {
     vi.mocked(websiteService.listPackages).mockResolvedValue({ available: true, packages: [
-      { id: 3, name: 'Full day', description: '', currency: 'CHF', unavailable: 'archived_items' },
-      { id: 4, name: 'Half day', description: '', currency: 'CHF', unavailable: 'archived_items' },
+      { id: 3, name: 'Full day', description: '', unavailable: 'archived_items' },
+      { id: 4, name: 'Half day', description: '', unavailable: 'archived_items' },
     ] });
     const block = { id: 'p', type: 'pricing' as const, variant: 'cards', background: 'default' as const, heading: '', intro: '', packageIds: [3], showPrices: true, buttonLabel: '', buttonTarget: null };
     const onChange = vi.fn();
@@ -112,7 +112,7 @@ describe('chosen entries that are gone', () => {
     vi.mocked(websiteService.listPackages).mockReset();
     vi.mocked(websiteService.listPackages)
       .mockRejectedValueOnce(new Error('Network down'))
-      .mockResolvedValue({ available: true, packages: [{ id: 3, name: 'Full day', description: '', currency: 'CHF' }] });
+      .mockResolvedValue({ available: true, packages: [{ id: 3, name: 'Full day', description: '' }] });
     const block = { id: 'p', type: 'pricing' as const, variant: 'cards', background: 'default' as const, heading: '', intro: '', packageIds: [3], showPrices: true, buttonLabel: '', buttonTarget: null };
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><BlockEditor block={block} onChange={vi.fn()} /></QueryClientProvider>);

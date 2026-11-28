@@ -39,15 +39,15 @@ function publicAsset(row) {
     width: row.width,
     height: row.height,
     originalFilename: row.original_filename,
-    sizeBytes: Number(row.size_bytes) || null,
-    createdAt: row.created_at,
     // The editor's URLs: an upload has a public one only on a published page.
     previewUrl: row.kind === 'image' && keys[640] ? `${editorBase(ref)}/640` : null,
     videoUrl: row.kind === 'video' ? `${editorBase(ref)}/video` : null,
   };
 }
 
-async function listAssets({ q = '', page = 1, pageSize = 60, kind = null } = {}) {
+const ASSETS_PAGE = 60;
+
+async function listAssets({ q = '', page = 1, kind = null } = {}) {
   let query = db('website_assets');
   if (kind) query = query.where({ kind });
   if (q) {
@@ -55,8 +55,8 @@ async function listAssets({ q = '', page = 1, pageSize = 60, kind = null } = {})
       for (const form of unicodeSearchForms(q)) b.orWhereRaw(likeWithEscape('original_filename'), [`%${escapeLikePattern(form)}%`]);
     });
   }
-  const rows = await query.orderBy('created_at', 'desc').orderBy('id', 'desc').limit(pageSize + 1).offset((page - 1) * pageSize);
-  return { assets: rows.slice(0, pageSize).map(publicAsset), hasMore: rows.length > pageSize };
+  const rows = await query.orderBy('created_at', 'desc').orderBy('id', 'desc').limit(ASSETS_PAGE + 1).offset((page - 1) * ASSETS_PAGE);
+  return { assets: rows.slice(0, ASSETS_PAGE).map(publicAsset), hasMore: rows.length > ASSETS_PAGE };
 }
 
 async function insertAsset(values) {

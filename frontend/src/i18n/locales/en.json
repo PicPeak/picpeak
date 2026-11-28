@@ -13513,7 +13513,8 @@
     "status": {
       "notPublished": "Not published yet",
       "changes": "Unpublished changes",
-      "live": "Published"
+      "live": "Published",
+      "publishedOn": "Published on {{date}}"
     },
     "title": "Website",
     "description": "Your public website, built from blocks. Edit the draft, then publish.",
