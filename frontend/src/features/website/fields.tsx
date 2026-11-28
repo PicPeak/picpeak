@@ -4,7 +4,7 @@
 import React, { createContext, useContext, useId, useLayoutEffect, useRef, useState } from 'react';
 import { CMSEditor } from '../../components/admin/CMSEditor';
 import { useTranslation } from 'react-i18next';
-import { ImageOff, ImagePlus, Plus, RotateCcw, X } from 'lucide-react';
+import { ImageOff, ImagePlus, Pipette, Plus, RotateCcw, X } from 'lucide-react';
 import { Button, Input } from '../../components/common';
 import { mediaKey } from '../../services/website.service';
 import { buildResourceUrl } from '../../utils/url';
@@ -128,10 +128,22 @@ export const ColorField: React.FC<{
 }> = ({ label, value, onChange, emptyLabel, resetLabel }) => {
   const { t } = useTranslation();
   const id = useId();
+  const set = !!value && HEX.test(value);
   return (
     <div className="flex items-center gap-3">
-      <input id={id} type="color" aria-label={label} className="h-9 w-12 rounded-md border border-line-strong bg-panel p-1"
-        value={value && HEX.test(value) ? value : '#000000'} onChange={(e) => onChange(e.target.value)} />
+      {/* Not set: an "automatic" chip, with the picker lying invisibly over
+          it. The native swatch would be black, a colour the page may not use. */}
+      <span className="relative h-9 w-12 shrink-0">
+        {!set && (
+          <span data-colour-auto aria-hidden="true"
+            className="absolute inset-0 flex items-center justify-center rounded-md border border-dashed border-line-strong bg-panel text-muted">
+            <Pipette className="w-4 h-4" />
+          </span>
+        )}
+        <input id={id} type="color" aria-label={label}
+          className={`absolute inset-0 h-full w-full cursor-pointer rounded-md border border-line-strong bg-panel p-1 ${set ? '' : 'opacity-0'}`}
+          value={set && value ? value : '#000000'} onChange={(e) => onChange(e.target.value)} />
+      </span>
       <div className="flex-1 min-w-0">
         <span className="block text-sm font-medium text-body">{label}</span>
         <span className="block text-xs text-muted">{value || emptyLabel || t('website.site.fromBranding', 'From branding')}</span>
