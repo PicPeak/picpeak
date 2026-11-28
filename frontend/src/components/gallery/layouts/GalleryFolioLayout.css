@@ -33,10 +33,17 @@
   padding: 0 var(--folio-pad);
 }
 
-/* Focus: the palette's ink, a step away from the control. */
+/* Focus: the palette's ink, a step away from the control. Not the control's
+   own colour: an active nav button, the primary pill and the chosen category
+   are written in the page colour, and their ring would vanish into the page. */
 .gallery-folio :focus-visible {
-  outline: 2px solid currentColor;
+  outline: 2px solid var(--color-text);
   outline-offset: 3px;
+}
+
+/* On the cover photo the ink cannot be trusted: white, as the text there. */
+.gallery-folio .folio-cover--full :focus-visible {
+  outline-color: #fff;
 }
 
 .gallery-folio ::selection {
@@ -115,9 +122,9 @@
   transform: translateY(2px);
 }
 
-/* Full: the photo fills the cover, the title sits low on a soft scrim. A
-   phone keeps it under two thirds of the screen, so the first photos show
-   below it. */
+/* Full: the photo fills the cover, the text sits low on a scrim. A phone
+   keeps it under two thirds of the screen, so the first photos show below
+   it. */
 .folio-cover--full {
   display: flex;
   align-items: flex-end;
@@ -127,11 +134,14 @@
   color: #fff;
 }
 
+/* Dark enough under the text block (the date tops it at about 30% of the
+   cover's height) for white small print on a white photograph, and gone
+   above it. */
 .folio-cover--full .folio-cover-media::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.56) 0%, rgba(0, 0, 0, 0.2) 40%, rgba(0, 0, 0, 0) 68%);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.68) 0%, rgba(0, 0, 0, 0.56) 33%, rgba(0, 0, 0, 0.34) 46%, rgba(0, 0, 0, 0) 78%);
 }
 
 .folio-cover--full .folio-cover-text {
@@ -140,11 +150,11 @@
   width: 100%;
   padding: 0 var(--folio-pad) clamp(1.75rem, 6vh, 4.5rem);
   text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 0 20px rgba(0, 0, 0, 0.3);
 }
 
 .folio-cover--full .folio-cover-title {
   color: #fff;
-  text-shadow: 0 1px 24px rgba(0, 0, 0, 0.25);
 }
 
 @media (min-width: 640px) {
@@ -660,11 +670,18 @@
   to { opacity: 1; }
 }
 
+/* Folio's own motion only: the shared components inside keep theirs (a
+   download's spinner has to keep turning). */
 @media (prefers-reduced-motion: reduce) {
-  .gallery-folio *,
-  .gallery-folio *::before,
-  .gallery-folio *::after {
-    animation: none !important;
-    transition: none !important;
+  .folio-cover-image {
+    animation: none;
+  }
+
+  .folio-cover-enter svg,
+  .folio-nav-btn,
+  .folio-pill,
+  .folio-tile-image,
+  .folio-tile-overlay {
+    transition: none;
   }
 }
