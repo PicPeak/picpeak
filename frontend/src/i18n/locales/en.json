@@ -13284,7 +13284,10 @@
       "moveImageEarlier": "Move image {{n}} earlier",
       "moveImageLater": "Move image {{n}} later",
       "profileUrlHint": "The address of your profile, which the block links to.",
-      "maxItems": "No more than {{max}} fit here."
+      "maxItems": "No more than {{max}} fit here.",
+      "buttonLabelHint": "Without a text, no button is shown.",
+      "successDefault": "Thank you! Your message has been sent.",
+      "bookDefault": "Book now"
     },
     "defaults": {
       "heroHeading": "Your headline",

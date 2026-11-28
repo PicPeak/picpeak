@@ -13249,7 +13249,10 @@
       "moveImageEarlier": "Bild {{n}} nach vorne",
       "moveImageLater": "Bild {{n}} nach hinten",
       "profileUrlHint": "Die Adresse Ihres Profils, auf die der Block verlinkt.",
-      "maxItems": "Mehr als {{max}} passen hier nicht."
+      "maxItems": "Mehr als {{max}} passen hier nicht.",
+      "buttonLabelHint": "Ohne Text wird keine Schaltfläche gezeigt.",
+      "successDefault": "Vielen Dank! Ihre Nachricht wurde gesendet.",
+      "bookDefault": "Jetzt buchen"
     },
     "defaults": {
       "heroHeading": "Ihre Überschrift",

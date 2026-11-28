@@ -18,7 +18,7 @@ import { SearchField, useDebounced } from './search';
 import { CtaButtonsField, FaqItemsField, LogosField, SocialLinksField, StepsField } from './itemForms';
 import { LinkTargetField } from './LinkTargetField';
 import { loadFailure } from './loadFailure';
-import type { Block, Testimonial, WebsiteGallery } from './types';
+import type { Block, LinkTarget, Testimonial, WebsiteGallery } from './types';
 
 interface BlockEditorProps {
   block: Block;
@@ -26,6 +26,23 @@ interface BlockEditorProps {
   /** The branding's colours, offered for a custom background. */
   brandColors?: string[];
 }
+
+/** A block's button: its text and where it leads. Without a text the page shows no button. */
+const ButtonFields: React.FC<{
+  label: string;
+  target: LinkTarget | null | undefined;
+  onLabel: (label: string) => void;
+  onTarget: (target: LinkTarget | null) => void;
+}> = ({ label, target, onLabel, onTarget }) => {
+  const { t } = useTranslation();
+  return (
+    <>
+      <TextField label={t('website.fields.buttonLabel', 'Button text')} value={label} maxLength={60}
+        helperText={t('website.fields.buttonLabelHint', 'Without a text, no button is shown.')} onChange={onLabel} />
+      <LinkTargetField label={t('website.fields.buttonUrl', 'Button link')} value={target ?? null} onChange={onTarget} />
+    </>
+  );
+};
 
 export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange, brandColors }) => {
   const { t } = useTranslation();
@@ -62,8 +79,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange, brand
             <VideoField value={block.video} onChange={(video) => set(block, { video })} />
           </>
         )}
-        <TextField label={t('website.fields.buttonLabel', 'Button text')} value={block.buttonLabel} maxLength={60} onChange={(buttonLabel) => set(block, { buttonLabel }, 'buttonLabel')} />
-        <LinkTargetField label={t('website.fields.buttonUrl', 'Button link')} value={block.buttonTarget ?? null} onChange={(buttonTarget) => set(block, { buttonTarget }, 'buttonTarget')} />
+        <ButtonFields label={block.buttonLabel} target={block.buttonTarget} onLabel={(buttonLabel) => set(block, { buttonLabel }, 'buttonLabel')} onTarget={(buttonTarget) => set(block, { buttonTarget }, 'buttonTarget')} />
       </>
     );
     break;
@@ -90,8 +106,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange, brand
         <ImageField label={t('website.fields.image', 'Image')} value={block.image} onChange={(image) => set(block, { image })} />
         <TextField label={t('website.fields.heading', 'Heading')} value={block.heading} maxLength={200} onChange={(heading) => set(block, { heading }, 'heading')} />
         <RichTextField label={t('website.fields.body', 'Text')} value={block.body} onChange={(body) => set(block, { body }, 'body')} />
-        <TextField label={t('website.fields.buttonLabel', 'Button text')} value={block.buttonLabel} maxLength={60} onChange={(buttonLabel) => set(block, { buttonLabel }, 'buttonLabel')} />
-        <LinkTargetField label={t('website.fields.buttonUrl', 'Button link')} value={block.buttonTarget ?? null} onChange={(buttonTarget) => set(block, { buttonTarget }, 'buttonTarget')} />
+        <ButtonFields label={block.buttonLabel} target={block.buttonTarget} onLabel={(buttonLabel) => set(block, { buttonLabel }, 'buttonLabel')} onTarget={(buttonTarget) => set(block, { buttonTarget }, 'buttonTarget')} />
       </>
     );
     break;
@@ -146,8 +161,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange, brand
         <TextArea label={t('website.fields.intro', 'Introduction')} value={block.intro} rows={2} maxLength={1000} onChange={(intro) => set(block, { intro }, 'intro')} />
         <PackagesField value={block.packageIds} onChange={(packageIds) => set(block, { packageIds })} />
         <Switch checked={block.showPrices} onChange={(showPrices) => set(block, { showPrices })} label={t('website.fields.showPrices', 'Show prices')} />
-        <TextField label={t('website.fields.buttonLabel', 'Button text')} value={block.buttonLabel} maxLength={60} onChange={(buttonLabel) => set(block, { buttonLabel }, 'buttonLabel')} />
-        <LinkTargetField label={t('website.fields.buttonUrl', 'Button link')} value={block.buttonTarget ?? null} onChange={(buttonTarget) => set(block, { buttonTarget }, 'buttonTarget')} />
+        <ButtonFields label={block.buttonLabel} target={block.buttonTarget} onLabel={(buttonLabel) => set(block, { buttonLabel }, 'buttonLabel')} onTarget={(buttonTarget) => set(block, { buttonTarget }, 'buttonTarget')} />
       </>
     );
     break;
@@ -160,7 +174,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange, brand
         <Switch checked={block.showPhone} onChange={(showPhone) => set(block, { showPhone })} label={t('website.fields.showPhone', 'Ask for a phone number')} />
         <Switch checked={block.showDate} onChange={(showDate) => set(block, { showDate })} label={t('website.fields.showDate', 'Ask for the event date')} />
         <TextField label={t('website.fields.submitLabel', 'Button text')} value={block.submitLabel} maxLength={60} placeholder={t('website.fields.submitDefault', 'Send message') as string} onChange={(submitLabel) => set(block, { submitLabel }, 'submitLabel')} />
-        <TextField label={t('website.fields.successMessage', 'Thank-you message')} value={block.successMessage} maxLength={300} onChange={(successMessage) => set(block, { successMessage }, 'successMessage')} />
+        <TextField label={t('website.fields.successMessage', 'Thank-you message')} value={block.successMessage} maxLength={300} placeholder={t('website.fields.successDefault', 'Thank you! Your message has been sent.') as string} onChange={(successMessage) => set(block, { successMessage }, 'successMessage')} />
       </>
     );
     break;
@@ -170,7 +184,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange, brand
         <BookingTarget serviceId={block.serviceId} onChange={(serviceId) => set(block, { serviceId })} />
         <TextField label={t('website.fields.heading', 'Heading')} value={block.heading} maxLength={200} onChange={(heading) => set(block, { heading }, 'heading')} />
         <TextArea label={t('website.fields.body', 'Text')} value={block.text} rows={3} maxLength={1000} onChange={(text) => set(block, { text }, 'text')} />
-        <TextField label={t('website.fields.buttonLabel', 'Button text')} value={block.buttonLabel} maxLength={60} onChange={(buttonLabel) => set(block, { buttonLabel }, 'buttonLabel')} />
+        <TextField label={t('website.fields.buttonLabel', 'Button text')} value={block.buttonLabel} maxLength={60} placeholder={t('website.fields.bookDefault', 'Book now') as string} onChange={(buttonLabel) => set(block, { buttonLabel }, 'buttonLabel')} />
       </>
     );
     break;

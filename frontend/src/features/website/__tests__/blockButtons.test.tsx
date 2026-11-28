@@ -45,6 +45,17 @@ describe('block buttons', () => {
     expect(onChange.mock.calls.at(-1)?.[0].buttonTarget).toEqual({ kind: 'page', pageId: 'home' });
   });
 
+  it.each(blocks.map((b) => [b.type, b] as const))('the %s button text says that leaving it empty leaves the button out', (_type, block) => {
+    renderEditor(block);
+    expect(screen.getByText('Without a text, no button is shown.')).toBeInTheDocument();
+  });
+
+  it('fields with a default text show it while they are empty', () => {
+    renderEditor({ ...base, id: 'c', type: 'contact', variant: 'simple', heading: '', intro: '', showPhone: false, showDate: false, submitLabel: '', successMessage: '' });
+    expect(screen.getByLabelText('Thank-you message')).toHaveAttribute('placeholder', 'Thank you! Your message has been sent.');
+    expect(screen.getByLabelText('Button text')).toHaveAttribute('placeholder', 'Send message');
+  });
+
   it('the image and text block writes its text in the rich text editor, as the text block does', async () => {
     renderEditor(blocks[1]);
     expect(await screen.findByTitle(/Bold/)).toBeInTheDocument();
