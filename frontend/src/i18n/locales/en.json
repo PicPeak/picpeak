@@ -13692,7 +13692,11 @@
       "loadLatest": "Load the latest",
       "conflict": "Someone else changed these settings meanwhile. Load the latest and make your change again."
     },
-    "saveAll": "Save draft and contact settings"
+    "saveAll": "Save draft and contact settings",
+    "unsavedBoth": "The draft and the contact form settings have unsaved changes. Contact form settings apply as soon as they are saved.",
+    "landingOffline": "Take the landing page offline",
+    "landingOfflineTitle": "Take the landing page offline?",
+    "landingOfflineMessage": "Visitors no longer see it at the site root; `/` leads to the gallery code page instead. The draft here stays as it is."
   },
   "websiteNotice": {
     "title": "Your landing page moved",

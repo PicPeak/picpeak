@@ -46,9 +46,9 @@ vi.mock('../../../components/admin/SectionPageHeader', () => ({
 }));
 vi.mock('../../../components/admin/SettingsSaveBar', () => ({
   // Like the real bar: both buttons off while clean or while saving.
-  SettingsSaveBar: ({ isDirty, isSaving, onSave, onDiscard, saveLabel, extra }: { isDirty: boolean; isSaving?: boolean; onSave: () => void; onDiscard: () => void; saveLabel: string; extra?: React.ReactNode }) => (
+  SettingsSaveBar: ({ isDirty, isSaving, onSave, onDiscard, saveLabel, unsavedHint }: { isDirty: boolean; isSaving?: boolean; onSave: () => void; onDiscard: () => void; saveLabel: string; unsavedHint?: string }) => (
     <>
-      {extra}
+      {isDirty && <p data-testid="unsaved-hint">{unsavedHint || 'You have unsaved changes'}</p>}
       <button type="button" disabled={!isDirty || isSaving} onClick={onDiscard}>Discard</button>
       <button type="button" disabled={!isDirty || isSaving} onClick={onSave}>{saveLabel}</button>
     </>
@@ -240,7 +240,8 @@ describe('WebsiteBuilderPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: /Design/ }));
     expect(await screen.findByLabelText('Send new messages to')).toHaveValue('owner@studio.example');
     // Unsaved: the bar (and with it the leave guard) knows, and saves it.
-    expect(screen.getByText('Contact form settings are not saved yet. They apply as soon as they are saved.')).toBeInTheDocument();
+    // One message, saying which: these settings apply at once, unlike the draft.
+    expect(screen.getByTestId('unsaved-hint')).toHaveTextContent('Contact form settings are not saved yet. They apply as soon as they are saved.');
     fireEvent.click(screen.getByRole('button', { name: 'Save contact form settings' }));
     await waitFor(() => expect(websiteService.saveContactSettings).toHaveBeenCalledWith(expect.objectContaining({
       contact: { recipients: ['owner@studio.example'], confirmation: false },
@@ -335,6 +336,17 @@ describe('WebsiteBuilderPage', () => {
     window.confirm = () => true;
     vi.mocked(websiteService.getState).mockResolvedValue({ ...structuredClone(STATE), publicSiteEnabled: false });
     fireEvent.click(await screen.findByRole('button', { name: 'Take offline' }));
+    await waitFor(() => expect(websiteService.setVisibility).toHaveBeenLastCalledWith(false));
+  });
+
+  it('offers "Take offline" in the header only for a published website; a landing page still live is taken offline from its notice', async () => {
+    window.confirm = () => true;
+    vi.mocked(websiteService.setVisibility).mockResolvedValue(undefined);
+    vi.mocked(websiteService.getState).mockResolvedValue({ ...structuredClone(STATE), published: null, legacyLandingLive: true });
+    renderPage();
+    expect(await screen.findByText('Not published yet')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Take offline' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Take the landing page offline' }));
     await waitFor(() => expect(websiteService.setVisibility).toHaveBeenLastCalledWith(false));
   });
 

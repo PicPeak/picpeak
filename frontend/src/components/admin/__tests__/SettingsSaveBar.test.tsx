@@ -54,6 +54,12 @@ describe('SettingsSaveBar', () => {
     expect(screen.queryByText(/unsaved changes/i)).not.toBeInTheDocument();
   });
 
+  it('says what is unsaved in the page\'s own words when the page gives them, in place of the general hint', () => {
+    renderBar(<SettingsSaveBar isDirty unsavedHint="Contact form settings are not saved yet." onSave={vi.fn()} onDiscard={vi.fn()} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Contact form settings are not saved yet.');
+    expect(screen.queryByText(/You have unsaved changes/i)).not.toBeInTheDocument();
+  });
+
   it('saveClean offers Save on a clean draft, and nothing else', () => {
     // A fallback reminder template is seeded from the default, so the draft
     // reads clean; saving it is what creates the dedicated copy. Discard and

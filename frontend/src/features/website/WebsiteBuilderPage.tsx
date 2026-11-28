@@ -258,15 +258,29 @@ export const WebsiteBuilderPage: React.FC = () => {
     });
   };
 
+  // What visitors see at the site root: the published website, or, until
+  // the first publish, the landing page that was imported.
   const takeOffline = async () => {
-    const ok = await confirm({
+    const ok = await confirm(server.published ? {
       title: t('website.takeOfflineTitle', 'Take the website offline?'),
       message: t('website.takeOfflineMessage', 'Visitors no longer see it at the site root; `/` leads to the gallery code page instead. The website and its draft stay as they are.'),
       confirmLabel: t('website.takeOfflineConfirm', 'Take the website offline'),
       variant: 'danger',
+    } : {
+      title: t('website.landingOfflineTitle', 'Take the landing page offline?'),
+      message: t('website.landingOfflineMessage', 'Visitors no longer see it at the site root; `/` leads to the gallery code page instead. The draft here stays as it is.'),
+      confirmLabel: t('website.landingOffline', 'Take the landing page offline'),
+      variant: 'danger',
     });
     if (ok) visibility.mutate(false);
   };
+  // One message in the save bar: the contact form settings apply as soon as
+  // they are saved, which the draft does not.
+  const unsavedHint = !contactSettings.dirty
+    ? undefined
+    : (editor.isDirty
+      ? t('website.unsavedBoth', 'The draft and the contact form settings have unsaved changes. Contact form settings apply as soon as they are saved.')
+      : t('website.contact.unsavedBar', 'Contact form settings are not saved yet. They apply as soon as they are saved.'));
 
   const status = !server.published
     ? <Badge tone="neutral">{t('website.status.notPublished', 'Not published yet')}</Badge>
@@ -379,7 +393,7 @@ export const WebsiteBuilderPage: React.FC = () => {
           actions={(
             <div className="flex flex-wrap items-center gap-2">
               {status}
-              {canSwitchSite && server.publicSiteEnabled && (
+              {canSwitchSite && server.publicSiteEnabled && server.published && (
                 <Button size="sm" variant="ghost" isLoading={visibility.isPending} onClick={() => { void takeOffline(); }}>
                   {t('website.takeOffline', 'Take offline')}
                 </Button>
@@ -431,7 +445,12 @@ export const WebsiteBuilderPage: React.FC = () => {
           </Notice>
         )}
         {server.legacyLandingLive && (
-          <Notice tone="info" size="sm">
+          <Notice tone="info" size="sm"
+            action={canSwitchSite && server.publicSiteEnabled ? (
+              <Button size="sm" variant="ghost" isLoading={visibility.isPending} onClick={() => { void takeOffline(); }}>
+                {t('website.landingOffline', 'Take the landing page offline')}
+              </Button>
+            ) : undefined}>
             {t('website.legacyImported', 'Your previous landing page was imported here. Visitors still see it unchanged at the site root; review it and publish when you are ready, and the website takes its place.')}
           </Notice>
         )}
@@ -542,11 +561,7 @@ export const WebsiteBuilderPage: React.FC = () => {
             onDiscard={() => { editor.discard(); contactSettings.discard(); setProblems([]); }}
             canSave={!localProblem}
             saveLabel={saveLabel}
-            extra={contactSettings.dirty ? (
-              <span className="text-xs text-warning-text">
-                {t('website.contact.unsavedBar', 'Contact form settings are not saved yet. They apply as soon as they are saved.')}
-              </span>
-            ) : undefined}
+            unsavedHint={unsavedHint}
           />
         )}
       </div>

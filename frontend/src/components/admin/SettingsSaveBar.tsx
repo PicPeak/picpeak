@@ -24,6 +24,8 @@ interface SettingsSaveBarProps {
   saveClean?: boolean;
   /** Override the default "Save changes" label. */
   saveLabel?: string;
+  /** Says what is unsaved, in place of "You have unsaved changes". */
+  unsavedHint?: string;
   /** Optional element on the left, e.g. a "test connection" button. */
   extra?: React.ReactNode;
 }
@@ -50,6 +52,7 @@ export const SettingsSaveBar: React.FC<SettingsSaveBarProps> = ({
   canSave = true,
   saveClean = false,
   saveLabel,
+  unsavedHint,
   extra,
 }) => {
   const { t } = useTranslation();
@@ -71,7 +74,7 @@ export const SettingsSaveBar: React.FC<SettingsSaveBarProps> = ({
             className="mr-auto text-xs text-warning-text flex items-center gap-1.5"
           >
             <AlertCircle className="w-3.5 h-3.5" />
-            {t('settings.saveBar.unsaved', 'You have unsaved changes')}
+            {unsavedHint || t('settings.saveBar.unsaved', 'You have unsaved changes')}
           </span>
         )}
         {extra}
