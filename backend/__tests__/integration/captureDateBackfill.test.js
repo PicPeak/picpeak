@@ -14,6 +14,7 @@ const os = require('os');
 const express = require('express');
 const request = require('supertest');
 const sharp = require('sharp');
+const jpegBehindSegments = require('../helpers/jpegBehindSegments');
 
 describe('capture date backfill (#1172)', () => {
   let tmpDir; let db; let app; let mediaRoot;
@@ -168,6 +169,37 @@ describe('capture date backfill (#1172)', () => {
     } finally {
       invalidate.mockRestore();
     }
+  });
+
+  it('reads the camera details again for a photo it dates that was stored without any (issue 2617)', async () => {
+    // What an upload left behind while the EXIF segment sat past the reader's
+    // window: no date, and '{}' as the final answer for the camera details.
+    const { photoId } = await seed({ relpath: 'late-exif.jpg', exifIso: '2025-06-01T09:45:03Z', writeFile: false });
+    await fs.promises.writeFile(path.join(mediaRoot, 'trip', 'late-exif.jpg'), await jpegBehindSegments(16));
+    await db('photos').where({ id: photoId }).update({ exif_json: '{}', captured_at_wall: '' });
+
+    await request(app).post('/api/admin/photos/repair-capture-dates');
+    const done = await settle();
+
+    const row = await db('photos').where({ id: photoId }).first();
+    expect(row.captured_at).toBeTruthy();
+    expect(row.captured_at_wall).toBe('2025-06-01T09:45:03+02:00');
+    expect(JSON.parse(row.exif_json)).toEqual({ make: 'Canon', model: 'Canon EOS R5' });
+    expect(done.body.lastResult).toMatchObject({ success: 1, exif: 1, failed: 0 });
+  });
+
+  it('leaves details alone that changed while it was reading', async () => {
+    const { photoId } = await seed({ relpath: 'late-exif-raced.jpg', exifIso: '2025-06-01T09:45:03Z', writeFile: false });
+    await fs.promises.writeFile(path.join(mediaRoot, 'trip', 'late-exif-raced.jpg'), await jpegBehindSegments(16));
+    await db('photos').where({ id: photoId }).update({ exif_json: '{}', captured_at_wall: '' });
+
+    await request(app).post('/api/admin/photos/repair-capture-dates');
+    // Another writer got there first: its details are not '{}' any more.
+    await db('photos').where({ id: photoId }).update({ exif_json: '{"make":"Nikon"}' });
+    const done = await settle();
+
+    expect((await db('photos').where({ id: photoId }).first()).exif_json).toBe('{"make":"Nikon"}');
+    expect(done.body.lastResult.exif).toBe(0);
   });
 
   it('counts a photo with no EXIF separately from a failure', async () => {

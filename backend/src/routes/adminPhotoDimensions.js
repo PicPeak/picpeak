@@ -380,10 +380,16 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
             // when the row already has its value.
             const needsDate = !photo.captured_at;
             const needsWall = photo.captured_at_wall == null;
-            const readFile = async (localPath) => ({
-              capture: needsDate || needsWall ? await extractCapture(localPath) : null,
-              exif: photo.exif_json ? null : await extractPhotoExif(localPath),
-            });
+            // '{}' is a final "no camera details", except where the date is
+            // missing too: both sit in the EXIF segment, and a reader that
+            // did not reach it (issue 2617) left exactly this pair behind.
+            // A file this run finds a date in has its details read again.
+            const emptyExif = photo.exif_json === '{}';
+            const readFile = async (localPath) => {
+              const capture = needsDate || needsWall ? await extractCapture(localPath) : null;
+              const rereadExif = emptyExif && needsDate && Boolean(capture && capture.capturedAt);
+              return { capture, exif: !photo.exif_json || rereadExif ? await extractPhotoExif(localPath) : null };
+            };
             let capture;
             let exif;
             if (isExternal) {
@@ -428,11 +434,11 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
 
             // Same fence as the date below, and whereNull for the same
             // reason. A null read (the file could not be read) writes nothing
-            // and stays for the next run.
-            if (exif) {
-              exifCount += await db('photos')
-                .where({ id: photo.id, path: photo.path, filename: photo.filename })
-                .whereNull('exif_json')
+            // and stays for the next run. Details read again replace '{}'
+            // only, and only when the file has some after all.
+            if (exif && (!emptyExif || Object.keys(exif).length)) {
+              const row = db('photos').where({ id: photo.id, path: photo.path, filename: photo.filename });
+              exifCount += await (emptyExif ? row.where('exif_json', '{}') : row.whereNull('exif_json'))
                 .update({ exif_json: JSON.stringify(exif) });
             }
 
