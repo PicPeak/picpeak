@@ -114,18 +114,32 @@ async function readFamilyMeta(folderAbs, folderName) {
 }
 
 /**
- * A family from its folder's file names: { family, weights, generic,
- * formats, source }, or null without a usable weight file.
+ * A file's version for its address (?v=): from its modification time and
+ * size, so a replaced file gets a new address (browsers cache /fonts for a
+ * week, and the object-store copy on each replica for minutes).
  */
-function familyFromFiles(folderName, fileNames, generic, source, where) {
+function fileVersion(mtime, size) {
+  const ms = mtime instanceof Date ? mtime.getTime() : Number(mtime);
+  return `${Number.isFinite(ms) ? Math.floor(ms).toString(36) : ''}${Number(size || 0).toString(36)}`;
+}
+
+/**
+ * A family from its folder's files ({ name, version }): { family, weights,
+ * generic, formats, versions, source }, or null without a usable weight file.
+ */
+function familyFromFiles(folderName, files, generic, source, where) {
   const formats = {};
-  for (const name of fileNames) {
+  const versions = {};
+  for (const { name, version } of files) {
     const match = /^(\d+)\.(woff2|woff|ttf)$/i.exec(name);
     if (!match) continue; // ignore non-numeric weight names and other files
     const weight = parseInt(match[1], 10);
     if (weight < 1 || weight > 1000) continue;
     const format = match[2].toLowerCase();
-    if (!formats[weight] || FONT_FORMATS.indexOf(format) < FONT_FORMATS.indexOf(formats[weight])) formats[weight] = format;
+    if (!formats[weight] || FONT_FORMATS.indexOf(format) < FONT_FORMATS.indexOf(formats[weight])) {
+      formats[weight] = format;
+      versions[weight] = version;
+    }
   }
   const weights = Object.keys(formats).map(Number);
 
@@ -135,7 +149,7 @@ function familyFromFiles(folderName, fileNames, generic, source, where) {
   }
 
   weights.sort((a, b) => a - b);
-  return { family: familyDisplayName(folderName), weights, generic, formats, source };
+  return { family: familyDisplayName(folderName), weights, generic, formats, versions, source };
 }
 
 /**
@@ -151,8 +165,11 @@ async function readFamilyFolder(rootAbs, folderName, source) {
     logger.warn(`[fonts] Could not read family folder ${folderName} in ${rootAbs}: ${err.message}`);
     return null;
   }
-  const names = entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
-  const family = familyFromFiles(folderName, names, DEFAULT_GENERIC, source, rootAbs);
+  const files = await Promise.all(entries.filter((entry) => entry.isFile()).map(async (entry) => {
+    const st = await fs.stat(path.join(folderAbs, entry.name)).catch(() => null);
+    return { name: entry.name, version: st ? fileVersion(st.mtimeMs, st.size) : '' };
+  }));
+  const family = familyFromFiles(folderName, files, DEFAULT_GENERIC, source, rootAbs);
   return family ? { ...family, generic: await readFamilyMeta(folderAbs, folderName) } : null;
 }
 
@@ -166,12 +183,12 @@ async function scanStore(storage) {
     const parts = String(entry.key).split('/');
     if (parts.length !== 3 || parts[0] !== FONTS_PREFIX || !parts[1] || parts[1].startsWith('.')) continue;
     if (!byFolder.has(parts[1])) byFolder.set(parts[1], []);
-    byFolder.get(parts[1]).push(parts[2]);
+    byFolder.get(parts[1]).push({ name: parts[2], version: fileVersion(entry.mtime, entry.size) });
   }
   const result = new Map();
   for (const [folder, names] of byFolder) {
     let generic = DEFAULT_GENERIC;
-    if (names.includes('meta.json')) {
+    if (names.some((file) => file.name === 'meta.json')) {
       try {
         const chunks = [];
         // eslint-disable-next-line no-await-in-loop -- one small file per family
@@ -238,6 +255,7 @@ function mergeFamilies(other, preferred) {
     const formats = { ...base.formats, ...family.formats };
     merged.set(lc, {
       ...family,
+      versions: { ...base.versions, ...family.versions },
       weights: Object.keys(formats).map(Number).sort((a, b) => a - b),
       formats,
       generic: family.generic !== DEFAULT_GENERIC ? family.generic : base.generic,
@@ -326,6 +344,9 @@ async function saveUploadedFont({ family, weight, generic, buffer }) {
   }
   await storage.put(`${folder}/${Number(weight)}.${format}`, buffer, { contentType: FONT_TYPES[format] });
   if (VALID_GENERICS.has(generic)) await storage.put(`${folder}/meta.json`, Buffer.from(JSON.stringify({ generic })), { contentType: 'application/json' });
+  // This replica's copy of the object-store file goes at once (others go by
+  // the new version in the address).
+  require('../middleware/fontReadThrough').forgetCachedFamily(name.replace(/ /g, '-'));
   clearFontsCache();
   return { family: name, weight: Number(weight), format };
 }
@@ -344,6 +365,7 @@ async function deleteUploadedFamily(family) {
   const onDisk = await fs.stat(folder).then((st) => st.isDirectory()).catch(() => false);
   if (onDisk) await fs.rm(folder, { recursive: true, force: true });
   if (!entries.length && !onDisk) return false;
+  require('../middleware/fontReadThrough').forgetCachedFamily(name.replace(/ /g, '-'));
   clearFontsCache();
   return true;
 }

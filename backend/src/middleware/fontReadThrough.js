@@ -5,8 +5,10 @@
  * static mounts in server.js serve them. With S3 they live in the bucket, so
  * every replica serves what any replica uploaded: a request for
  * /fonts/<Family>/<weight>.<format> is answered from a local copy, fetched
- * from the store when missing or older than a few minutes (a replaced or
- * removed file is picked up again). Only font files, only under fonts/;
+ * from the store when missing, older than a few minutes, or fetched for
+ * another version than the address names (?v=, fontsService: a replaced
+ * file gets a new one); a replace or removal on this replica drops its copy
+ * at once (forgetCachedFamily). Only font files, only under fonts/;
  * anything else goes on to the next mount.
  */
 const fs = require('fs').promises;
@@ -27,8 +29,23 @@ const fontStaticOpts = {
 
 const FONT_PATH = /^\/([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\/(\d{1,4}\.(?:woff2|woff|ttf))$/;
 const FRESH_MS = 10 * 60 * 1000;
+const VERSION = /^[a-z0-9]{1,40}$/;
+
+// Every cache folder in use, and the version (?v=) each local copy was
+// fetched for: a request naming another version fetches the file again.
+const cacheDirs = new Set();
+const copyVersions = new Map();
+
+/** Drop this process's copies of a family (replaced or removed here). */
+function forgetCachedFamily(folder) {
+  for (const key of [...copyVersions.keys()]) if (key.startsWith(`${folder}/`)) copyVersions.delete(key);
+  for (const dir of cacheDirs) {
+    require('fs').rmSync(path.join(dir, folder), { recursive: true, force: true });
+  }
+}
 
 function fontReadThrough({ cacheDir = path.join(os.tmpdir(), 'picpeak-font-cache') } = {}) {
+  cacheDirs.add(cacheDir);
   const serve = secureStatic(cacheDir, fontStaticOpts);
   return async (req, res, next) => {
     try {
@@ -37,8 +54,10 @@ function fontReadThrough({ cacheDir = path.join(os.tmpdir(), 'picpeak-font-cache
       const match = FONT_PATH.exec(req.path);
       if (!match) return next();
       const local = path.join(cacheDir, match[1], match[2]);
+      const name = `${match[1]}/${match[2]}`;
+      const wanted = typeof req.query.v === 'string' && VERSION.test(req.query.v) ? req.query.v : null;
       const cached = await fs.stat(local).catch(() => null);
-      if (!cached || Date.now() - cached.mtimeMs > FRESH_MS) {
+      if (!cached || Date.now() - cached.mtimeMs > FRESH_MS || (wanted && copyVersions.get(name) !== wanted)) {
         const key = `fonts/${match[1]}/${match[2]}`;
         if (!(await storage.exists(key))) {
           await fs.rm(local, { force: true });
@@ -48,6 +67,8 @@ function fontReadThrough({ cacheDir = path.join(os.tmpdir(), 'picpeak-font-cache
         const tmp = `${local}.${crypto.randomBytes(4).toString('hex')}.tmp`;
         await storage.getToFile(key, tmp);
         await fs.rename(tmp, local);
+        if (wanted) copyVersions.set(name, wanted);
+        else copyVersions.delete(name);
       }
       return serve(req, res, next);
     } catch (error) {
@@ -57,4 +78,4 @@ function fontReadThrough({ cacheDir = path.join(os.tmpdir(), 'picpeak-font-cache
   };
 }
 
-module.exports = { fontReadThrough, fontStaticOpts };
+module.exports = { fontReadThrough, fontStaticOpts, forgetCachedFamily };

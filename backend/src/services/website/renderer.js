@@ -570,7 +570,9 @@ function fontFaces(fonts) {
       seen.add(key);
       const folder = font.family.replace(/ /g, '-');
       const file = (font.formats && font.formats[weight]) || 'woff2';
-      faces.push(`@font-face{font-family:'${font.family}';font-style:normal;font-weight:${weight};font-display:swap;src:url('/fonts/${encodeURIComponent(folder)}/${weight}.${file}') format('${CSS_FONT_FORMAT[file]}')}`);
+      // The file's version: a replaced font gets a new address (fontsService).
+      const version = font.versions && /^[a-z0-9]{1,40}$/.test(font.versions[weight] || '') ? `?v=${font.versions[weight]}` : '';
+      faces.push(`@font-face{font-family:'${font.family}';font-style:normal;font-weight:${weight};font-display:swap;src:url('/fonts/${encodeURIComponent(folder)}/${weight}.${file}${version}') format('${CSS_FONT_FORMAT[file]}')}`);
     }
   }
   return faces.join('');

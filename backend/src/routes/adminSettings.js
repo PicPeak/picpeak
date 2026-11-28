@@ -579,6 +579,8 @@ router.post('/fonts', adminAuth, requirePermission('settings.edit'), (req, res, 
       family: req.body.family, weight: Number(req.body.weight), generic: req.body.generic, buffer: req.file.buffer,
     });
     clearPublicSiteCache();
+    // The website's pages name the font files with their version: render anew.
+    require('../services/website/cache').clearWebsiteCache();
     await logActivity('font_uploaded', { family: saved.family, weight: saved.weight, format: saved.format }, null,
       { type: 'admin', id: req.admin.id, name: req.admin.username });
     res.status(201).json(saved);
@@ -594,6 +596,7 @@ router.delete('/fonts/:family', adminAuth, requirePermission('settings.edit'), a
       return res.status(404).json({ error: 'No uploaded font of that name', code: 'FONT_NOT_FOUND' });
     }
     clearPublicSiteCache();
+    require('../services/website/cache').clearWebsiteCache();
     await logActivity('font_deleted', { family: req.params.family }, null,
       { type: 'admin', id: req.admin.id, name: req.admin.username });
     res.status(204).end();

@@ -9,6 +9,8 @@ export interface FontDefinition {
   generic?: 'sans-serif' | 'serif' | 'cursive' | 'monospace';
   /** The file format per weight (issue 2618); woff2 when absent. */
   formats?: Record<number, 'woff2' | 'woff' | 'ttf'>;
+  /** Each weight file's version, for its address (?v=): a replaced file gets a new one. */
+  versions?: Record<number, string>;
   /** Shipped with PicPeak, or uploaded in the branding settings (removable). */
   source?: 'bundled' | 'uploaded';
 }
@@ -53,11 +55,12 @@ export const fontsService = {
   },
 };
 
-/** A font weight's @font-face source: its file and the format CSS names. */
-export function fontFaceSource(family: string, weight: number, formats?: FontDefinition['formats']): string {
+/** A font weight's @font-face source: its file (versioned) and the format CSS names. */
+export function fontFaceSource(family: string, weight: number, formats?: FontDefinition['formats'], versions?: FontDefinition['versions']): string {
   const file = formats?.[weight] || 'woff2';
   const cssFormat = file === 'ttf' ? 'truetype' : file;
-  return `url('/fonts/${encodeURIComponent(family.replace(/ /g, '-'))}/${weight}.${file}') format('${cssFormat}')`;
+  const version = versions?.[weight] && /^[a-z0-9]{1,40}$/.test(versions[weight]) ? `?v=${versions[weight]}` : '';
+  return `url('/fonts/${encodeURIComponent(family.replace(/ /g, '-'))}/${weight}.${file}${version}') format('${cssFormat}')`;
 }
 
 const GENERIC_FAMILIES = new Set([

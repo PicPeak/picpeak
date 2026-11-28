@@ -61,7 +61,7 @@ function writeFaces(): void {
 function syncFontFaces(font: FontDefinition): void {
   // Folder name on disk = family name with hyphens (fontFaceSource), in the
   // weight's own format: an uploaded font may be WOFF or TTF.
-  const next = new Map(font.weights.map((w) => [w, fontFaceSource(font.family, w, font.formats)] as [number, string]));
+  const next = new Map(font.weights.map((w) => [w, fontFaceSource(font.family, w, font.formats, font.versions)] as [number, string]));
   const current = faces.get(font.family);
   const same = current && current.size === next.size && [...next].every(([w, src]) => current.get(w) === src);
   if (same) return;

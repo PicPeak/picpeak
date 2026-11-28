@@ -264,7 +264,7 @@ describe('fontsService.listFonts', () => {
   });
 
   describe('result shape', () => {
-    test('every family is { family, weights, generic, formats, source }', async () => {
+    test('every family is { family, weights, generic, formats, versions, source }', async () => {
       await makeFamily(bundledRoot, 'Inter', [400, 700]);
       await makeFamily(bundledRoot, 'Playfair-Display', [400], { generic: 'serif' });
       const fonts = await fontsService.listFonts();
@@ -274,6 +274,7 @@ describe('fontsService.listFonts', () => {
           weights: expect.any(Array),
           generic: expect.stringMatching(/^(sans-serif|serif|cursive|monospace)$/),
           formats: expect.any(Object),
+          versions: expect.any(Object),
           source: 'bundled',
         });
         expect(f.weights.length).toBeGreaterThan(0);
@@ -367,17 +368,19 @@ describe('uploaded fonts (issue 2618)', () => {
 // An S3-like store in memory: the adapter interface fontsService uses.
 function memoryStore() {
   const objects = new Map();
+  const mtimes = new Map();
+  let clock = Date.parse('2026-11-28T10:00:00Z');
   const { Readable } = require('stream');
   return {
     objects,
     kind: () => 's3',
-    put: async (key, body) => { objects.set(key, Buffer.isBuffer(body) ? body : Buffer.from(String(body))); },
+    put: async (key, body) => { objects.set(key, Buffer.isBuffer(body) ? body : Buffer.from(String(body))); clock += 1000; mtimes.set(key, new Date(clock)); },
     get: async (key) => { if (!objects.has(key)) throw Object.assign(new Error('missing'), { code: 'ENOENT' }); return Readable.from([objects.get(key)]); },
     getToFile: async (key, local) => { await fsPromises.mkdir(path.dirname(local), { recursive: true }); await fsPromises.writeFile(local, objects.get(key)); },
     stat: async (key) => (objects.has(key) ? { size: objects.get(key).length, mtime: new Date() } : null),
     exists: async (key) => objects.has(key),
     delete: async (key) => { objects.delete(key); },
-    list: async (prefix) => [...objects.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key, size: objects.get(key).length })),
+    list: async (prefix) => [...objects.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key, size: objects.get(key).length, mtime: mtimes.get(key) })),
   };
 }
 
@@ -397,7 +400,7 @@ describe('uploaded fonts on an object store (S3, several replicas)', () => {
     expect(fs.readdirSync(userRoot)).toEqual([]);
     fontsService.clearFontsCache();
     expect((await fontsService.listFonts()).find((f) => f.family === 'Studio Serif'))
-      .toEqual({ family: 'Studio Serif', weights: [400, 700], generic: 'serif', formats: { 400: 'woff2', 700: 'ttf' }, source: 'uploaded' });
+      .toEqual({ family: 'Studio Serif', weights: [400, 700], generic: 'serif', formats: { 400: 'woff2', 700: 'ttf' }, versions: { 400: expect.any(String), 700: expect.any(String) }, source: 'uploaded' });
     expect(await fontsService.deleteUploadedFamily('Studio Serif')).toBe(true);
     expect(store.objects.size).toBe(0);
     expect(await fontsService.deleteUploadedFamily('Studio Serif')).toBe(false);
@@ -448,5 +451,31 @@ describe('uploaded fonts on an object store (S3, several replicas)', () => {
     expect(await fontsService.deleteUploadedFamily('Studio Serif')).toBe(true);
     expect(fs.existsSync(path.join(userRoot, 'Studio-Serif'))).toBe(false);
     expect([...store.objects.keys()].some((k) => k.startsWith('fonts/Studio-Serif/'))).toBe(false);
+  });
+
+  test('a replaced font gets a new address, and the object-store copy is never served stale', async () => {
+    const express = require('express');
+    const request = require('supertest');
+    const { fontReadThrough } = require('../../src/middleware/fontReadThrough');
+    const app = express();
+    app.use('/fonts', fontReadThrough());
+    const versionOf = async () => { fontsService.clearFontsCache(); return (await fontsService.listFonts()).find((f) => f.family === 'Swap Serif').versions[400]; };
+    const v1Bytes = Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(60, 1)]);
+    const v2Bytes = Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(60, 2)]);
+    await fontsService.saveUploadedFont({ family: 'Swap Serif', weight: 400, generic: 'serif', buffer: v1Bytes });
+    const v1 = await versionOf();
+    expect(v1).toMatch(/^[a-z0-9]+$/);
+    expect(Buffer.from((await request(app).get(`/fonts/Swap-Serif/400.woff2?v=${v1}`)).body).equals(v1Bytes)).toBe(true);
+    // Replaced on this replica: a new address, and the old one is not served from the old copy.
+    await fontsService.saveUploadedFont({ family: 'Swap Serif', weight: 400, generic: 'serif', buffer: v2Bytes });
+    const v2 = await versionOf();
+    expect(v2).not.toBe(v1);
+    expect(Buffer.from((await request(app).get(`/fonts/Swap-Serif/400.woff2?v=${v1}`)).body).equals(v2Bytes)).toBe(true);
+    // Replaced on another replica (straight into the store): the new address fetches it again.
+    const v3Bytes = Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(60, 3)]);
+    await store.put('fonts/Swap-Serif/400.woff2', v3Bytes);
+    const v3 = await versionOf();
+    expect(v3).not.toBe(v2);
+    expect(Buffer.from((await request(app).get(`/fonts/Swap-Serif/400.woff2?v=${v3}`)).body).equals(v3Bytes)).toBe(true);
   });
 });

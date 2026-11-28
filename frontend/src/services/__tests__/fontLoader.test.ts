@@ -81,4 +81,15 @@ describe('font loader', () => {
     expect(faces()).toContain('/fonts/Fifth-Serif/400.woff');
     expect(faces()).not.toContain('/fonts/Fifth-Serif/400.woff2');
   });
+
+  it('a replaced file gets a new address: its version goes in the URL, and a new version replaces the face', async () => {
+    vi.mocked(fontsService.list).mockResolvedValueOnce([{ ...font('Sixth Serif'), versions: { 400: 'v1abc' } }]);
+    await loadFontForFamily("'Sixth Serif', serif");
+    expect(faces()).toContain("/fonts/Sixth-Serif/400.woff2?v=v1abc') format('woff2')");
+    vi.mocked(fontsService.list).mockResolvedValueOnce([{ ...font('Sixth Serif'), versions: { 400: 'v2xyz' } }]);
+    forgetFontsList();
+    await loadFontForFamily("'Sixth Serif', serif");
+    expect(faces()).toContain('/fonts/Sixth-Serif/400.woff2?v=v2xyz');
+    expect(faces()).not.toContain('v1abc');
+  });
 });

@@ -353,3 +353,9 @@ describe('booking button', () => {
     expect(preview).toContain('Hidden on the website: client booking is off or nothing can be booked yet.');
   });
 });
+
+test('a font file is addressed with its version, so a replaced file gets a new address', () => {
+  const { fontFaces } = require('../renderer')._internal;
+  const css = fontFaces({ body: { family: 'Studio Sans', weights: [400], formats: { 400: 'ttf' }, versions: { 400: 'k3x9' } }, heading: null });
+  expect(css).toContain("src:url('/fonts/Studio-Sans/400.ttf?v=k3x9') format('truetype')");
+});
