@@ -260,8 +260,10 @@ function socialList(value, field) {
 
 function rich(value, max, field) {
   // Loaded here, not at the top: richText.js needs this module's safeUrl.
-  const { sanitizeRichText } = require('./richText');
-  return sanitizeRichText(capText(typeof value === 'string' ? value : '', max, field));
+  const { sanitizeRichText, isEmptyRichText } = require('./richText');
+  const html = sanitizeRichText(capText(typeof value === 'string' ? value : '', max, field));
+  // A cleared editor's <p></p> is no text: stored empty.
+  return isEmptyRichText(html) ? '' : html;
 }
 
 const objects = (value, max, field) => (Array.isArray(value) ? capped(value, max, field).filter((x) => x && typeof x === 'object') : []);

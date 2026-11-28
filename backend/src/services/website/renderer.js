@@ -20,7 +20,7 @@ const { escapeHtml } = require('../../utils/formatters');
 const { toDateOnly } = require('../../utils/dateOnly');
 const { escapeCssForStyleElement } = require('../../utils/cssSanitizer');
 const { relativeLuminance, readableTextOn } = require('../../utils/colorContrast');
-const { inline, richText, linkAttrs } = require('./richText');
+const { inline, richText, linkAttrs, isEmptyRichText } = require('./richText');
 const { icon, NETWORK_LABELS } = require('./icons');
 const { widgetHtml } = require('./captcha');
 const { brandCssVariables } = require('../../utils/brandCssVariables');
@@ -262,7 +262,7 @@ function renderHero(block, ctx) {
 // flowing over both (as before), or, once the right one is filled, each its own.
 function renderText(block, ctx) {
   const center = block.variant === 'center' ? ' pp-center' : '';
-  const body = block.variant === 'columns' && block.bodyRight
+  const body = block.variant === 'columns' && !isEmptyRichText(block.bodyRight)
     ? `<div class="pp-two-cols"><div class="pp-prose">${block.body}</div><div class="pp-prose">${block.bodyRight}</div></div>`
     : `<div class="pp-prose${block.variant === 'columns' ? ' pp-columns' : ''}">${block.body}</div>`;
   return section(block, `<div class="pp-wrap pp-narrow${center}">${heading(block.heading)}${body}</div>`, ctx);

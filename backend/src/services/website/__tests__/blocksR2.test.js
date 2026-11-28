@@ -202,3 +202,38 @@ test('every contact form carries the "reload" note, for a page cached before the
   const html = render([{ id: 'c1', type: 'contact' }]);
   expect(html).toContain('<p id="contact-reload-c1" class="pp-note pp-note--err" role="alert">This form was just updated. Please reload the page and send your message again.</p>');
 });
+
+describe('rich text that holds nothing counts as empty', () => {
+  const { isEmptyRichText } = require('../richText');
+
+  test('tags, whitespace, non-breaking spaces and line breaks alone are empty', () => {
+    for (const html of ['', '<p></p>', '<p> </p>', '<p>&nbsp;</p>', '<p><br></p>', '<p> </p><h2> </h2>', null, undefined]) {
+      expect([html, isEmptyRichText(html)]).toEqual([html, true]);
+    }
+    for (const html of ['<p>a</p>', '<p>0</p>', '<ul><li>x</li></ul>']) expect([html, isEmptyRichText(html)]).toEqual([html, false]);
+  });
+
+  test('a cleared right column is stored empty and the text is one column again', () => {
+    const { document } = normalize([{ type: 'text', variant: 'columns', format: 'html', body: '<p>Left</p>', bodyRight: '<p><br></p>' }]);
+    expect(document.pages[0].blocks[0].bodyRight).toBe('');
+    const html = render([{ type: 'text', variant: 'columns', format: 'html', body: '<p>Left</p>', bodyRight: '<p>&nbsp;</p>' }]);
+    expect(html).not.toContain('<div class="pp-two-cols">');
+    expect(html).toContain('<div class="pp-prose pp-columns"><p>Left</p></div>');
+  });
+
+  test('every rich-text field: FAQ answers, the call to action, the footer text column', () => {
+    const { document } = normalizeDocument({
+      pages: [{ id: 'home', slug: 'home', title: 'Home', isHome: true, blocks: [
+        { type: 'faq', items: [{ question: 'Q', answer: '<p> </p>' }] },
+        { type: 'cta', heading: 'H', text: '<p><br></p>' },
+        { type: 'text', format: 'html', body: '<p></p>' },
+      ] }],
+      footer: { columns: [{ kind: 'text', text: '<p>&nbsp;</p>' }] },
+    });
+    const [faq, cta, text] = document.pages[0].blocks;
+    expect(faq.items[0].answer).toBe('');
+    expect(cta.text).toBe('');
+    expect(text.body).toBe('');
+    expect(document.footer.columns[0].text).toBe('');
+  });
+});

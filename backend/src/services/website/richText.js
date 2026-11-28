@@ -98,5 +98,21 @@ function sanitizeCmsHtml(html) {
   return sanitizeHtml(String(html || ''), CMS_OPTIONS);
 }
 
+// Elements that are content without any text.
+const MEDIA = /<(?:img|video|audio|iframe|svg|picture)\b/i;
+
+/**
+ * Rich text with nothing in it: only tags, whitespace, non-breaking spaces
+ * and line breaks (an editor cleared leaves <p></p> or <p><br></p>). The
+ * normaliser stores it as '', and a layout that depends on text (two
+ * columns, a section of its own) treats it as absent.
+ */
+function isEmptyRichText(html) {
+  if (typeof html !== 'string' || !html) return true;
+  if (MEDIA.test(html)) return false;
+  return !html.replace(/<[^>]*>/g, '').replace(/&nbsp;|&#160;|&#xa0;/gi, '').replace(/[\s\u00a0]+/g, '');
+}
+
 module.exports = {
+  isEmptyRichText,
   sanitizeCmsHtml, inline, richText, linkAttrs, sanitizeRichText };
