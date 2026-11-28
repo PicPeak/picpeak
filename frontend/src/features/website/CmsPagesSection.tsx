@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { FileWarning, Scale } from 'lucide-react';
-import { Modal } from '../../components/common';
+import { Modal, useConfirm } from '../../components/common';
 import { CmsPageEditor } from '../../components/admin/cms/CmsPageEditor';
 import { cmsService, LEGAL_PAGE_SLUGS, type CMSPage } from '../../services/cms.service';
 
@@ -25,12 +25,25 @@ const byOrder = (order: string[]) => (a: CMSPage, b: CMSPage) => {
 export const CmsPagesSection: React.FC<{ readOnly: boolean }> = ({ readOnly }) => {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState<string | null>(searchParams.get('cms'));
+  const [dirty, setDirty] = useState(false);
   const { data: pages = [] } = useQuery({ queryKey: ['cms-pages'], queryFn: cmsService.getPages });
   const legal = pages.filter((p) => LEGAL_PAGE_SLUGS.includes(p.slug)).sort(byOrder(LEGAL_PAGE_SLUGS));
   const system = pages.filter((p) => !LEGAL_PAGE_SLUGS.includes(p.slug)).sort(byOrder(SYSTEM_ORDER));
   const title = (slug: string) => t(`legal.${slug}`, { defaultValue: pages.find((p) => p.slug === slug)?.title_en || slug });
   const open = editing && pages.some((p) => p.slug === editing) ? editing : null;
+  const close = () => { setDirty(false); setEditing(null); };
+  // Closing (backdrop, Escape, the close button) drops unsaved edits: ask
+  // first, as the CMS tab does when switching pages.
+  const requestClose = async () => {
+    if (dirty && !(await confirm({
+      message: t('cms.discardOnSwitch', 'Discard your unsaved changes to this page?'),
+      variant: 'danger',
+      confirmLabel: t('common.discard', 'Discard'),
+    }))) return;
+    close();
+  };
 
   const group = (label: string, list: CMSPage[], Icon: typeof Scale) => (
     <ul aria-label={label} className="space-y-1.5">
@@ -63,8 +76,8 @@ export const CmsPagesSection: React.FC<{ readOnly: boolean }> = ({ readOnly }) =
           {group(t('website.cmsPages.system', 'System pages'), system, FileWarning)}
         </>
       )}
-      <Modal open={!!open} onClose={() => setEditing(null)} size="xl" title={open ? title(open) : ''}>
-        {open && <CmsPageEditor slug={open} saveMode="inline" onSaved={() => setEditing(null)} />}
+      <Modal open={!!open} onClose={() => { void requestClose(); }} size="xl" title={open ? title(open) : ''}>
+        {open && <CmsPageEditor slug={open} saveMode="inline" onDirtyChange={setDirty} onSaved={close} />}
       </Modal>
     </section>
   );

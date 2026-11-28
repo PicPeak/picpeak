@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -14,8 +14,15 @@ vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 vi.mock('../../../components/admin/cms/CmsPageEditor', () => ({
-  CmsPageEditor: ({ slug, saveMode }: { slug: string; saveMode: string }) => <div>{`editor:${slug}:${saveMode}`}</div>,
+  CmsPageEditor: ({ slug, saveMode, onDirtyChange }: { slug: string; saveMode: string; onDirtyChange?: (dirty: boolean) => void }) => (
+    <div>
+      {`editor:${slug}:${saveMode}`}
+      <button type="button" onClick={() => onDirtyChange?.(true)}>type something</button>
+    </div>
+  ),
 }));
+const confirmMock = vi.fn();
+vi.mock('../../../components/common/ConfirmDialog', () => ({ useConfirm: () => confirmMock }));
 const page = (slug: string, title: string) => ({ id: 1, slug, title_en: title, title_de: title, content_en: '', content_de: '', logo_url: null, use_external_url: false, external_url: null, updated_at: '' });
 vi.mock('../../../services/cms.service', () => ({
   cmsService: {
@@ -55,5 +62,23 @@ describe('legal and system pages in the website builder', () => {
   it('offers no editing without the right to change the website', async () => {
     renderSection(true);
     expect(await screen.findByRole('button', { name: /Imprint/ })).toBeDisabled();
+  });
+
+  it('asks before a close drops unsaved changes, and closes without asking when there are none', async () => {
+    renderSection(false, '/admin/website?panel=pages&cms=impressum');
+    expect(await screen.findByText('editor:impressum:inline')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByText('editor:impressum:inline')).toBeNull());
+    expect(confirmMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /Imprint/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'type something' }));
+    confirmMock.mockResolvedValueOnce(false);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('editor:impressum:inline')).toBeInTheDocument();
+    confirmMock.mockResolvedValueOnce(true);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByText('editor:impressum:inline')).toBeNull());
   });
 });
