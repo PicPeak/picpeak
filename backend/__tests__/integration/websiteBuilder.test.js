@@ -2296,3 +2296,16 @@ describe('switching a block variant keeps what the other variant uses', () => {
     expect({ ...splitCta, variant: null }).toEqual({ ...centeredCta, variant: null });
   });
 });
+
+describe('footer column headings', () => {
+  test('the company column shows its heading when set', async () => {
+    await setFeatureFlags(db, { websiteBuilder: true });
+    const document = {
+      pages: [{ id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [] }],
+      footer: { columns: [{ id: 'b1', kind: 'brand', heading: 'About the studio' }, { id: 'b2', kind: 'brand', heading: '' }] },
+    };
+    const html = (await request(app).post('/api/admin/website/preview').set(auth(adminId)).send({ document, pageId: 'home' })).body.html;
+    expect(html).toContain('<h2 class="pp-footer__h">About the studio</h2>');
+    expect(html.match(/class="pp-footer__h"/g)).toHaveLength(1);
+  });
+});

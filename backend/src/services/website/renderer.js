@@ -849,7 +849,7 @@ function footerColumn(column, ctx) {
   const h = column.heading ? `<h2 class="pp-footer__h">${esc(column.heading)}</h2>` : '';
   switch (column.kind) {
   case 'brand':
-    return `<div><strong>${esc(branding.companyName || 'PicPeak')}</strong>${branding.companyTagline ? `<p>${esc(branding.companyTagline)}</p>` : ''}${branding.footerText ? `<p>${esc(branding.footerText)}</p>` : ''}</div>`;
+    return `<div>${h}<strong>${esc(branding.companyName || 'PicPeak')}</strong>${branding.companyTagline ? `<p>${esc(branding.companyTagline)}</p>` : ''}${branding.footerText ? `<p>${esc(branding.footerText)}</p>` : ''}</div>`;
   case 'pages': {
     const pages = ctx.document.pages.filter((p) => !p.hidden)
       .map((p) => `<li><a href="${esc(pageHref(p))}">${esc(p.navLabel || p.title)}</a></li>`).join('');
