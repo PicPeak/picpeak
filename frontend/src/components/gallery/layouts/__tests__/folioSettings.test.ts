@@ -1,0 +1,104 @@
+/**
+ * Gallery Folio's options from the theme JSON (issue 2617): stored as sent,
+ * so anything unknown falls back, and the palettes stay readable.
+ */
+import { describe, expect, it } from 'vitest';
+import { contrastRatio } from '../../../../utils/contrast';
+import { GALLERY_THEME_PRESETS } from '../../../../types/theme.types';
+import {
+  FOLIO_PALETTE_COLORS,
+  FOLIO_PALETTES,
+  folioColumnsForWidth,
+  folioPaletteStyle,
+  folioSettings,
+} from '../folioSettings';
+
+describe('folioSettings', () => {
+  it('defaults to a full cover, paper, classic type, regular spacing, 3 and 2 columns', () => {
+    expect(folioSettings(undefined)).toEqual({
+      cover: 'full', palette: 'paper', type: 'classic', spacing: 'regular',
+      columns: { mobile: 2, desktop: 3 }, studioLabel: '',
+    });
+  });
+
+  it('keeps known values and drops unknown ones', () => {
+    expect(folioSettings({
+      folioCover: 'split', folioPalette: 'charcoal', folioType: 'modern', folioSpacing: 'airy',
+    })).toMatchObject({ cover: 'split', palette: 'charcoal', type: 'modern', spacing: 'airy' });
+    expect(folioSettings({
+      folioCover: 'diagonal', folioPalette: 'neon', folioType: 3, folioSpacing: null,
+    } as never)).toMatchObject({ cover: 'full', palette: 'paper', type: 'classic', spacing: 'regular' });
+  });
+
+  it('clamps columns to 1–2 on a phone and 2–4 on a desktop', () => {
+    expect(folioSettings({ folioColumns: { mobile: 5, desktop: 9 } }).columns).toEqual({ mobile: 2, desktop: 4 });
+    expect(folioSettings({ folioColumns: { mobile: 0, desktop: 1 } }).columns).toEqual({ mobile: 1, desktop: 2 });
+    expect(folioSettings({ folioColumns: { mobile: 'x', desktop: '3' } } as never).columns).toEqual({ mobile: 2, desktop: 3 });
+  });
+
+  it('trims the studio label to plain text of at most 60 characters', () => {
+    expect(folioSettings({ folioStudioLabel: '  Studio Nord  ' }).studioLabel).toBe('Studio Nord');
+    expect(folioSettings({ folioStudioLabel: 'x'.repeat(80) }).studioLabel).toHaveLength(60);
+    expect(folioSettings({ folioStudioLabel: 42 } as never).studioLabel).toBe('');
+  });
+});
+
+describe('folioColumnsForWidth', () => {
+  it('gives a phone its own count and a tablet one column less than a desktop', () => {
+    const columns = folioColumnsForWidth({ mobile: 1, desktop: 4 });
+    expect([columns(390), columns(800), columns(1440)]).toEqual([1, 3, 4]);
+    // Never fewer on a tablet than on a phone.
+    expect(folioColumnsForWidth({ mobile: 2, desktop: 2 })(800)).toBe(2);
+  });
+});
+
+describe('Folio palettes', () => {
+  it.each(FOLIO_PALETTES)('%s keeps text and muted text at 4.5:1 or more', (palette) => {
+    const colors = FOLIO_PALETTE_COLORS[palette];
+    for (const ground of [colors.background, colors.surface, colors.elevated]) {
+      expect(contrastRatio(colors.text, ground)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(colors.muted, ground)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  // The fills the shared controls inside the layout read: the primary button
+  // and the lane's checked boxes (--ui-accent-strong), the nav's cart button
+  // (--color-accent), a checked tile (--color-accent-dark).
+  const FILLS: Array<[fill: string, on: string]> = [
+    ['--ui-accent-strong', '--ui-accent-fg'],
+    ['--color-accent', '--color-accent-fg'],
+    ['--color-accent-dark', '--color-accent-dark-fg'],
+  ];
+
+  it.each(FOLIO_PALETTES)('%s fills its controls with its own ink, not the operator\'s accent', (palette) => {
+    // A dark brand accent would vanish on charcoal, a pale one on paper.
+    const style = folioPaletteStyle(palette) as Record<string, string>;
+    const colors = FOLIO_PALETTE_COLORS[palette];
+    for (const [fill, on] of FILLS) {
+      expect(style[fill]).toBe(colors.text);
+      // What is written on the fill reads, and the fill stands out from the page.
+      expect(contrastRatio(style[on], style[fill])).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(style[fill], colors.background)).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(style[fill], colors.surface)).toBeGreaterThanOrEqual(3);
+    }
+    // The soft highlight (a chosen filter chip) and what is written on it.
+    expect(contrastRatio(style['--ui-accent-on-soft'], colors.elevated)).toBeGreaterThanOrEqual(4.5);
+    expect(style['--ui-accent-soft']).toBe(colors.elevated);
+  });
+
+  it('gives the Folio preset the paper palette itself, so the page around the layout matches', () => {
+    const preset = GALLERY_THEME_PRESETS.galleryFolio.config;
+    const paper = FOLIO_PALETTE_COLORS.paper;
+    expect({
+      background: preset.backgroundColor, surface: preset.surfaceColor, elevated: preset.elevatedColor,
+      border: preset.surfaceBorderColor, text: preset.textColor, muted: preset.mutedTextColor,
+    }).toEqual(paper);
+  });
+
+  it('writes the palette as the theme tokens the gallery reads', () => {
+    const style = folioPaletteStyle('charcoal') as Record<string, string>;
+    expect(style['--color-background']).toBe('#1c1c1b');
+    expect(style['--color-text']).toBe('#eeece7');
+    expect(style.backgroundColor).toBe('#1c1c1b');
+  });
+});

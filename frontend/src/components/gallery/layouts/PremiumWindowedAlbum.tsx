@@ -22,17 +22,21 @@ interface PremiumWindowedAlbumProps<P extends AlbumPhoto> {
   renderTile: (context: RenderPhotoContext<P>, box: TileBox | undefined) => React.ReactNode;
   columns: (containerWidth: number) => number;
   spacing: number;
+  /** The tile's class, so the hidden copy measures it as the real one (Folio has its own). */
+  tileClassName?: string;
 }
 
 /**
  * Premium's MasonryPhotoAlbum for a large gallery (issue 2193): the same
  * layout from the same function, with only the tiles near the viewport mounted.
+ * Gallery Folio uses it too.
  */
 export function PremiumWindowedAlbum<P extends AlbumPhoto & { key: string }>({
   photos,
   renderTile,
   columns,
   spacing,
+  tileClassName = 'gallery-premium-photo-card',
 }: PremiumWindowedAlbumProps<P>) {
   const albumRef = useRef<HTMLDivElement>(null);
   const [[width], dispatchWidth] = useReducer(albumWidthReducer, [undefined, undefined]);
@@ -66,7 +70,7 @@ export function PremiumWindowedAlbum<P extends AlbumPhoto & { key: string }>({
       model?.tracks.forEach((track) => {
         const column = ghostBox(root, 'react-photo-album--track', {});
         track.photos.forEach((tile) => {
-          tiles.set(Number(tile.photo.key), ghostBox(column, 'gallery-premium-photo-card', {
+          tiles.set(Number(tile.photo.key), ghostBox(column, tileClassName, {
             width: '100%',
             height: `${tile.height}px`,
             display: 'block',

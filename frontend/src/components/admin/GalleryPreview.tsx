@@ -3,6 +3,7 @@ import { Camera, Calendar } from 'lucide-react';
 import { ThemeConfig, GalleryLayoutType, HeroDividerStyle } from '../../types/theme.types';
 import { buildResourceUrl } from '../../utils/url';
 import { useTranslation } from 'react-i18next';
+import { FOLIO_GAPS, FOLIO_PALETTE_COLORS, folioSettings } from '../gallery/layouts/folioSettings';
 
 interface GalleryPreviewBranding {
   company_name?: string;
@@ -136,6 +137,80 @@ export const GalleryPreview: React.FC<GalleryPreviewProps> = ({
     }
   };
 
+  const renderFolio = () => {
+    const folio = folioSettings(theme.gallerySettings);
+    const colors = FOLIO_PALETTE_COLORS[folio.palette];
+    const modern = folio.type === 'modern';
+    const titleStyle: React.CSSProperties = modern
+      ? { fontFamily: theme.fontFamily || 'Inter, sans-serif', fontSize: '0.75rem', letterSpacing: '0.25em', textTransform: 'uppercase' }
+      : { fontFamily: headingFont, fontSize: '1.35rem' };
+    const gap = FOLIO_GAPS[folio.spacing];
+    const ratios = ['4 / 5', '3 / 2', '2 / 3', '1 / 1', '3 / 2', '4 / 5', '2 / 3', '3 / 2'];
+    const block = (ratio: string, key?: number) => (
+      <div
+        key={key}
+        className="relative flex items-center justify-center"
+        style={{ aspectRatio: ratio, backgroundColor: colors.elevated, breakInside: 'avoid', marginBottom: gap }}
+      >
+        <Camera className="w-5 h-5" style={{ color: colors.muted }} />
+      </div>
+    );
+    const title = <p className="m-0 leading-tight" style={titleStyle}>Sample Event</p>;
+    return (
+      <div
+        className="-m-4"
+        data-testid="folio-preview"
+        data-palette={folio.palette}
+        data-cover={folio.cover}
+        data-type={folio.type}
+        data-columns={folio.columns.desktop}
+        style={{ backgroundColor: colors.background, color: colors.text }}
+      >
+        {folio.cover === 'split' ? (
+          <div className="grid grid-cols-5" style={{ height: 150 }}>
+            <div className="col-span-2 flex flex-col justify-center gap-1 px-4">
+              <p className="m-0 text-[9px] uppercase tracking-[0.2em]" style={{ color: colors.muted }}>January 15, 2026</p>
+              {title}
+            </div>
+            <div className="col-span-3 flex items-center justify-center" style={{ backgroundColor: colors.elevated }}>
+              <Camera className="w-6 h-6" style={{ color: colors.muted }} />
+            </div>
+          </div>
+        ) : (
+          <div
+            className="relative flex items-end justify-center pb-4"
+            // The same soft scrim as the real cover, so the white title reads.
+            style={{ height: 170, background: `linear-gradient(to top, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0) 70%), ${colors.elevated}` }}
+          >
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Camera className="w-6 h-6" style={{ color: colors.muted }} />
+            </div>
+            <div className="relative text-center text-white" style={{ textShadow: '0 1px 8px rgba(0, 0, 0, 0.45)' }}>
+              <p className="m-0 text-[9px] uppercase tracking-[0.2em]">January 15, 2026</p>
+              {title}
+            </div>
+          </div>
+        )}
+        <div
+          className="flex items-center justify-between px-4 py-2 text-xs"
+          style={{ borderBottom: `1px solid ${colors.border}` }}
+        >
+          <span style={modern ? { letterSpacing: '0.2em', textTransform: 'uppercase', fontSize: '0.6rem' } : { fontFamily: headingFont }}>
+            {folio.studioLabel || 'Sample Event'}
+          </span>
+          <span className="flex gap-2" aria-hidden="true">
+            {[0, 1, 2].map((dot) => (
+              <span key={dot} className="block w-2.5 h-2.5 rounded-full" style={{ border: `1px solid ${colors.text}` }} />
+            ))}
+          </span>
+        </div>
+        <div className="px-4 pt-4" style={{ columnCount: folio.columns.desktop, columnGap: gap }}>
+          {ratios.map((ratio, index) => block(ratio, index))}
+        </div>
+      </div>
+    );
+  };
+
   const renderLayout = () => {
     const spacing = theme.gallerySettings?.spacing || 'normal';
     const gapClass = spacing === 'tight' ? 'gap-1' : spacing === 'relaxed' ? 'gap-4' : 'gap-2';
@@ -254,6 +329,11 @@ export const GalleryPreview: React.FC<GalleryPreviewProps> = ({
             </div>
           </div>
         );
+
+      // Folio: a photographic cover in its palette, a hairline nav, then the
+      // photos in columns at their own proportions.
+      case 'gallery-folio':
+        return renderFolio();
 
       default:
         return null;

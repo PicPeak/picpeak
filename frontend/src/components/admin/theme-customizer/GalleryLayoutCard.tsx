@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Card, Input, Switch } from '../../common';
 import { ThemeConfig, STORY_FOOTER_TEXT_MAX, STORY_FOOTER_TITLE_MAX } from '../../../types/theme.types';
 import { LayoutPicker } from './LayoutPicker';
+import { FolioSettingsFields } from './FolioSettingsFields';
 import { masonryModeWireframes, useGalleryLayoutOptions, type MasonryPickerMode } from './layoutWireframes';
 import { masonryModeOf } from '../../gallery/layouts/masonryMode';
 import { PREMIUM_COLUMN_LIMITS, PREMIUM_GAP_LIMITS, clampPremiumColumns, clampPremiumGap, premiumColumns, premiumGap } from '../../gallery/layouts/premiumGeometry';
@@ -38,6 +39,11 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
   // admin picks.
   const masonryMode: MasonryPickerMode = masonryModeOf(localTheme.gallerySettings?.masonryMode);
   const isPremium = localTheme.galleryLayout === 'gallery-premium';
+  const isFolio = localTheme.galleryLayout === 'gallery-folio';
+  // Premium and Folio set their own spacing below and ignore the common one.
+  const showsSpacing = !isPremium && !isFolio;
+  // Only the grid animates its photos in; a select that does nothing is not offered.
+  const showsAnimation = localTheme.galleryLayout === 'grid';
   const premium = premiumColumns(localTheme.gallerySettings);
   // The same control for grid, masonry columns and mosaic.
   const thumbnailScaleField = (
@@ -108,9 +114,9 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
           <h4 className="font-medium text-sm text-body">{t('branding.layoutSettings')}</h4>
 
           {/* Common settings */}
+          {(showsSpacing || showsAnimation) && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Premium sets its gap in pixels below and ignores this. */}
-            {!isPremium && (
+            {showsSpacing && (
             <div>
               <label className="block text-sm font-medium text-body mb-2">
                 {t('branding.photoSpacing')}
@@ -127,6 +133,7 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
             </div>
             )}
 
+            {showsAnimation && (
             <div>
               <label className="block text-sm font-medium text-body mb-2">
                 {t('branding.photoAnimation')}
@@ -142,7 +149,9 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
                 <option value="slide">{t('branding.animation.slide')}</option>
               </select>
             </div>
+            )}
           </div>
+          )}
 
           {/* Grid specific */}
           {localTheme.galleryLayout === 'grid' && (
@@ -409,6 +418,14 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
                 </p>
               </div>
             </>
+          )}
+
+          {/* Gallery Folio specific (issue 2617) */}
+          {isFolio && (
+            <FolioSettingsFields
+              gallerySettings={localTheme.gallerySettings}
+              updateGallerySettings={updateGallerySettings}
+            />
           )}
 
           {localTheme.galleryLayout === 'mosaic' && thumbnailScaleField}

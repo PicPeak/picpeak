@@ -106,7 +106,7 @@ function show(selfie: boolean) {
 
 afterEach(cleanup);
 
-describe.each(['gallery-premium', 'gallery-story'])('selfie search on %s', (layout) => {
+describe.each(['gallery-premium', 'gallery-story', 'gallery-folio'])('selfie search on %s', (layout) => {
   it('offers the launcher in the row above the photos, which opens the dialog', () => {
     stable.theme.theme = { galleryLayout: layout };
     show(true);

@@ -28,6 +28,15 @@ import { withFocalPosition } from '../../utils/focalPoint';
 export /** Action buttons (36px) + gap + rating pill (28px); below this the row would overlap the buttons. */
 const MIN_TILE_HEIGHT_FOR_RATING_ROW = 104;
 
+/**
+ * The lane's controls: one 32 px box and one skin, a white chip on the photo,
+ * so like, download, the cart, the checkbox and the layout's own control
+ * (which takes the box from here) read as one row of buttons.
+ */
+export const LANE_CONTROL_BOX = 'w-8 h-8 shrink-0 items-center justify-center rounded-full';
+const LANE_CONTROL_SKIN = 'shadow-md transition-colors';
+const LANE_CONTROL_REST = 'bg-white/90 text-neutral-800 hover:bg-white';
+
 interface PhotoCardFeedbackOptions {
   allowLikes?: boolean;
   allowFavorites?: boolean;
@@ -114,6 +123,22 @@ export interface PhotoCardProps {
   topLeftControl?: React.ReactNode;
   /** Rendered last in the `topLeftControl` row (Masonry's count chips). */
   topLeftExtras?: React.ReactNode;
+  /**
+   * One lane along the bottom edge instead of the corners (Gallery Folio,
+   * issue 2617). On a narrow or panoramic tile the corners collide: one
+   * 50 px high holds a single 32 px row and no more. In the lane, from the
+   * left: `topLeftControl` (the client's toggle), then the decorative marks
+   * (`laneMarks`, first look, the folder hint), which drop whole once the row
+   * is full. From the right: the checkbox and the cart, never dropped, and
+   * before them the colour dots, like and download, which drop whole in the
+   * reverse of that order. Like, download and the checkbox show only while
+   * the tile is revealed. Comments and ratings are left to the lightbox, and
+   * the photo opens from a button the size of the tile, so there is no
+   * separate View button to fit.
+   */
+  lane?: boolean;
+  /** The layout's own marks, after the card's (Folio's video mark). */
+  laneMarks?: React.ReactNode;
 }
 
 export const PhotoCard: React.FC<PhotoCardProps> = ({
@@ -156,6 +181,8 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   firstLookClassName = 'bottom-2 left-2',
   topLeftControl,
   topLeftExtras,
+  lane = false,
+  laneMarks,
 }) => {
   const guestIdentity = useGuestIdentityOptional();
   // Photo sales: in a priced gallery every photo is
@@ -171,6 +198,48 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   // spins, and the overlay stays up so a touch user sees it.
   const downloadPending = usePhotoDownloadPending(photo.id);
   const [overlayVisible, setOverlayVisible] = useState(false);
+  // The lane, reached by keyboard: a control inside the tile has keyboard
+  // focus. Held in state rather than left to `:has(:focus-visible)` in the
+  // stylesheet: while focus passes from one control to the next nothing is
+  // focused, the lane would hide its buttons for that instant, and the
+  // browser refuses to focus a button that is not rendered. A click or tap
+  // focuses the tile-sized button too, but not `:focus-visible`, so it does
+  // not keep a tile revealed.
+  const [keyboardInside, setKeyboardInside] = useState(false);
+  const laneActionsRef = useRef<HTMLDivElement | null>(null);
+  const handleLaneFocus = (e: React.FocusEvent<HTMLDivElement>) => {
+    if ((e.target as Element).matches(':focus-visible')) setKeyboardInside(true);
+  };
+  // A dialog opened from the tile hands the focus back to its opener when it
+  // closes, and a hidden button cannot take it. The lane stays revealed
+  // until focus lands outside any dialog: on the tile again, or elsewhere.
+  const stopDialogWatch = useRef<(() => void) | null>(null);
+  useEffect(() => () => stopDialogWatch.current?.(), []);
+  const holdWhileDialogHasFocus = (card: HTMLElement) => {
+    stopDialogWatch.current?.();
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest('[role="dialog"]')) return;
+      stopDialogWatch.current?.();
+      if (!card.contains(target)) setKeyboardInside(false);
+    };
+    document.addEventListener('focusin', onFocusIn);
+    stopDialogWatch.current = () => {
+      document.removeEventListener('focusin', onFocusIn);
+      stopDialogWatch.current = null;
+    };
+  };
+  const handleLaneBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    if ((e.relatedTarget as Element | null)?.closest('[role="dialog"]')) {
+      holdWhileDialogHasFocus(e.currentTarget);
+      return;
+    }
+    setKeyboardInside(false);
+    // Focus on a control that had dropped to a second row scrolls that row
+    // into the lane; back to the first once the keyboard has left.
+    if (laneActionsRef.current) laneActionsRef.current.scrollTop = 0;
+  };
   // #1275 — the input in use right now, not what the device is capable of.
   // On a hybrid the two disagree, and acting on the device's primary pointer
   // handles one of its two inputs as if it were the other.
@@ -358,7 +427,14 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
       : `${base} group-hover:opacity-100 group-hover:pointer-events-auto`;
   };
 
-  const overlayClassName = `${overlayBaseClassName} ${revealed(overlayVisible || (downloadPending && !isSelectionMode))}`;
+  // In the lane the overlay is a shade with no control in it: it shows with
+  // the lane's actions and never takes a click meant for the tile's button.
+  const overlayShown = overlayVisible || (downloadPending && !isSelectionMode);
+  const overlayClassName = lane
+    ? `${overlayBaseClassName} pointer-events-none ${overlayShown || keyboardInside
+      ? 'opacity-100'
+      : isTouchDevice ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'}`
+    : `${overlayBaseClassName} ${revealed(overlayShown)}`;
 
   const checkboxVisibilityClass = revealed(
     isSelected || isSelectionMode || overlayVisible,
@@ -373,11 +449,21 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
       : 'opacity-100 group-hover:opacity-0 group-has-[:focus-visible]:opacity-0';
 
   const buttonType = actionVariant === 'dark' ? ('button' as const) : undefined;
-  const actionButtonClass =
-    actionVariant === 'dark'
+  // The lane shows like, download and the checkbox only while the tile is
+  // revealed (hover, a tap, a control inside reached by keyboard), so at rest
+  // the marks have the row. Hidden as `display: none` rather than faded: a
+  // faded control would keep its width and push the marks out for good.
+  const laneShown = (visible: boolean) => (visible || keyboardInside
+    ? 'inline-flex'
+    : isTouchDevice ? 'hidden' : 'hidden group-hover:inline-flex');
+  const laneActionShown = laneShown(overlayVisible || downloadPending);
+  const actionButtonClass = lane
+    ? `${laneActionShown} ${LANE_CONTROL_BOX} ${LANE_CONTROL_SKIN} ${LANE_CONTROL_REST}`
+    : actionVariant === 'dark'
       ? 'p-2 bg-white/20 hover:bg-white/40 rounded-full transition-colors'
       : 'p-2 bg-white/90 rounded-full hover:bg-white transition-colors';
-  const actionIconClass = actionVariant === 'dark' ? 'w-5 h-5 text-white' : 'w-5 h-5 text-neutral-800';
+  // 16 px glyphs in the lane's 32 px controls, in the control's own colour.
+  const actionIconClass = lane ? 'w-4 h-4' : actionVariant === 'dark' ? 'w-5 h-5 text-white' : 'w-5 h-5 text-neutral-800';
 
   const handlePhotoClick = (e: React.MouseEvent<HTMLDivElement>) => {
     // Purchase controls own their click instead of opening the lightbox.
@@ -483,15 +569,18 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   const likeButton =
     showFeedbackActions && feedbackOptions?.allowLikes ? (
       <button
-        className={`p-2 rounded-full transition-colors ${
-          liked ? 'bg-danger hover:opacity-90' : 'bg-white/90 hover:bg-white'
-        }`}
+        className={lane
+          ? `${laneActionShown} ${LANE_CONTROL_BOX} ${LANE_CONTROL_SKIN} ${liked ? 'bg-danger text-white hover:opacity-90' : LANE_CONTROL_REST}`
+          : `p-2 rounded-full transition-colors ${liked ? 'bg-danger hover:opacity-90' : 'bg-white/90 hover:bg-white'}`}
         onClick={handleLike}
         aria-label={likeToggleLabels && liked ? t('gallery.tile.unlikePhoto', 'Unlike photo') : t('gallery.tile.likePhoto', 'Like photo')}
         aria-pressed={liked}
         title={likeToggleLabels && liked ? t('gallery.tile.unlike', 'Unlike') : t('gallery.tile.like', 'Like')}
       >
-        <Heart className={`w-5 h-5 ${liked ? 'text-white fill-white' : 'text-neutral-800'}`} />
+        <Heart className={lane
+          ? `w-4 h-4${liked ? ' fill-current' : ''}`
+          : `w-5 h-5 ${liked ? 'text-white fill-white' : 'text-neutral-800'}`}
+        />
       </button>
     ) : null;
 
@@ -545,6 +634,41 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   const photoLabels = usePhotoLabels();
   const tileAlt = typeof imageProps.alt === 'string' ? photoLabels.of(photo, imageProps.alt) : imageProps.alt;
 
+  const downloadButton = allowDownloads && !hideDownloadBySales ? (
+    <button
+      type={buttonType}
+      className={actionButtonClass}
+      onClick={(e) => {
+        e.stopPropagation();
+        onDownload(e);
+        hideOverlay();
+      }}
+      aria-label={downloadPending ? preparingDownloadMessage() : isVideo ? t('gallery.tile.downloadVideo', 'Download video') : t('gallery.tile.downloadPhoto', 'Download photo')}
+      aria-disabled={!withinDownloadLimit || downloadPending || undefined}
+      aria-busy={downloadPending || undefined}
+      title={withinDownloadLimit ? undefined : downloadLimitReachedMessage()}
+      style={withinDownloadLimit ? (downloadPending ? { cursor: 'wait' } : undefined) : { opacity: 0.5, cursor: 'not-allowed' }}
+    >
+      {downloadPending
+        ? <Loader2 className={`${actionIconClass} animate-spin`} aria-hidden="true" />
+        : <Download className={actionIconClass} />}
+    </button>
+  ) : null;
+
+  const checkbox = (className: string, mark: React.ReactNode) => (
+    <button
+      type="button"
+      aria-label={t('gallery.tile.selectPhoto', 'Select {{name}}', { name: photoLabels.of(photo, photo.filename) })}
+      role="checkbox"
+      aria-checked={isSelected}
+      data-testid={checkboxTestId ? `gallery-photo-checkbox-${photo.id}` : undefined}
+      className={className}
+      onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
+    >
+      {mark}
+    </button>
+  );
+
   return (
     <div
       ref={setContainerRef}
@@ -552,6 +676,8 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
       data-tour="photo"
       style={lazy ? { ...style, opacity: !inView && fadeInWhenVisible ? 0 : 1 } : style}
       onClick={handlePhotoClick}
+      onFocus={lane ? handleLaneFocus : undefined}
+      onBlur={lane ? handleLaneBlur : undefined}
       // A photo tile: the lightbox grows out of the one it was opened from.
       {...{ [GRID_TILE_ATTR]: '' }}
       {...containerProps}
@@ -567,7 +693,14 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           {/* The guest's own colour label (#1044) — visible without hovering
               or opening anything, which is the point: the client watches
               their selection progress across the grid. */}
-          {topLeftControl ? (
+          {lane ? (
+            <ColorLabelBadge
+              colorLabel={photo.my_color_label}
+              otherColorLabels={photo.other_color_labels}
+              decision={photo.my_decision}
+              part="ring"
+            />
+          ) : topLeftControl ? (
             <>
               <ColorLabelBadge
                 colorLabel={photo.my_color_label}
@@ -596,18 +729,40 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
             />
           )}
 
-          <FirstLookBadge photo={photo} className={firstLookClassName} />
-          <FolderHintPill photo={photo} className={`top-2 right-2 ${folderHintVisibilityClass}`} />
+          {!lane && <FirstLookBadge photo={photo} className={firstLookClassName} />}
+          {!lane && <FolderHintPill photo={photo} className={`top-2 right-2 ${folderHintVisibilityClass}`} />}
+
+          {/* In the lane the photo opens from the whole tile, a button for
+              the keyboard as much as for the pointer. */}
+          {lane && (
+            <button
+              type="button"
+              className="absolute inset-0 w-full h-full cursor-pointer"
+              aria-label={isVideo
+                ? t('gallery.tile.openVideo', 'View video {{name}}', { name: photoLabels.of(photo, photo.filename) })
+                : t('gallery.tile.openPhoto', 'View {{name}}', { name: photoLabels.of(photo, photo.filename) })}
+              data-lane-open
+              // Enter or Space arrives as a click without a pointer (detail
+              // 0) and opens at once; a tap goes on to the tile, which on
+              // touch reveals the actions first.
+              onClick={(e) => {
+                if (e.detail !== 0) return;
+                e.stopPropagation();
+                onClick(e);
+                if (isTouchDevice) hideOverlay();
+              }}
+            />
+          )}
 
           {beforeOverlay}
 
           {/* Photo sales: always-visible price chip; one
               tap puts the photo into the cart. */}
-          <PhotoPurchaseBadge photo={photo} />
+          {!lane && <PhotoPurchaseBadge photo={photo} />}
 
-          {/* Hover Overlay */}
+          {/* Hover Overlay (in the lane, the shade alone) */}
           <div className={overlayClassName}>
-            {!isSelectionMode && (
+            {!lane && !isSelectionMode && (
               <>
                 <button
                   type={buttonType}
@@ -621,26 +776,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
                 >
                   <Maximize2 className={actionIconClass} />
                 </button>
-                {allowDownloads && !hideDownloadBySales && (
-                  <button
-                    type={buttonType}
-                    className={actionButtonClass}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDownload(e);
-                      hideOverlay();
-                    }}
-                    aria-label={downloadPending ? preparingDownloadMessage() : isVideo ? t('gallery.tile.downloadVideo', 'Download video') : t('gallery.tile.downloadPhoto', 'Download photo')}
-                    aria-disabled={!withinDownloadLimit || downloadPending || undefined}
-                    aria-busy={downloadPending || undefined}
-                    title={withinDownloadLimit ? undefined : downloadLimitReachedMessage()}
-                    style={withinDownloadLimit ? (downloadPending ? { cursor: 'wait' } : undefined) : { opacity: 0.5, cursor: 'not-allowed' }}
-                  >
-                    {downloadPending
-                      ? <Loader2 className={`${actionIconClass} animate-spin`} aria-hidden="true" />
-                      : <Download className={actionIconClass} />}
-                  </button>
-                )}
+                {downloadButton}
                 {likeBeforeComment ? (
                   <>
                     {likeButton}
@@ -705,19 +841,69 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           {afterOverlay}
 
           {/* Selection Checkbox (visible on hover or when selected) */}
-          <button
-            type="button"
-            aria-label={t('gallery.tile.selectPhoto', 'Select {{name}}', { name: photoLabels.of(photo, photo.filename) })}
-            role="checkbox"
-            aria-checked={isSelected}
-            data-testid={checkboxTestId ? `gallery-photo-checkbox-${photo.id}` : undefined}
-            className={`absolute top-2 right-2 z-20 transition-opacity ${checkboxVisibilityClass}`}
-            onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
-          >
+          {!lane && checkbox(
+            `absolute top-2 right-2 z-20 transition-opacity ${checkboxVisibilityClass}`,
             <div className={`w-6 h-6 rounded-full border-2 ${isSelected ? 'bg-accent-dark border-accent-dark' : 'bg-white/90 border-white'} flex items-center justify-center transition-colors`}>
               {isSelected && <Check className="w-4 h-4 text-white" />}
+            </div>,
+          )}
+
+          {lane && (
+            // The lane is the container its marks ask about their width
+            // (first look shows its icon alone in a narrow one).
+            <div data-photo-card-lane className="absolute inset-x-2 bottom-2 z-20 flex items-center gap-1 pointer-events-none [container-type:inline-size]">
+              {/* The layout's control leads the row, the width of the lane
+                  away from buying and selecting. Never dropped. */}
+              {topLeftControl && (
+                <div data-lane-controls="start" className="flex shrink-0 pointer-events-auto">{topLeftControl}</div>
+              )}
+              {/* Decorative marks only. One row: whatever wraps to a second
+                  one is clipped whole. The empty first item keeps a mark wider
+                  than the row from sitting cut on the first line; it wraps
+                  away instead. Small marks first: the row drops everything
+                  after the first mark that does not fit. */}
+              <div data-lane-marks className="flex min-w-0 flex-1 basis-0 flex-wrap content-start items-center gap-1 h-8 overflow-hidden">
+                <span aria-hidden="true" className="w-0 h-8" />
+                {laneMarks}
+                <FirstLookBadge photo={photo} inline />
+                <FolderHintPill photo={photo} inline />
+                {topLeftExtras}
+              </div>
+              {/* What yields to the controls beside it, but only after the
+                  marks: the colour dots (a client's selection progress, which
+                  must not blink away with every reveal), then like, then
+                  download, both of which the lightbox offers too. Always laid
+                  out, so the dots show at rest. */}
+              <div ref={laneActionsRef} data-lane-actions className="flex min-w-0 flex-wrap content-start items-center justify-end gap-1 h-8 overflow-hidden pointer-events-auto">
+                <span aria-hidden="true" className="w-0 h-8" />
+                <ColorLabelBadge
+                  colorLabel={photo.my_color_label}
+                  otherColorLabels={photo.other_color_labels}
+                  decision={photo.my_decision}
+                  part="dots"
+                />
+                {!isSelectionMode && likeButton}
+                {!isSelectionMode && downloadButton}
+              </div>
+              {/* The controls that have no other home on the page: never
+                  dropped. With the layout's control, three boxes of 32 px and
+                  the gaps: 112 px, which the lane of a 130 px tile holds. */}
+              <div data-lane-controls="end" className="flex shrink-0 items-center gap-1 pointer-events-auto">
+                <PhotoPurchaseBadge
+                  photo={photo}
+                  compact
+                  className={`relative bottom-auto left-auto ${LANE_CONTROL_BOX} ${LANE_CONTROL_SKIN} ${LANE_CONTROL_REST} data-[in-cart]:bg-accent-strong data-[in-cart]:text-accent-fg`}
+                />
+                {checkbox(
+                  `${laneShown(isSelected || isSelectionMode || overlayVisible)} ${LANE_CONTROL_BOX} ${LANE_CONTROL_SKIN} ${isSelected ? 'bg-accent-strong text-accent-fg' : LANE_CONTROL_REST}`,
+                  // Unchecked, an empty ring: a blank disc reads as a disabled button.
+                  isSelected
+                    ? <Check className="w-4 h-4" aria-hidden="true" />
+                    : <span data-lane-unchecked aria-hidden="true" className="block w-4 h-4 rounded-full border-2 border-current opacity-70" />,
+                )}
+              </div>
             </div>
-          </button>
+          )}
 
           {children}
         </>

@@ -102,7 +102,7 @@ function show(allowUploads: boolean, initialAllowUploads?: boolean) {
 
 afterEach(cleanup);
 
-describe.each(['gallery-premium', 'gallery-story'])('GalleryView upload on %s', (layout) => {
+describe.each(['gallery-premium', 'gallery-story', 'gallery-folio'])('GalleryView upload on %s', (layout) => {
   beforeEach(() => {
     stable.theme.theme = { galleryLayout: layout };
   });

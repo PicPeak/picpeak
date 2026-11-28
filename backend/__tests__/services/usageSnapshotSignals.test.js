@@ -97,6 +97,15 @@ describe('gallery_layouts resolves what the gallery actually renders', () => {
     expect((await service(db).snapshot()).gallery_layouts).toEqual(['other']);
   });
 
+  it('reports Gallery Folio as other: the schema layout enum has no value for it', async () => {
+    db = await bootDb();
+    await db('events').insert([
+      { color_theme: 'galleryFolio' },
+      { color_theme: JSON.stringify({ galleryLayout: 'gallery-folio' }) },
+    ]);
+    expect((await service(db).snapshot()).gallery_layouts).toEqual(['other']);
+  });
+
   it('uses the global theme for an event that has none of its own', async () => {
     db = await bootDb();
     await db('app_settings').insert({

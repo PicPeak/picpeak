@@ -25,7 +25,13 @@ interface PurchaseBadgePhoto {
  * the cart instead. A dark translucent pill, so it reads on light and dark
  * photos alike. Photos that are not for sale (no sale_token) get no chip.
  */
-export const PhotoPurchaseBadge: React.FC<{ photo: PurchaseBadgePhoto; className?: string }> = ({ photo, className }) => {
+/**
+ * `compact`: a 32 px round button with the cart icon alone, the price in its
+ * name and tooltip, for a tile row too narrow for the chip (Gallery Folio).
+ * It has no skin of its own: the row it sits in passes one in `className`,
+ * so every control of that row looks alike.
+ */
+export const PhotoPurchaseBadge: React.FC<{ photo: PurchaseBadgePhoto; className?: string; compact?: boolean }> = ({ photo, className, compact = false }) => {
   const { t } = useTranslation();
   const photoSales = usePhotoSales();
 
@@ -40,17 +46,23 @@ export const PhotoPurchaseBadge: React.FC<{ photo: PurchaseBadgePhoto; className
   return (
     <button
       type="button"
-      className={twMerge('photo-sales-chip absolute bottom-2 left-2 z-10 inline-flex items-center gap-1.5 rounded-full py-1 pl-2 pr-2.5 text-xs font-semibold pointer-events-auto', className)}
+      className={twMerge(compact
+        ? 'absolute bottom-2 left-2 z-10 inline-flex w-8 h-8 items-center justify-center rounded-full pointer-events-auto'
+        : 'photo-sales-chip absolute bottom-2 left-2 z-10 inline-flex items-center gap-1.5 rounded-full py-1 pl-2 pr-2.5 text-xs font-semibold pointer-events-auto', className)}
       aria-label={inCart
         ? t('photoSales.inCartOpen', 'In your cart — open the cart')
         : t('photoSales.addToCartPrice', 'Add photo to cart for {{price}}', { price: priceLabel })}
-      title={inCart ? undefined : t('photoSales.buyTitle', 'Buy this photo in full quality, without watermark')}
+      title={compact
+        ? (inCart ? t('photoSales.inCart', 'In cart') : priceLabel)
+        : inCart ? undefined : t('photoSales.buyTitle', 'Buy this photo in full quality, without watermark')}
       data-photo-purchase
       data-in-cart={inCart ? 'true' : undefined}
       onClick={(event) => { event.stopPropagation(); if (inCart) photoSales.openCart(); else photoSales.addToCart(photo); }}
     >
-      {inCart ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <ShoppingCart className="w-3.5 h-3.5" aria-hidden="true" />}
-      {inCart ? t('photoSales.inCart', 'In cart') : priceLabel}
+      {inCart
+        ? <Check className={compact ? 'w-4 h-4' : 'w-3.5 h-3.5'} aria-hidden="true" />
+        : <ShoppingCart className={compact ? 'w-4 h-4' : 'w-3.5 h-3.5'} aria-hidden="true" />}
+      {!compact && (inCart ? t('photoSales.inCart', 'In cart') : priceLabel)}
     </button>
   );
 };

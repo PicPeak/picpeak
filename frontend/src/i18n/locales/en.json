@@ -1851,7 +1851,9 @@
       "comment": "Comment",
       "like": "Like",
       "unlike": "Unlike",
-      "selectPhoto": "Select {{name}}"
+      "selectPhoto": "Select {{name}}",
+      "openPhoto": "View {{name}}",
+      "openVideo": "View video {{name}}"
     },
     "neutralLabel": {
       "numbered": "Photo {{position}} of {{total}}",
@@ -1943,6 +1945,11 @@
     },
     "language": {
       "switch": "Language"
+    },
+    "folio": {
+      "viewGallery": "View the gallery",
+      "navLabel": "Gallery",
+      "backToTop": "Back to top"
     }
   },
   "categories": {
@@ -4670,7 +4677,8 @@
       "timeline": "Timeline",
       "mosaic": "Mosaic",
       "gallery-premium": "Premium",
-      "gallery-story": "Story"
+      "gallery-story": "Story",
+      "gallery-folio": "Folio"
     },
     "layoutBetaTag": "Beta",
     "layoutDescriptions": {
@@ -4680,7 +4688,8 @@
       "timeline": "Photos organized by date",
       "mosaic": "Artistic layout with mixed sizes",
       "gallery-premium": "Elegant light theme with hero and masonry (Beta)",
-      "gallery-story": "Cinematic dark theme with scene sections (Beta)"
+      "gallery-story": "Cinematic dark theme with scene sections (Beta)",
+      "gallery-folio": "Quiet, image-first client gallery with a photographic cover (Beta)"
     },
     "headerStyleOptions": {
       "hero": "Hero Image",
@@ -4925,6 +4934,38 @@
       "save": "Save",
       "colorsTab": "Colours",
       "galleryTab": "Gallery"
+    },
+    "folio": {
+      "cover": "Cover",
+      "covers": {
+        "full": "Full photo",
+        "split": "Split"
+      },
+      "coverHint": "The cover shows the gallery's hero photo, cropped around the focal point set in the gallery's settings.",
+      "palette": "Palette",
+      "palettes": {
+        "paper": "Paper",
+        "white": "White",
+        "charcoal": "Charcoal"
+      },
+      "type": "Typography",
+      "types": {
+        "classic": "Classic: large title in the heading font",
+        "modern": "Modern: spaced capitals in the body font"
+      },
+      "typeHint": "Uses the heading and body fonts from Typography & Style.",
+      "spacing": "Spacing",
+      "spacings": {
+        "compact": "Compact",
+        "regular": "Regular",
+        "airy": "Airy"
+      },
+      "columns": {
+        "mobile": "Columns on a phone",
+        "desktop": "Columns on a desktop"
+      },
+      "studioLabel": "Studio label",
+      "studioLabelHint": "A short name for the top of the page, such as your studio. Leave empty to show the gallery's name."
     }
   },
   "admin": {

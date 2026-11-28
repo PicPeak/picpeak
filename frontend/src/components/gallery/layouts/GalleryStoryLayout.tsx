@@ -5,16 +5,12 @@ import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessa
 import { Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList, Upload, Shield } from 'lucide-react';
 import { BackToAccountLink } from '../BackToAccountLink';
 import { useTranslation } from 'react-i18next';
-import { useArchiveDownload } from '../../../contexts/ArchiveDownloadContext';
-import { Button } from '../../common';
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { ChapterMarkerStyle, Photo, PhotoCategory } from '../../../types';
 import { STORY_FOOTER_TEXT_MAX, STORY_FOOTER_TITLE_MAX } from '../../../types/theme.types';
 import { feedbackService } from '../../../services/feedback.service';
 import { BulkRatingPopover } from '../BulkRatingPopover';
-import { splitIntoArchives } from '../../../services/gallery.service';
-import { analyticsService } from '../../../services/analytics.service';
 import { isVideoItem, mediaSplitLabel, selectLabel, splitMediaCount } from '../../../utils/mediaCounts';
 import { toast } from 'react-toastify';
 
@@ -36,8 +32,11 @@ import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext
 import { feedbackLockKind } from '../../../utils/feedbackLock';
 import { DownloadQuotaNotice } from '../DownloadQuotaNotice';
 import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
-import { isDownloadLimitError, showDownloadLimitReached } from '../../../utils/downloadLimit';
 import { useInputMode } from '../../../hooks/useInputMode';
+import { useDownloadAll } from './useDownloadAll';
+import { FullPageEmptyState } from './FullPageEmptyState';
+import { LikedNavButton } from './LikedNavButton';
+import { useFullPageLabels, useSelectionControls } from './fullPageNav';
 import { holdLike, likedFromPayload, markLikeSaved, type LikeHolds } from './optimisticLikes';
 
 import './GalleryStoryLayout.css';
@@ -144,7 +143,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   void _onPhotoClick;
   void _onOpenPhotoWithFeedback;
   void _onDownload;
-  const archives = useArchiveDownload();
   const { t } = useTranslation();
   const [scrolled, setScrolled] = useState(false);
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
@@ -466,19 +464,11 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const ratingsAllowed = feedbackEnabled && !!feedbackOptions?.allowRatings && !!slug;
   // The client's per-photo hide/show button (issue 1992); guests get none.
   const clientToggleVisibility = isClient ? onToggleVisibility : undefined;
-  const allVisibleSelected = visiblePhotos.length > 0 && visiblePhotos.every((photo) => selected.has(photo.id));
-
-  const handleToggleSelectionMode = useCallback(() => {
-    // Leaving selection mode clears the selection, so a later session does
-    // not start with invisible ticks.
-    if (isSelectionMode) onDeselectAll?.();
-    onToggleSelectionMode?.();
-  }, [isSelectionMode, onDeselectAll, onToggleSelectionMode]);
-
-  const handleSelectAllVisible = useCallback(() => {
-    if (allVisibleSelected) onDeselectAll?.();
-    else onSelectMany?.(visiblePhotos.map((photo) => photo.id));
-  }, [allVisibleSelected, onDeselectAll, onSelectMany, visiblePhotos]);
+  const {
+    allVisibleSelected,
+    toggleSelectionMode: handleToggleSelectionMode,
+    selectAllVisible: handleSelectAllVisible,
+  } = useSelectionControls({ visiblePhotos, selected, isSelectionMode, onDeselectAll, onToggleSelectionMode, onSelectMany });
 
   // Likes not yet set on the selection are added; a selection that is already
   // liked throughout is unliked instead, so the same control never un-likes
@@ -514,57 +504,13 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     }
   }, [selectionUnlikes, selectionIds, selectionToLike, favoritingSelection, likeWithIdentity]);
 
-  // The id fallback only runs when a category opts out of downloads (#640),
-  // so it leaves those photos out, as the server would: a part made only of
-  // them would come back empty and stop the parts after it.
-  const downloadablePhotos = useMemo(
-    () => photos.filter((photo) => photo.category_allow_downloads !== false),
-    [photos]
-  );
-  const handleDownloadAll = useCallback(async () => {
-    // Whole-gallery path when available: posting ids would hit the server's
-    // 500-id cap and silently truncate a large gallery (#1160).
-    if (onDownloadEverything) {
-      onDownloadEverything();
-      return;
-    }
-    const ids = downloadablePhotos.map(p => p.id);
-    if (ids.length === 0) return;
-    // Download limit (issue 1560): all or nothing, so refuse before asking.
-    if (!downloadQuota.allows(downloadablePhotos)) {
-      showDownloadLimitReached({ remaining: downloadQuota.remaining ?? 0 });
-      return;
-    }
-    // One archive takes at most SELECTED_DOWNLOAD_LIMIT ids, so a larger set
-    // goes as several zips rather than being cut short.
-    const parts = splitIntoArchives(ids).length;
-    // #858: hand off to the resolution picker when the gallery offers a choice.
-    // The picker builds one archive, so past the cap it is skipped and the
-    // parts come at the gallery's standard size.
-    if (parts === 1 && downloadChoices && downloadChoices.length > 1 && onPickResolution) {
-      onPickResolution(ids);
-      return;
-    }
-    toast.info(parts > 1
-      ? t('gallery.downloadingInParts', { count: ids.length, parts })
-      : t('gallery.downloading', { count: ids.length }));
-    try {
-      if (!await archives.downloadPhotosInParts(slug, ids)) return;
-      analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
-    } catch (error) {
-      if (!isDownloadLimitError(error)) toast.error(t('gallery.downloadError'));
-    }
-  }, [archives, downloadablePhotos, onDownloadEverything, slug, t, downloadChoices, onPickResolution, downloadQuota]);
-
-  // Needs something to download: either the whole-gallery callback, or
-  // downloadable photos in the current scope. On a folder-only root of a gallery with
-  // a category download opt-out it has neither, and posting an empty id
-  // list is a 400 (#1160). Shared by the nav button (issue 1710) and the
-  // footer button so both appear and disappear together.
-  const canDownloadAll = allowDownloads && Boolean(onDownloadEverything || downloadablePhotos.length > 0);
-  const downloadAllLabel = t('common.downloadAll', 'Download All');
+  // Shared by the nav button (issue 1710) and the footer button so both
+  // appear and disappear together.
+  const { downloadAll: handleDownloadAll, canDownloadAll } = useDownloadAll({
+    photos, slug, allowDownloads, onDownloadEverything, downloadChoices, onPickResolution,
+  });
+  const labels = useFullPageLabels({ isClient, hasVideos, isSelectionMode, copyFilenamesCount });
   const naturalGrid = storyGridMode === 'natural';
-  const uploadLabel = t('upload.uploadPhotos', 'Upload Photos');
   // The caption names the photo the way the lightbox does: the uploaded
   // filename when the gallery shows original filenames (#508).
   const caption = !storyShowFilenames ? 'none' : showOriginalFilename ? 'original' : 'filename';
@@ -576,52 +522,20 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // stays mounted, with the message in place of the scenes.
   if (photos.length === 0 && !suppressEmptyState && !emptyIsFiltered) {
     return (
-      <div className="text-center py-12">
-        {/* A filter that left nothing keeps its own controls, so it can be
-            cleared from here (issue 2355). */}
-        {toolbar && <div className="story-toolbar story-toolbar--empty">{toolbar}</div>}
-        {/* No nav in this branch, so the way back to the portal sits here. */}
-        {showBackToAccount && (
-          <div className="mb-4 flex justify-center">
-            <BackToAccountLink alwaysLabelled className="inline-flex items-center gap-1.5 text-sm text-muted-theme hover:text-theme" />
-          </div>
-        )}
-        {onManageGallery && <Button variant="outline" className="mb-4" onClick={onManageGallery} disabled={clientModeBusy}
-          leftIcon={<Shield className="w-4 h-4" />}>
-          {isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}
-        </Button>}
-        {likedOnly
-          ? <LikedOnlyEmptyMessage onShowAll={onToggleLikedOnly} />
-          : <GalleryEmptyMessage filtered={emptyIsFiltered} />}
-        {/* No nav in this branch, and an upload-only gallery starts empty:
-            the guest still needs a way to add the first photos. */}
-        {onUploadClick && (
-          <Button
-            variant="primary"
-            className="mt-4"
-            leftIcon={<Upload className="w-4 h-4" />}
-            onClick={onUploadClick}
-            data-gallery-focus="upload"
-          >
-            {uploadLabel}
-          </Button>
-        )}
-        {/* Event-wide like the nav button (issue 1733, A3d): a filter that
-            leaves nothing on screen must not take the favourites' list with it. */}
-        {onCopyFilenames && copyFilenamesCount > 0 && (
-          <div className="mt-4 flex justify-center">
-            <Button
-              variant="outline"
-              size="sm"
-              leftIcon={<ClipboardList className="w-4 h-4" />}
-              onClick={onCopyFilenames}
-              className="text-xs sm:text-sm"
-            >
-              {t('gallery.copyFilenames.button', 'Copy filenames')} ({copyFilenamesCount})
-            </Button>
-          </div>
-        )}
-      </div>
+      <FullPageEmptyState
+        toolbar={toolbar}
+        toolbarClassName="story-toolbar story-toolbar--empty"
+        showBackToAccount={showBackToAccount}
+        onManageGallery={onManageGallery}
+        clientModeBusy={clientModeBusy}
+        isClient={isClient}
+        likedOnly={likedOnly}
+        onToggleLikedOnly={onToggleLikedOnly}
+        emptyIsFiltered={emptyIsFiltered}
+        onUploadClick={onUploadClick}
+        onCopyFilenames={onCopyFilenames}
+        copyFilenamesCount={copyFilenamesCount}
+      />
     );
   }
 
@@ -656,8 +570,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               type="button"
               className="story-nav-btn"
               onClick={onUploadClick}
-              aria-label={uploadLabel}
-              title={uploadLabel}
+              aria-label={labels.upload}
+              title={labels.upload}
               data-testid="story-nav-upload"
               data-gallery-focus="upload"
             >
@@ -670,8 +584,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               className={`story-nav-btn${isSelectionMode ? ' active' : ''}`}
               onClick={handleToggleSelectionMode}
               aria-pressed={isSelectionMode}
-              aria-label={isSelectionMode ? t('gallery.cancelSelection', 'Cancel Selection') : selectLabel(t, hasVideos)}
-              title={isSelectionMode ? t('gallery.cancelSelection', 'Cancel Selection') : selectLabel(t, hasVideos)}
+              aria-label={labels.select}
+              title={labels.select}
               data-testid="story-nav-select"
             >
               <CheckSquare size={20} />
@@ -682,8 +596,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               type="button"
               className="story-nav-btn"
               onClick={handleDownloadAll}
-              aria-label={downloadAllLabel}
-              title={downloadAllLabel}
+              aria-label={labels.downloadAll}
+              title={labels.downloadAll}
               data-testid="story-nav-download-all"
             >
               <Download size={20} />
@@ -697,39 +611,30 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               type="button"
               className="story-nav-btn"
               onClick={onCopyFilenames}
-              aria-label={`${t('gallery.copyFilenames.button', 'Copy filenames')} (${copyFilenamesCount})`}
-              title={`${t('gallery.copyFilenames.button', 'Copy filenames')} (${copyFilenamesCount})`}
+              aria-label={labels.copyFilenames}
+              title={labels.copyFilenames}
               data-testid="story-nav-copy-filenames"
             >
               <ClipboardList size={20} />
             </button>
           )}
           {likesAllowed && (
-            // The gallery's "Liked" filter when the container offers it:
-            // only the photos this viewer liked, until clicked again.
-            <button
-              type="button"
-              className={`story-nav-btn${likedOnly ? ' active' : ''}`}
-              onClick={onToggleLikedOnly}
-              aria-pressed={onToggleLikedOnly ? likedOnly : undefined}
-              aria-label={`${t('gallery.showLikedOnly', 'Show only photos I liked')}${favorites.size > 0 ? ` (${favorites.size})` : ''}`}
+            <LikedNavButton
+              className="story-nav-btn"
+              activeClassName="active"
+              countClassName="story-nav-favorites-count"
+              iconClassName="w-5 h-5"
               title={t('gallery.favorites', 'Favorites')}
-              data-testid="story-nav-liked"
-              // Focus moves to "Show all photos" when the filter empties the view.
-              data-gallery-focus="liked"
-            >
-              <Heart size={20} fill={likedOnly ? 'currentColor' : 'none'} />
-              {favorites.size > 0 && (
-                <span className="story-nav-favorites-count">
-                  {favorites.size > 9 ? '9+' : favorites.size}
-                </span>
-              )}
-            </button>
+              testId="story-nav-liked"
+              likedOnly={likedOnly}
+              onToggleLikedOnly={onToggleLikedOnly}
+              likedCount={favorites.size}
+            />
           )}
           {onManageGallery && (
             <button className="story-nav-btn" onClick={onManageGallery} disabled={clientModeBusy}
-              aria-label={isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}
-              title={isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}>
+              aria-label={labels.manage}
+              title={labels.manage}>
               <Shield size={20} />
             </button>
           )}

@@ -85,7 +85,7 @@ function show() {
 
 afterEach(cleanup);
 
-describe.each(['grid', 'gallery-premium', 'gallery-story'])('album entry on %s', (layout) => {
+describe.each(['grid', 'gallery-premium', 'gallery-story', 'gallery-folio'])('album entry on %s', (layout) => {
   it('comes before the photos, once, for a client', () => {
     stable.theme.theme = { galleryLayout: layout };
     stable.auth.isClient = true;

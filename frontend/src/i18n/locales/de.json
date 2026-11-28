@@ -2584,7 +2584,9 @@
       "comment": "Kommentieren",
       "like": "Gefällt mir",
       "unlike": "Gefällt mir zurücknehmen",
-      "selectPhoto": "{{name}} auswählen"
+      "selectPhoto": "{{name}} auswählen",
+      "openPhoto": "{{name}} ansehen",
+      "openVideo": "Video {{name}} ansehen"
     },
     "neutralLabel": {
       "numbered": "Foto {{position}} von {{total}}",
@@ -2676,6 +2678,11 @@
     },
     "language": {
       "switch": "Sprache"
+    },
+    "folio": {
+      "viewGallery": "Zur Galerie",
+      "navLabel": "Galerie",
+      "backToTop": "Nach oben"
     }
   },
   "categories": {
@@ -5330,7 +5337,8 @@
       "timeline": "Zeitleiste",
       "mosaic": "Mosaik",
       "gallery-premium": "Premium",
-      "gallery-story": "Story"
+      "gallery-story": "Story",
+      "gallery-folio": "Folio"
     },
     "layoutBetaTag": "Beta",
     "layoutDescriptions": {
@@ -5340,7 +5348,8 @@
       "timeline": "Nach Datum geordnete Fotos",
       "mosaic": "Künstlerisches Layout mit gemischten Größen",
       "gallery-premium": "Elegantes helles Thema mit Hero und Masonry (Beta)",
-      "gallery-story": "Cinematisches dunkles Thema mit Szenenabschnitten (Beta)"
+      "gallery-story": "Cinematisches dunkles Thema mit Szenenabschnitten (Beta)",
+      "gallery-folio": "Ruhige, bildbetonte Kundengalerie mit fotografischem Titelbild (Beta)"
     },
     "headerStyleOptions": {
       "hero": "Hero-Bild",
@@ -5585,6 +5594,38 @@
       "save": "Speichern",
       "colorsTab": "Farben",
       "galleryTab": "Galerie"
+    },
+    "folio": {
+      "cover": "Titelbild",
+      "covers": {
+        "full": "Ganzes Foto",
+        "split": "Geteilt"
+      },
+      "coverHint": "Das Titelbild zeigt das Hero-Foto der Galerie, zugeschnitten um den Fokuspunkt aus den Galerie-Einstellungen.",
+      "palette": "Farbpalette",
+      "palettes": {
+        "paper": "Papier",
+        "white": "Weiß",
+        "charcoal": "Anthrazit"
+      },
+      "type": "Typografie",
+      "types": {
+        "classic": "Klassisch: großer Titel in der Überschriftenschrift",
+        "modern": "Modern: gesperrte Großbuchstaben in der Textschrift"
+      },
+      "typeHint": "Verwendet die Überschriften- und Textschrift aus „Typografie & Stil“.",
+      "spacing": "Abstände",
+      "spacings": {
+        "compact": "Kompakt",
+        "regular": "Normal",
+        "airy": "Luftig"
+      },
+      "columns": {
+        "mobile": "Spalten auf dem Smartphone",
+        "desktop": "Spalten am Desktop"
+      },
+      "studioLabel": "Studio-Name",
+      "studioLabelHint": "Ein kurzer Name oben auf der Seite, etwa der Ihres Studios. Leer lassen, um den Namen der Galerie zu zeigen."
     }
   },
   "admin": {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, LayoutTemplate, Grid3X3, Layers, Play, Clock, Image, LayoutGrid, Minimize2, EyeOff, Columns, Film, type LucideIcon } from 'lucide-react';
+import { Layout, LayoutTemplate, Grid3X3, Layers, Play, Clock, Image, LayoutGrid, Minimize2, EyeOff, Columns, Film, BookImage, type LucideIcon } from 'lucide-react';
 import { GalleryLayoutType, HeaderStyleType, HeroDividerStyle } from '../../../types/theme.types';
 
 /** One icon per gallery layout; each caller picks the size. */
@@ -11,6 +11,7 @@ export const layoutIconComponents: Record<GalleryLayoutType, LucideIcon> = {
   mosaic: LayoutGrid,
   'gallery-premium': Columns,
   'gallery-story': Film,
+  'gallery-folio': BookImage,
 };
 
 export const layoutIcons = Object.fromEntries(

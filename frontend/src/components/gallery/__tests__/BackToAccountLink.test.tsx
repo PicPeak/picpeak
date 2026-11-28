@@ -84,7 +84,7 @@ describe.each<HeaderStyleType>(['standard', 'minimal', 'none', 'hero'])('Gallery
   });
 });
 
-describe.each(['gallery-premium', 'gallery-story'])('%s nav', (layout) => {
+describe.each(['gallery-premium', 'gallery-story', 'gallery-folio'])('%s nav', (layout) => {
   it('links back to the customer account', () => {
     theme.galleryLayout = layout;
     wrap(<PhotoGridWithLayouts photos={[photo]} slug="demo" showBackToAccount />);

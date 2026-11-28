@@ -54,6 +54,12 @@ interface BadgeProps {
   /** Positioning classes inside the tile (absolute offsets). */
   className?: string;
   style?: React.CSSProperties;
+  /**
+   * In the flow of PhotoCard's lane instead of on a corner. The pill never
+   * shrinks, so in a full row it wraps away whole rather than squeezing to
+   * "First ..."; a long label ends at a fixed width of its own.
+   */
+  inline?: boolean;
 }
 
 /**
@@ -61,9 +67,23 @@ interface BadgeProps {
  * like the tiles' other indicators rather than gallery theme colours, which
  * are made for the page background, not for an arbitrary image.
  */
-export const FirstLookBadge: React.FC<BadgeProps> = ({ photo, className = 'bottom-2 left-2', style }) => {
+export const FirstLookBadge: React.FC<BadgeProps> = ({ photo, className = 'bottom-2 left-2', style, inline = false }) => {
   const label = useFirstLookLabel(photo);
   if (!label) return null;
+  if (inline) {
+    return (
+      // In a lane narrower than 13rem (a phone's two columns) the icon alone:
+      // the label would take the row from every other mark.
+      <span
+        className="relative shrink-0 pointer-events-none inline-flex h-6 max-w-[9rem] items-center gap-1 px-2 rounded-full bg-white/90 shadow-sm text-[11px] font-medium text-neutral-800 [@container_(max-width:13rem)]:w-6 [@container_(max-width:13rem)]:justify-center [@container_(max-width:13rem)]:px-0"
+        title={label}
+        data-testid="first-look-badge"
+      >
+        <Sparkles className="w-3 h-3 shrink-0" aria-hidden="true" />
+        <span className="truncate [@container_(max-width:13rem)]:sr-only">{label}</span>
+      </span>
+    );
+  }
   return (
     <span
       className={`absolute ${className} z-10 pointer-events-none inline-flex max-w-[calc(100%-1rem)] items-center gap-1 px-2 py-0.5 rounded-full bg-white/90 backdrop-blur-sm shadow-sm text-[11px] font-medium text-neutral-800`}
@@ -77,9 +97,20 @@ export const FirstLookBadge: React.FC<BadgeProps> = ({ photo, className = 'botto
 };
 
 /** Folder name pill for "All photos" mode (issue 1786, mockup 2). */
-export const FolderHintPill: React.FC<BadgeProps> = ({ photo, className = 'top-2 right-2', style }) => {
+export const FolderHintPill: React.FC<BadgeProps> = ({ photo, className = 'top-2 right-2', style, inline = false }) => {
   const name = useFolderHint(photo);
   if (!name) return null;
+  if (inline) {
+    return (
+      <span
+        className="relative shrink-0 pointer-events-none max-w-[8rem] truncate px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px] font-medium leading-tight"
+        title={name}
+        data-testid="folder-hint"
+      >
+        {name}
+      </span>
+    );
+  }
   return (
     <span
       className={`absolute ${className} z-10 pointer-events-none max-w-[60%] truncate px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px] font-medium leading-tight transition-opacity`}

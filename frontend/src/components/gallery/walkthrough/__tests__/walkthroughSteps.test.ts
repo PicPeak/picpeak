@@ -54,7 +54,7 @@ describe('buildWalkthroughSteps (issue 2551)', () => {
 
   it('knows Premium has likes but no favourites, every other layout both', () => {
     expect(layoutFeedbackActions('gallery-premium')).toEqual({ likes: true, favorites: false });
-    for (const layout of ['grid', 'masonry', 'mosaic', 'timeline', 'carousel', 'gallery-story', undefined]) {
+    for (const layout of ['grid', 'masonry', 'mosaic', 'timeline', 'carousel', 'gallery-story', 'gallery-folio', undefined]) {
       expect(layoutFeedbackActions(layout)).toEqual({ likes: true, favorites: true });
     }
   });

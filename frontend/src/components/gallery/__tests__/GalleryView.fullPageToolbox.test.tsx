@@ -144,7 +144,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe.each(['gallery-premium', 'gallery-story'])('feature toolbox on %s', (layout) => {
+describe.each(['gallery-premium', 'gallery-story', 'gallery-folio'])('feature toolbox on %s', (layout) => {
   it('puts search, sort, filters and the people row above the photos', async () => {
     show(layout);
     const toolbar = row().getByTestId('gallery-toolbar');

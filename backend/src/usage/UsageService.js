@@ -86,7 +86,11 @@ const PRESET_LAYOUTS = {
   darkElegant: 'grid',
   darkModern: 'masonry',
   galleryPremium: 'gallery-premium',
-  galleryStory: 'gallery-story'
+  galleryStory: 'gallery-story',
+  // Not in the schema's LAYOUTS, so it reports as `other`: every wire
+  // version shares that enum, and a new value would fail the collector's
+  // validation of all of them (issue 2617).
+  galleryFolio: 'gallery-folio'
 };
 
 function resolveLayout(value) {

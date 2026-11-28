@@ -163,7 +163,7 @@ describe('GalleryView multilingual texts', () => {
     expect(screen.getByTestId('chips').textContent).toBe('Trauung');
   });
 
-  it.each(['gallery-premium', 'gallery-story'])('%s: the switcher sits in the toolbox the layout draws', (layout) => {
+  it.each(['gallery-premium', 'gallery-story', 'gallery-folio'])('%s: the switcher sits in the toolbox the layout draws', (layout) => {
     stable.theme.theme = { galleryLayout: layout };
     show('visitor');
     expect(screen.getByTestId('before-grid').contains(switcher())).toBe(true);
