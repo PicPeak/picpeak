@@ -38,6 +38,33 @@ describe('pt catalogue', () => {
     expect(mismatched).toEqual([]);
   });
 
+  // pt is Brazilian Portuguese. These are words and constructions European
+  // Portuguese uses where Brazilian does not ("ficheiro" for arquivo, "está a
+  // enviar" for "está enviando"); a new value containing one was most likely
+  // written for pt-PT. Deliberately small: only markers with no Brazilian use.
+  const EUROPEAN_PORTUGUESE = [
+    /ficheir/i, /\belimin/i, /descarreg/i, /\bregist(?!r)/i, /utilizador/i, /\becrã/i, /telemóve/i,
+    /\bdefinições/i, /palavras?-passe/i, /\bpartilh/i, /\bequipas?\b/i, /\bcontact/i, /secç/i,
+    /marcas? de água/i, /bases? de dados/i, /\bbrowser\b/i, /multimédia/i, /logótipo/i, /\bdemasiad/i, /ámos\b/i,
+    /\best(á|ão|ava|amos|ou) a \w+[aei]r\b/i,
+  ];
+
+  it('uses Brazilian, not European, Portuguese', () => {
+    const european = Object.entries(ptFlat)
+      .filter(([, value]) => typeof value === 'string' && EUROPEAN_PORTUGUESE.some((marker) => marker.test(value)))
+      .map(([key]) => key);
+    expect(european).toEqual([]);
+  });
+
+  // Portuguese has a "many" plural category (exact millions). en has none, so
+  // nothing reminds anyone to update it; it must read like "other".
+  it('keeps every _many plural form identical to its _other form', () => {
+    const drifted = Object.keys(ptFlat)
+      .filter((key) => key.endsWith('_many'))
+      .filter((key) => ptFlat[key] !== ptFlat[`${key.slice(0, -'_many'.length)}_other`]);
+    expect(drifted).toEqual([]);
+  });
+
   it('has no empty translations', () => {
     const empty = Object.entries(ptFlat).filter(([, value]) => typeof value === 'string' && !value.trim());
     expect(empty).toEqual([]);
