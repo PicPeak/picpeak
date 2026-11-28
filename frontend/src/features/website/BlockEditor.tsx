@@ -10,7 +10,7 @@ import { Button, Notice, Switch } from '../../components/common';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 import { usePermission } from '../../hooks/usePermission';
 import { websiteService } from '../../services/website.service';
-import { BLOCK_VARIANTS, variantLabel } from './blocks';
+import { BLOCK_VARIANTS, newId, variantLabel } from './blocks';
 import {
   BackgroundField, ChoiceField, ImageField, ImageListField, LinkField, RichTextField, TextArea, TextField, VideoField,
 } from './fields';
@@ -474,8 +474,8 @@ const TestimonialsField: React.FC<{ value: Testimonial[]; onChange: (value: Test
   return (
     <div className="space-y-3">
       {value.map((item, index) => (
-        // Testimonials have no id of their own; the index is their identity.
-        <div key={index} className="rounded-lg border border-line p-3 space-y-3">
+        // Keyed by the testimonial's id: removing one never hands its fields to the next.
+        <div key={item.id || index} className="rounded-lg border border-line p-3 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted">{t('website.fields.testimonial', 'Testimonial {{n}}', { n: index + 1 })}</span>
             <Button size="icon-sm" variant="ghost" aria-label={t('website.fields.removeTestimonial', 'Remove testimonial {{n}}', { n: index + 1 }) as string}
@@ -493,7 +493,7 @@ const TestimonialsField: React.FC<{ value: Testimonial[]; onChange: (value: Test
         </div>
       ))}
       <Button size="sm" variant="secondary" leftIcon={<Plus className="w-4 h-4" />} disabled={value.length >= 24}
-        onClick={() => onChange([...value, { quote: '', author: '', role: '', image: null }])}>
+        onClick={() => onChange([...value, { id: newId(), quote: '', author: '', role: '', image: null }])}>
         {t('website.fields.addTestimonial', 'Add testimonial')}
       </Button>
     </div>

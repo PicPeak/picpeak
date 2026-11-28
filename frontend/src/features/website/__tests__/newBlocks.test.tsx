@@ -19,9 +19,17 @@ vi.mock('../../../services/website.service', () => ({
   websiteService: { listGalleries: vi.fn(), listPackages: vi.fn(), getBooking: vi.fn() },
   mediaKey: (r: { source: string; id: string | number }) => `${r.source}:${r.id}`,
 }));
-vi.mock('../../../components/admin/CMSEditor', () => ({
-  CMSEditor: ({ content, onChange }: { content: string; onChange: (v: string) => void }) => <textarea aria-label="rich" value={content} onChange={(e) => onChange(e.target.value)} />,
-}));
+// Each editor instance remembers what it was first given: its own undo
+// history starts there.
+vi.mock('../../../components/admin/CMSEditor', async () => {
+  const ReactActual = await vi.importActual<typeof import('react')>('react');
+  return {
+    CMSEditor: ({ content, onChange }: { content: string; onChange: (v: string) => void }) => {
+      const first = ReactActual.useRef(content);
+      return <textarea aria-label="rich" data-history-from={first.current} value={content} onChange={(e) => onChange(e.target.value)} />;
+    },
+  };
+});
 
 import { BlockEditor } from '../BlockEditor';
 import { WebsiteDocContext } from '../LinkTargetField';
@@ -54,6 +62,39 @@ describe('FAQ form', () => {
     expect(onChange.mock.calls.at(-1)?.[0].items[0]).toEqual({ question: 'How long?', answer: '<p>Two weeks</p>' });
     fireEvent.click(screen.getByRole('button', { name: 'Add question' }));
     expect(onChange.mock.calls.at(-1)?.[0].items).toHaveLength(2);
+  });
+});
+
+describe('list items keep their own editor', () => {
+  // The form as the builder holds it: the block in state, edits applied.
+  const Stateful: React.FC<{ initial: Block }> = ({ initial }) => {
+    const [block, setBlock] = React.useState(initial);
+    return <BlockEditor block={block} onChange={(next) => setBlock(next)} />;
+  };
+  const mount = (block: Block) => render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter><WebsiteDocContext.Provider value={DOC}><Stateful initial={block} /></WebsiteDocContext.Provider></MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  it('removing a question leaves the next one with its own answer editor (its undo cannot bring back the removed text)', () => {
+    mount({ ...base, type: 'faq', variant: 'list', heading: '', items: [
+      { id: 'q1', question: 'First?', answer: '<p>removed text</p>' },
+      { id: 'q2', question: 'Second?', answer: '<p>kept</p>' },
+    ] } as FaqBlock);
+    fireEvent.click(screen.getAllByRole('button', { name: /Remove question/ })[0]);
+    const editors = screen.getAllByLabelText('rich');
+    expect(editors).toHaveLength(1);
+    expect(editors[0]).toHaveValue('<p>kept</p>');
+    expect(editors[0]).toHaveAttribute('data-history-from', '<p>kept</p>');
+  });
+
+  it('a new question, step or testimonial gets an id of its own', () => {
+    const onChange = open({ ...base, type: 'faq', variant: 'list', heading: '', items: [{ id: 'q1', question: '', answer: '' }] } as FaqBlock);
+    fireEvent.click(screen.getByRole('button', { name: 'Add question' }));
+    const items = (onChange.mock.calls.at(-1)?.[0] as FaqBlock).items;
+    expect(items[1].id).toMatch(/^[a-z0-9-]{1,24}$/);
+    expect(items[1].id).not.toBe('q1');
   });
 });
 

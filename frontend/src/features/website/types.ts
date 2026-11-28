@@ -45,7 +45,8 @@ export interface FeaturedGalleriesBlock extends BlockBase {
   intro: string;
   galleries: { id: number; text: string }[];
 }
-export interface Testimonial { quote: string; author: string; role: string; image: ImageRef | null }
+/** `id` (questions, steps, testimonials): unique within the block, so a removed item never hands its editor to the next. */
+export interface Testimonial { id: string; quote: string; author: string; role: string; image: ImageRef | null }
 export interface TestimonialsBlock extends BlockBase { type: 'testimonials'; heading: string; items: Testimonial[] }
 export interface PricingBlock extends BlockBase {
   type: 'pricing';
@@ -83,9 +84,9 @@ export type LinkTarget =
   | { kind: 'legal'; slug: 'impressum' | 'datenschutz' | 'agb' }
   | { kind: 'url'; url: string };
 // `answer`: sanitised HTML from the rich text editor.
-export interface FaqBlock extends BlockBase { type: 'faq'; heading: string; items: { question: string; answer: string }[] }
+export interface FaqBlock extends BlockBase { type: 'faq'; heading: string; items: { id: string; question: string; answer: string }[] }
 export type StepIcon = 'camera' | 'calendar' | 'chat' | 'heart' | 'image' | 'star' | 'gift' | 'check' | 'email';
-export interface StepsBlock extends BlockBase { type: 'steps'; heading: string; items: { title: string; text: string; icon: StepIcon | null }[] }
+export interface StepsBlock extends BlockBase { type: 'steps'; heading: string; items: { id: string; title: string; text: string; icon: StepIcon | null }[] }
 export interface CtaBlock extends BlockBase { type: 'cta'; heading: string; text: string; buttons: { label: string; target: LinkTarget | null }[] }
 export interface LogosBlock extends BlockBase { type: 'logos'; heading: string; grayscale: boolean; items: { image: ImageRef | null; url: string }[] }
 export type SocialNetwork = 'instagram' | 'facebook' | 'tiktok' | 'youtube' | 'pinterest' | 'linkedin' | 'website' | 'email';

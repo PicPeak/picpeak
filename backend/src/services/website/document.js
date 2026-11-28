@@ -171,6 +171,21 @@ function newId() {
   return crypto.randomBytes(6).toString('hex');
 }
 
+// A list item's id (a question, a step, a testimonial): kept so the editor
+// can tell the items apart when one is removed; unique within its block, a
+// new one for an item without, as older documents have.
+const ITEM_ID_PATTERN = /^[a-z0-9-]{1,24}$/;
+function withItemIds(items) {
+  const seen = new Set();
+  return items.map((item) => {
+    let id = typeof item.rawId === 'string' && ITEM_ID_PATTERN.test(item.rawId) ? item.rawId : newId();
+    while (seen.has(id)) id = newId();
+    seen.add(id);
+    const { rawId, ...rest } = item; // eslint-disable-line no-unused-vars
+    return { id, ...rest };
+  });
+}
+
 function blockId(value) {
   return typeof value === 'string' && ID_PATTERN.test(value) ? value : newId();
 }
@@ -302,14 +317,15 @@ const BLOCK_FIELDS = {
   }),
   testimonials: (b) => ({
     heading: str(b.heading, 200, 'heading'),
-    items: Array.isArray(b.items)
+    items: withItemIds(Array.isArray(b.items)
       ? capped(b.items, MAX_ITEMS, 'items').map((item) => (item && typeof item === 'object' ? {
+        rawId: item.id,
         quote: str(item.quote, 1200, 'quote'),
         author: str(item.author, 120, 'author'),
         role: str(item.role, 120, 'role'),
         image: imageRef(item.image),
       } : null)).filter(Boolean)
-      : [],
+      : []),
   }),
   pricing: (b) => ({
     heading: str(b.heading, 200, 'heading'),
@@ -349,18 +365,20 @@ const BLOCK_FIELDS = {
   }),
   faq: (b) => ({
     heading: str(b.heading, 200, 'heading'),
-    items: objects(b.items, MAX_ITEMS, 'items').map((item) => ({
+    items: withItemIds(objects(b.items, MAX_ITEMS, 'items').map((item) => ({
+      rawId: item.id,
       question: str(item.question, 300, 'question'),
       answer: rich(item.answer, MAX_ANSWER, 'answer'),
-    })),
+    }))),
   }),
   steps: (b) => ({
     heading: str(b.heading, 200, 'heading'),
-    items: objects(b.items, MAX_STEPS, 'items').map((item) => ({
+    items: withItemIds(objects(b.items, MAX_STEPS, 'items').map((item) => ({
+      rawId: item.id,
       title: str(item.title, 120, 'title'),
       text: str(item.text, 400, 'text'),
       icon: pick(item.icon, STEP_ICONS, null),
-    })),
+    }))),
   }),
   cta: (b) => ({
     heading: str(b.heading, 200, 'heading'),

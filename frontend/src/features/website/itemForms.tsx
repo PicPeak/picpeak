@@ -8,6 +8,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '../../components/common';
 import { ImageField, LinkField, RichTextField, TextArea, TextField, labelClass } from './fields';
 import { LinkTargetField } from './LinkTargetField';
+import { newId } from './blocks';
 import type { CtaBlock, FaqBlock, LogosBlock, SocialBlock, SocialNetwork, StepIcon, StepsBlock } from './types';
 
 export const MAX_FAQ = 24;
@@ -49,7 +50,9 @@ export const FaqItemsField: React.FC<{ value: FaqBlock['items']; onChange: (valu
   return (
     <div className="space-y-3">
       {value.map((item, index) => (
-        <ItemCard key={index} title={t('website.fields.faqItem', 'Question {{n}}', { n: index + 1 })} canRemove
+        // Keyed by the item's id: removing one never hands its editor (and
+        // its undo history) to the next.
+        <ItemCard key={item.id || index} title={t('website.fields.faqItem', 'Question {{n}}', { n: index + 1 })} canRemove
           removeLabel={t('website.fields.removeFaqItem', 'Remove question {{n}}', { n: index + 1 })} onRemove={() => onChange(value.filter((_, i) => i !== index))}>
           <TextField label={t('website.fields.question', 'Question')} value={item.question} maxLength={300}
             onChange={(question) => onChange(patchAt(value, index, { question }), `item${index}.question`)} />
@@ -58,7 +61,7 @@ export const FaqItemsField: React.FC<{ value: FaqBlock['items']; onChange: (valu
         </ItemCard>
       ))}
       <AddButton label={t('website.fields.addFaqItem', 'Add question')} disabled={value.length >= MAX_FAQ}
-        onClick={() => onChange([...value, { question: '', answer: '' }])} />
+        onClick={() => onChange([...value, { id: newId(), question: '', answer: '' }])} />
     </div>
   );
 };
@@ -74,7 +77,7 @@ export const StepsField: React.FC<{ value: StepsBlock['items']; withIcons: boole
   return (
     <div className="space-y-3">
       {value.map((item, index) => (
-        <ItemCard key={index} title={t('website.fields.step', 'Step {{n}}', { n: index + 1 })} canRemove={value.length > MIN_STEPS}
+        <ItemCard key={item.id || index} title={t('website.fields.step', 'Step {{n}}', { n: index + 1 })} canRemove={value.length > MIN_STEPS}
           removeLabel={t('website.fields.removeStep', 'Remove step {{n}}', { n: index + 1 })} onRemove={() => onChange(value.filter((_, i) => i !== index))}>
           <TextField label={t('website.fields.stepTitle', 'Title')} value={item.title} maxLength={120}
             onChange={(title) => onChange(patchAt(value, index, { title }), `item${index}.title`)} />
@@ -93,7 +96,7 @@ export const StepsField: React.FC<{ value: StepsBlock['items']; withIcons: boole
         </ItemCard>
       ))}
       <AddButton label={t('website.fields.addStep', 'Add step')} disabled={value.length >= MAX_STEPS}
-        onClick={() => onChange([...value, { title: '', text: '', icon: null }])} />
+        onClick={() => onChange([...value, { id: newId(), title: '', text: '', icon: null }])} />
       <p className="text-xs text-muted">{t('website.fields.stepsHint', 'Three to five steps read best; two to eight are possible.')}</p>
     </div>
   );

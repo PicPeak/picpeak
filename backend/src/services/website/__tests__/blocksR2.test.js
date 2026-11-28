@@ -181,3 +181,19 @@ describe('one contact form per page', () => {
     expect(preview).toContain('Only one contact form per page is shown');
   });
 });
+
+test('questions, steps and testimonials keep a short id, unique within their block; older items get one', () => {
+  const { document } = normalize([
+    { type: 'faq', items: [{ id: 'q1', question: 'A' }, { id: 'q1', question: 'B' }, { id: 'Bad ID!', question: 'C' }, { question: 'D' }] },
+    { type: 'steps', items: [{ id: 's1', title: 'A' }, { title: 'B' }] },
+    { type: 'testimonials', items: [{ quote: 'Q' }] },
+  ]);
+  const [faq, steps, testimonials] = document.pages[0].blocks;
+  const ids = faq.items.map((i) => i.id);
+  expect(ids[0]).toBe('q1');
+  ids.forEach((id) => expect(id).toMatch(/^[a-z0-9-]{1,24}$/));
+  expect(new Set(ids).size).toBe(4);
+  expect(steps.items[0].id).toBe('s1');
+  expect(steps.items[1].id).toMatch(/^[a-z0-9-]{1,24}$/);
+  expect(testimonials.items[0].id).toMatch(/^[a-z0-9-]{1,24}$/);
+});

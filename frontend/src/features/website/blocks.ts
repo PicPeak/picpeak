@@ -111,14 +111,14 @@ export function createBlock(type: BlockType, t: TFunction): Block {
   case 'divider':
     return { ...base, type, width: 'full', spacing: 'medium' };
   case 'faq':
-    return { ...base, type, heading: t('website.defaults.faqHeading', 'Questions and answers'), items: [{ question: '', answer: '' }] };
+    return { ...base, type, heading: t('website.defaults.faqHeading', 'Questions and answers'), items: [{ id: newId(), question: '', answer: '' }] };
   case 'steps':
     return {
       ...base, type, heading: t('website.defaults.stepsHeading', 'How it works'),
       items: [
-        { title: t('website.defaults.step1', 'Get in touch'), text: '', icon: 'chat' },
-        { title: t('website.defaults.step2', 'The shoot'), text: '', icon: 'camera' },
-        { title: t('website.defaults.step3', 'Your gallery'), text: '', icon: 'image' },
+        { id: newId(), title: t('website.defaults.step1', 'Get in touch'), text: '', icon: 'chat' },
+        { id: newId(), title: t('website.defaults.step2', 'The shoot'), text: '', icon: 'camera' },
+        { id: newId(), title: t('website.defaults.step3', 'Your gallery'), text: '', icon: 'image' },
       ],
     };
   case 'cta':
