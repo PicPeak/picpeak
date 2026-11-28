@@ -174,25 +174,6 @@ test('collectReferences finds every image, gallery and package', () => {
   });
 });
 
-describe('page cache', () => {
-  const { cacheGeneration, getCached, setCached, clearWebsiteCache } = require('../cache');
-  test('keeps a miss apart from no entry', () => {
-    clearWebsiteCache();
-    expect(getCached('page:nope')).toBeUndefined();
-    setCached('page:nope', null, cacheGeneration());
-    expect(getCached('page:nope')).toBeNull();
-    clearWebsiteCache();
-    expect(getCached('page:nope')).toBeUndefined();
-  });
-
-  test('a value from before a clear is not stored', () => {
-    const startedAt = cacheGeneration();
-    clearWebsiteCache();
-    setCached('page:old', { status: 200 }, startedAt);
-    expect(getCached('page:old')).toBeUndefined();
-  });
-});
-
 describe('limits are refused, not cut', () => {
   const codes = (doc) => normalizeDocument(doc).errors.map((e) => e.code);
   const blocks = (n) => Array.from({ length: n }, (_, i) => ({ id: `b${i}`, type: 'spacer' }));

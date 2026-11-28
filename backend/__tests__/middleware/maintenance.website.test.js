@@ -62,15 +62,13 @@ test('legal pages and unknown addresses the website renders are gated with it; w
   mockFlag.mockResolvedValue(true);
 });
 
-test('server routing and the maintenance gate share one decision of which paths the app owns', () => {
+test('the gate closes exactly the single-segment paths the app does not own, as the server routes them', async () => {
   const { ownedByApp } = require('../../src/services/website/document');
-  expect(ownedByApp('admin')).toBe(true);
-  expect(ownedByApp('not-found')).toBe(true);
-  expect(ownedByApp('impressum')).toBe(false);
-  expect(ownedByApp('about')).toBe(false);
-  const fs = require('fs');
-  const path = require('path');
-  const server = fs.readFileSync(path.join(__dirname, '../../server.js'), 'utf8');
-  expect(server).not.toMatch(/function ownedByApp/);
-  expect(fs.readFileSync(path.join(__dirname, '../../src/middleware/maintenance.js'), 'utf8')).toContain('ownedByApp(');
+  const reserved = require('../../src/services/website/reservedSlugs.json');
+  // Every path the app owns stays open; the legal pages and any other slug
+  // are the website's, and closed with it.
+  for (const slug of [...reserved, 'impressum', 'datenschutz', 'agb', 'about', 'no-such-page']) {
+    // eslint-disable-next-line no-await-in-loop
+    expect([slug, (await run(`/${slug}`)).passed]).toEqual([slug, ownedByApp(slug)]);
+  }
 });

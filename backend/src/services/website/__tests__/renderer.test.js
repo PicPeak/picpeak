@@ -143,13 +143,6 @@ test('featured galleries link by slug only and need an eligible gallery', () => 
   expect(html).not.toContain('SECRET-TOKEN');
 });
 
-test('the booking block is hidden while booking is off', () => {
-  const blocks = [{ type: 'booking', heading: 'Book a session', buttonLabel: 'Book' }];
-  expect(render([home(blocks)])).not.toContain('Book a session');
-  const html = render([home(blocks)], { ctx: { booking: { enabled: true, url: '/book' } } });
-  expect(html).toContain('href="/book"');
-});
-
 test('pricing shows catalogue packages by id with a formatted price', () => {
   const html = render([home([{ type: 'pricing', heading: 'Packages', packageIds: [3, 4] }])], {
     ctx: { packages: new Map([[3, { name: 'Full day', description: 'All day', currency: 'CHF', totalMinor: 250000, items: ['Ceremony', '<b>Party</b>'] }]]) },

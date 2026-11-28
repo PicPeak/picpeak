@@ -41,6 +41,13 @@ export type SettingsSectionKey =
   | 'languages'
   | 'danger';
 
+// The sections a link can open (`?section=`).
+const LINKED_SECTIONS: SettingsSectionKey[] = ['general', 'access', 'downloads', 'pricing', 'guests', 'appearance', 'source', 'delivery', 'reminder', 'slideshow', 'embed', 'website', 'faces', 'tags', 'danger'];
+
+export function isLinkedSection(value: string | null): value is SettingsSectionKey {
+  return value !== null && (LINKED_SECTIONS as string[]).includes(value);
+}
+
 export interface EventFields {
   welcome_message: string;
   css_template_id: number | null;
