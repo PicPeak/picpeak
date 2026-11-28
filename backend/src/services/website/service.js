@@ -226,18 +226,21 @@ async function getEditorState(adminId) {
   return editorState(draft, await readRow('published'));
 }
 
-function validationError(errors) {
-  // Over a limit: refused as too large, never shortened behind the admin's back.
-  if (errors.some((e) => e.code === 'TOO_MANY_CONTACT_FORMS')) {
-    const err = new AppError('A page can have one contact form; remove the second one, or move it to another page', 400, 'WEBSITE_ONE_CONTACT_FORM');
-    err.details = errors;
-    return err;
-  }
-  const err = errors.some((e) => LIMIT_CODES.has(e.code))
-    ? new AppError('The website is over a size limit (pages, blocks, items or text length); nothing was saved', 400, 'WEBSITE_LIMIT_EXCEEDED')
-    : new AppError('The website has problems to fix before it can be saved', 422, 'WEBSITE_INVALID');
-  err.details = errors;
+/** A refusal that says what it refused: `details`, which the editor shows per item. */
+function refusal(message, status, code, details) {
+  const err = new AppError(message, status, code);
+  err.details = details;
   return err;
+}
+
+function validationError(errors) {
+  if (errors.some((e) => e.code === 'TOO_MANY_CONTACT_FORMS')) {
+    return refusal('A page can have one contact form; remove the second one, or move it to another page', 400, 'WEBSITE_ONE_CONTACT_FORM', errors);
+  }
+  // Over a limit: refused as too large, never shortened behind the admin's back.
+  return errors.some((e) => LIMIT_CODES.has(e.code))
+    ? refusal('The website is over a size limit (pages, blocks, items or text length); nothing was saved', 400, 'WEBSITE_LIMIT_EXCEEDED', errors)
+    : refusal('The website has problems to fix before it can be saved', 422, 'WEBSITE_INVALID', errors);
 }
 
 /** Photos, galleries and packages the stored draft or published site already use. */
@@ -263,8 +266,8 @@ async function storedReferences() {
  * site already uses, so a colleague can edit a page that shows a pick they
  * could not have made themselves.
  */
-async function referencesAdminMay(admin, { photoIds = [], eventIds = [] }) {
-  const stored = await storedReferences();
+async function referencesAdminMay(admin, { photoIds = [], eventIds = [] }, stored) {
+  const kept = stored || await storedReferences();
   // A photo in the trash is not offered for a new pick.
   const photoRows = photoIds.length ? await livePhotos(db).whereIn('id', photoIds).select('id', 'event_id') : [];
   const candidates = [...new Set([...eventIds, ...photoRows.map((p) => p.event_id)])];
@@ -272,8 +275,8 @@ async function referencesAdminMay(admin, { photoIds = [], eventIds = [] }) {
   const accessible = new Set(events.filter((e) => canAccessEvent(admin, e)).map((e) => e.id));
   const photoEvent = new Map(photoRows.map((p) => [p.id, p.event_id]));
   return {
-    photoIds: new Set(photoIds.filter((id) => stored.photoIds.has(id) || accessible.has(photoEvent.get(id)))),
-    eventIds: new Set(eventIds.filter((id) => stored.eventIds.has(id) || accessible.has(id))),
+    photoIds: new Set(photoIds.filter((id) => kept.photoIds.has(id) || accessible.has(photoEvent.get(id)))),
+    eventIds: new Set(eventIds.filter((id) => kept.eventIds.has(id) || accessible.has(id))),
   };
 }
 
@@ -281,22 +284,17 @@ function revisionConflict() {
   return new AppError('The website was changed elsewhere. Reload to get the latest version.', 409, 'WEBSITE_REVISION_CONFLICT');
 }
 
-async function saveDraft(rawDocument, expectedRevision, admin) {
-  const adminId = admin.id;
-  const { document, errors } = normalizeDocument(rawDocument, { reservedSlugs: await cmsSlugs() });
-  if (errors.length) throw validationError(errors);
-  const refs = collectReferences(document);
-  const allowed = await referencesAdminMay(admin, refs);
+/**
+ * What a document may reference, for this admin, against what the stored
+ * site (`stored`, storedReferences) already uses. Throws the first refusal.
+ */
+async function assertReferencesAllowed(admin, refs, stored) {
+  const allowed = await referencesAdminMay(admin, refs, stored);
   const refused = [
     ...refs.photoIds.filter((id) => !allowed.photoIds.has(id)).map((id) => ({ code: 'PHOTO_NOT_ACCESSIBLE', photoId: id })),
     ...refs.eventIds.filter((id) => !allowed.eventIds.has(id)).map((id) => ({ code: 'GALLERY_NOT_ACCESSIBLE', eventId: id })),
   ];
-  if (refused.length) {
-    const err = new AppError('The page uses photos or galleries you cannot access', 422, 'WEBSITE_REFERENCE_NOT_ACCESSIBLE');
-    err.details = refused;
-    throw err;
-  }
-  const stored = await storedReferences();
+  if (refused.length) throw refusal('The page uses photos or galleries you cannot access', 422, 'WEBSITE_REFERENCE_NOT_ACCESSIBLE', refused);
   // A new pick comes from a gallery that is on the website now, for its
   // owner too: they put the gallery on first, then pick. Picks already
   // stored stay when their gallery goes off (the page leaves them out).
@@ -307,20 +305,24 @@ async function saveDraft(rawDocument, expectedRevision, admin) {
   const sources = sourceIds.length ? await db('events').whereIn('id', sourceIds) : [];
   const off = sources.filter((event) => !media.isEventWebsiteEligible(event));
   if (off.length) {
-    const names = off.map((event) => event.event_name).join(', ');
-    const err = new AppError(`Put the gallery on the website first: ${names}`, 409, 'WEBSITE_GALLERY_NOT_ON_WEBSITE');
-    err.details = off.map((event) => ({ code: 'GALLERY_NOT_ON_WEBSITE', eventId: event.id, name: event.event_name, reason: media.eventIneligibleReason(event) }));
-    throw err;
+    throw refusal(`Put the gallery on the website first: ${off.map((event) => event.event_name).join(', ')}`, 409, 'WEBSITE_GALLERY_NOT_ON_WEBSITE',
+      off.map((event) => ({ code: 'GALLERY_NOT_ON_WEBSITE', eventId: event.id, name: event.event_name, reason: media.eventIneligibleReason(event) })));
   }
   // Packages come from the quote catalogue (quotes.view). Without it an
   // admin keeps the ones the site has, and adds none: the public page would
   // show the catalogue to them by a guessed id.
   const newPackages = refs.packageIds.filter((id) => !stored.packageIds.has(id));
-  if (newPackages.length && !(await userHasAllPermissions(adminId, ['quotes.view']))) {
-    const err = new AppError('Adding packages needs the permission to view quotes', 403, 'WEBSITE_PACKAGES_FORBIDDEN');
-    err.details = newPackages.map((id) => ({ code: 'PACKAGE_NOT_ALLOWED', packageId: id }));
-    throw err;
+  if (newPackages.length && !(await userHasAllPermissions(admin.id, ['quotes.view']))) {
+    throw refusal('Adding packages needs the permission to view quotes', 403, 'WEBSITE_PACKAGES_FORBIDDEN',
+      newPackages.map((id) => ({ code: 'PACKAGE_NOT_ALLOWED', packageId: id })));
   }
+}
+
+async function saveDraft(rawDocument, expectedRevision, admin) {
+  const adminId = admin.id;
+  const { document, errors } = normalizeDocument(rawDocument, { reservedSlugs: await cmsSlugs() });
+  if (errors.length) throw validationError(errors);
+  await assertReferencesAllowed(admin, collectReferences(document), await storedReferences());
   const current = await ensureDraft(adminId);
   if (expectedRevision != null && Number(expectedRevision) !== Number(current.revision)) {
     throw revisionConflict();
