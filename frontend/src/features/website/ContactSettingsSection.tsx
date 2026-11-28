@@ -86,6 +86,11 @@ export const ContactSettingsSection: React.FC<{ readOnly: boolean }> = ({ readOn
         </p>
         {provider === 'friendly' && (
           <div className="space-y-3">
+            {data.captcha.friendly.apiKeyUnreadable && (
+              <Notice tone="warning" size="sm">
+                {t('website.contact.apiKeyUnreadable', 'The saved API key can no longer be read (the server’s secret key changed). Enter the API key again: the contact form refuses messages until it is.')}
+              </Notice>
+            )}
             <TextField label={t('website.contact.siteKey', 'Site key')} value={siteKey} maxLength={100} onChange={setSiteKey} />
             <TextField label={t('website.contact.apiKey', 'API key')} value={apiKey} maxLength={200} type="password"
               placeholder={data.captcha.friendly.apiKeySet ? t('website.contact.apiKeySaved', 'Saved. Type a new one to replace it.') as string : ''}

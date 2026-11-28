@@ -92,4 +92,11 @@ describe('contact form settings', () => {
     expect(screen.queryByRole('button', { name: 'Save contact form settings' })).toBeNull();
     vi.mocked(usePermission).mockReturnValue(true);
   });
+
+  it('warns that a saved API key can no longer be read and has to be entered again', async () => {
+    vi.mocked(websiteService.getContactSettings).mockResolvedValue({ ...SETTINGS, captcha: { ...SETTINGS.captcha, provider: 'friendly', friendly: { siteKey: 'FCMTEST0123', endpoint: 'global', apiKeySet: true, apiKeyUnreadable: true } } });
+    open();
+    expect(await screen.findByText(/can no longer be read/)).toBeInTheDocument();
+    expect(screen.getByText(/refuses messages until/)).toBeInTheDocument();
+  });
 });

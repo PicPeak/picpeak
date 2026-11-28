@@ -65,6 +65,9 @@ async function readContactSettings() {
         siteKey: typeof s[KEYS.friendlySiteKey] === 'string' ? s[KEYS.friendlySiteKey] : '',
         endpoint: s[KEYS.friendlyEndpoint] === 'eu' ? 'eu' : 'global',
         apiKeySet: Boolean(s[KEYS.friendlyApiKey]),
+        // Stored, but no longer readable with this server's secret (JWT_SECRET
+        // or WEBSITE_SECRET_KEY changed): it has to be entered again.
+        apiKeyUnreadable: Boolean(s[KEYS.friendlyApiKey]) && decrypt(s[KEYS.friendlyApiKey]) === null,
       },
       // Settings › Security holds these; the website only uses them.
       recaptchaReady: Boolean(s.security_recaptcha_site_key && s.security_recaptcha_secret_key),
@@ -134,18 +137,26 @@ async function writeContactSettings(input) {
   return readContactSettings();
 }
 
+function decrypt(stored) {
+  try { return box.decryptSecret(stored); } catch { return null; }
+}
+
 /**
  * The captcha the live contact forms show, with what the server needs to
- * check it; null while it is off or its keys are gone.
+ * check it; null while it is off. A captcha that is chosen but cannot be
+ * checked (a key gone, or no longer readable with this server's secret)
+ * comes back as { provider, unusable: true }: the form then refuses
+ * messages rather than taking them unchecked.
  */
 async function activeCaptcha() {
   const s = await read([...Object.values(KEYS), 'security_recaptcha_site_key', 'security_recaptcha_secret_key']);
-  if (s[KEYS.provider] === 'friendly' && s[KEYS.friendlySiteKey] && s[KEYS.friendlyApiKey]) {
-    let secret = '';
-    try { secret = box.decryptSecret(s[KEYS.friendlyApiKey]); } catch { return null; }
+  if (s[KEYS.provider] === 'friendly') {
+    const secret = s[KEYS.friendlySiteKey] && s[KEYS.friendlyApiKey] ? decrypt(s[KEYS.friendlyApiKey]) : null;
+    if (!secret) return { provider: 'friendly', unusable: true };
     return { provider: 'friendly', siteKey: s[KEYS.friendlySiteKey], endpoint: s[KEYS.friendlyEndpoint] === 'eu' ? 'eu' : 'global', secret };
   }
-  if (s[KEYS.provider] === 'recaptcha' && s.security_recaptcha_site_key && s.security_recaptcha_secret_key) {
+  if (s[KEYS.provider] === 'recaptcha') {
+    if (!(s.security_recaptcha_site_key && s.security_recaptcha_secret_key)) return { provider: 'recaptcha', unusable: true };
     return { provider: 'recaptcha', siteKey: String(s.security_recaptcha_site_key), secret: String(s.security_recaptcha_secret_key) };
   }
   return null;

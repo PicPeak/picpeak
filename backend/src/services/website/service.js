@@ -577,7 +577,7 @@ async function buildContext(document, page, {
   ]);
   // The live contact forms show the spam check; the preview never loads it.
   const active = preview ? null : await require('./contactSettings').activeCaptcha();
-  const captcha = active ? { provider: active.provider, siteKey: active.siteKey, endpoint: active.endpoint } : null;
+  const captcha = active && !active.unusable ? { provider: active.provider, siteKey: active.siteKey, endpoint: active.endpoint } : null;
   const covers = await media.loadCoverPhotos([...events.values()], { views });
   const sanitizeCustomHtml = (html) => publicSite.applyBrandTokens(publicSite.sanitizeHtmlPayload(html || ''), themeInfo.branding);
   const { sanitizeCss } = require('../../utils/cssSanitizer');

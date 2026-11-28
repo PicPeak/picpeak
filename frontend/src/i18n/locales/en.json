@@ -13669,7 +13669,8 @@
       "confirmation": "Send the visitor a confirmation",
       "confirmationNeedsCaptcha": "Only with a spam check: without one, anyone could have it sent to any address.",
       "confirmationHint": "Their name and your fixed text, never their message; at most one a day to an address.",
-      "editConfirmationMail": "Edit the confirmation mail"
+      "editConfirmationMail": "Edit the confirmation mail",
+      "apiKeyUnreadable": "The saved API key can no longer be read (the server’s secret key changed). Enter the API key again: the contact form refuses messages until it is."
     }
   },
   "websiteNotice": {

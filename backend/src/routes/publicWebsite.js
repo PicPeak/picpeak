@@ -78,6 +78,11 @@ router.post('/contact', daily, hourly, (req, res, next) => {
     }
     // The spam check, when it is on: checked with the provider, every time.
     const captcha = await require('../services/website/contactSettings').activeCaptcha();
+    if (captcha && captcha.unusable) {
+      // Chosen but impossible to check: refused, never taken unchecked.
+      logger.warn('Website contact form: the spam check cannot be checked (key missing or unreadable); message refused', { provider: captcha.provider });
+      return back(res, form.page, form.block.id, 'error');
+    }
     if (captcha && !(await require('../services/website/captcha').verifyAnswer(captcha, body, { ip: req.ip }))) {
       return back(res, form.page, form.block.id, 'captcha');
     }

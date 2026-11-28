@@ -2011,6 +2011,24 @@ describe('spam check on the contact form', () => {
     expect((await post({ ...valid, 'frc-captcha-response': 'good' })).headers.location).toBe('/#contact-captcha-c1');
   });
 
+  test('a key the server can no longer read refuses messages instead of letting them through, and says so', async () => {
+    const row = await db('app_settings').where({ setting_key: 'website_captcha_friendly_api_key' }).first();
+    // As after JWT_SECRET (or WEBSITE_SECRET_KEY) was changed.
+    await db('app_settings').where({ setting_key: 'website_captcha_friendly_api_key' }).update({ setting_value: JSON.stringify('AAAA.BBBB.CCCC') });
+    try {
+      const spy = jest.spyOn(axios, 'post');
+      const before = Number((await db('received_emails').count({ c: '*' }).first()).c);
+      expect((await post({ ...valid, 'frc-captcha-response': 'good' })).headers.location).toBe('/#contact-error-c1');
+      expect(spy).not.toHaveBeenCalled();
+      expect(Number((await db('received_emails').count({ c: '*' }).first()).c)).toBe(before);
+      const shown = (await request(app).get('/api/admin/website/contact-settings').set(auth(adminId))).body;
+      expect(shown.captcha.friendly).toMatchObject({ apiKeySet: true, apiKeyUnreadable: true });
+    } finally {
+      await db('app_settings').where({ setting_key: 'website_captcha_friendly_api_key' }).update({ setting_value: row.setting_value });
+    }
+    expect((await request(app).get('/api/admin/website/contact-settings').set(auth(adminId))).body.captcha.friendly.apiKeyUnreadable).toBe(false);
+  });
+
   test('reCAPTCHA uses the keys of the security settings', async () => {
     await setSetting('security_recaptcha_site_key', '6LcSiteKey', 'security');
     await setSetting('security_recaptcha_secret_key', 'recaptcha-secret', 'security');
@@ -2020,6 +2038,12 @@ describe('spam check on the contact form', () => {
     expect((await post({ ...valid, 'g-recaptcha-response': 'tok' })).headers.location).toBe('/#contact-sent-c1');
     expect(spy.mock.calls[0][0]).toBe('https://www.google.com/recaptcha/api/siteverify');
     expect(spy.mock.calls[0][1]).toContain('secret=recaptcha-secret');
+    // Its keys removed under Settings › Security while it is chosen: refused, not unchecked.
+    await db('app_settings').where({ setting_key: 'security_recaptcha_secret_key' }).del();
+    spy.mockClear();
+    expect((await post({ ...valid, 'g-recaptcha-response': 'tok' })).headers.location).toBe('/#contact-error-c1');
+    expect(spy).not.toHaveBeenCalled();
+    await setSetting('security_recaptcha_secret_key', 'recaptcha-secret', 'security');
   });
 });
 

@@ -32,7 +32,8 @@ export interface ContactSettings {
   };
   captcha: {
     provider: CaptchaProvider;
-    friendly: { siteKey: string; endpoint: 'global' | 'eu'; apiKeySet: boolean };
+    /** apiKeyUnreadable: stored but no longer readable with the server's secret; enter it again. */
+    friendly: { siteKey: string; endpoint: 'global' | 'eu'; apiKeySet: boolean; apiKeyUnreadable?: boolean };
     /** The reCAPTCHA keys of Settings › Security are there. */
     recaptchaReady: boolean;
   };
