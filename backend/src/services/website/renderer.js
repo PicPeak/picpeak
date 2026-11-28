@@ -211,6 +211,17 @@ function section(block, inner, ctx, extraClass = '') {
 // Blocks
 // ---------------------------------------------------------------------------
 
+/**
+ * The layout a hero is shown in: its variant, except an overlay hero with no
+ * picture or video available (gone, or its gallery left the website), which
+ * is shown text only. The menu's "transparent over the hero" asks the same.
+ */
+function heroLayout(block, ctx) {
+  if (block.variant !== 'overlay') return block.variant;
+  const video = block.video ? ctx.assets.get(block.video.id) : null;
+  return (video && video.kind === 'video') || lookUpImage(block.image, ctx) ? 'overlay' : 'minimal';
+}
+
 function renderHero(block, ctx) {
   // A minimal hero shows no picture: its image is not resolved at all.
   const image = block.variant === 'minimal' ? null : resolveImage(block.image, ctx);
@@ -238,7 +249,7 @@ function renderHero(block, ctx) {
   if (block.variant === 'split') {
     return section(block, `<div class="pp-wrap pp-split">${text}${media.length ? `<div class="pp-hero__frame">${media.join('')}</div>` : ''}</div>`, ctx);
   }
-  if (block.variant === 'minimal' || !media.length) {
+  if (heroLayout(block, ctx) === 'minimal') {
     // An overlay hero without a picture falls back to the minimal layout.
     return section({ ...block, variant: 'minimal' }, `<div class="pp-wrap pp-narrow pp-center">${text}</div>`, ctx);
   }
@@ -812,9 +823,10 @@ function renderHeader(ctx) {
   const nav = links
     ? `<nav class="pp-nav" aria-label="Main"><ul>${links}</ul></nav><details class="pp-menu${menu.mobile === 'panel' ? ' pp-menu--panel' : ''}"><summary>${esc(s.menu)}</summary><nav aria-label="Main"><ul>${links}</ul></nav></details>`
     : '';
-  // Over the picture only on a page that starts with a full-picture hero.
+  // Over the picture only on a page that starts with a hero shown with its
+  // picture (heroLayout: one whose picture is gone is shown text only).
   const first = ctx.page.blocks[0];
-  const over = menu.transparent && first && first.type === 'hero' && first.variant === 'overlay';
+  const over = menu.transparent && first && first.type === 'hero' && heroLayout(first, ctx) === 'overlay';
   const classes = ['pp-header'];
   if (menu.layout === 'center') classes.push('pp-header--center');
   if (over) classes.push('pp-header--over');

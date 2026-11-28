@@ -86,11 +86,23 @@ describe('the menu', () => {
 
   test('transparent over a full-picture hero only on a page that starts with one', () => {
     const pages = [
-      { id: 'home', slug: 'home', title: 'Home', isHome: true, blocks: [{ id: 'h', type: 'hero', variant: 'overlay', heading: 'Hi' }] },
+      { id: 'home', slug: 'home', title: 'Home', isHome: true, blocks: [{ id: 'h', type: 'hero', variant: 'overlay', heading: 'Hi', image: { source: 'photo', id: 5 } }] },
       { id: 'about', slug: 'about', title: 'About', blocks: [{ type: 'text', body: 'x' }] },
     ];
-    expect(render({ pages, menu: { transparent: true, items: [] } }, { pageId: 'home' }).header).toMatch(/^<header class="pp-header pp-header--over">/);
+    const photos = new Map([[5, { id: 5, width: 100, height: 50 }]]);
+    expect(render({ pages, menu: { transparent: true, items: [] } }, { pageId: 'home', ctx: { photos } }).header).toMatch(/^<header class="pp-header pp-header--over">/);
     expect(render({ pages, menu: { transparent: true, items: [] } }, { pageId: 'about' }).header).toMatch(/^<header class="pp-header">/);
+  });
+
+  test('a hero whose picture is not available shows as text only, so the menu is not transparent over it', () => {
+    const pages = [{ id: 'home', slug: 'home', title: 'Home', isHome: true, blocks: [{ id: 'h', type: 'hero', variant: 'overlay', heading: 'Hi', image: { source: 'photo', id: 77 } }] }];
+    const menu = { transparent: true, items: [] };
+    // Photo 77 is not among the ones the page may show (gone, or its gallery left the website).
+    const gone = render({ pages, menu }, { pageId: 'home' });
+    expect(gone.header).toMatch(/^<header class="pp-header">/);
+    expect(gone.html).toContain('pp-hero pp-v-minimal');
+    const there = render({ pages, menu }, { pageId: 'home', ctx: { photos: new Map([[77, { id: 77, width: 100, height: 50 }]]) } });
+    expect(there.header).toMatch(/^<header class="pp-header pp-header--over">/);
   });
 
   test('at most twelve items, labels capped', () => {
