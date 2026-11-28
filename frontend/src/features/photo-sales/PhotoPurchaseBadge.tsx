@@ -28,6 +28,8 @@ interface PurchaseBadgePhoto {
 /**
  * `compact`: a 32 px round button with the cart icon alone, the price in its
  * name and tooltip, for a tile row too narrow for the chip (Gallery Folio).
+ * It has no skin of its own: the row it sits in passes one in `className`,
+ * so every control of that row looks alike.
  */
 export const PhotoPurchaseBadge: React.FC<{ photo: PurchaseBadgePhoto; className?: string; compact?: boolean }> = ({ photo, className, compact = false }) => {
   const { t } = useTranslation();
@@ -45,7 +47,7 @@ export const PhotoPurchaseBadge: React.FC<{ photo: PurchaseBadgePhoto; className
     <button
       type="button"
       className={twMerge(compact
-        ? 'photo-sales-chip absolute bottom-2 left-2 z-10 inline-flex w-8 h-8 items-center justify-center rounded-full pointer-events-auto'
+        ? 'absolute bottom-2 left-2 z-10 inline-flex w-8 h-8 items-center justify-center rounded-full pointer-events-auto'
         : 'photo-sales-chip absolute bottom-2 left-2 z-10 inline-flex items-center gap-1.5 rounded-full py-1 pl-2 pr-2.5 text-xs font-semibold pointer-events-auto', className)}
       aria-label={inCart
         ? t('photoSales.inCartOpen', 'In your cart — open the cart')
@@ -57,7 +59,9 @@ export const PhotoPurchaseBadge: React.FC<{ photo: PurchaseBadgePhoto; className
       data-in-cart={inCart ? 'true' : undefined}
       onClick={(event) => { event.stopPropagation(); if (inCart) photoSales.openCart(); else photoSales.addToCart(photo); }}
     >
-      {inCart ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <ShoppingCart className="w-3.5 h-3.5" aria-hidden="true" />}
+      {inCart
+        ? <Check className={compact ? 'w-4 h-4' : 'w-3.5 h-3.5'} aria-hidden="true" />
+        : <ShoppingCart className={compact ? 'w-4 h-4' : 'w-3.5 h-3.5'} aria-hidden="true" />}
       {!compact && (inCart ? t('photoSales.inCart', 'In cart') : priceLabel)}
     </button>
   );

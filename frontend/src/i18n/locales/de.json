@@ -2584,7 +2584,9 @@
       "comment": "Kommentieren",
       "like": "Gefällt mir",
       "unlike": "Gefällt mir zurücknehmen",
-      "selectPhoto": "{{name}} auswählen"
+      "selectPhoto": "{{name}} auswählen",
+      "openPhoto": "{{name}} ansehen",
+      "openVideo": "Video {{name}} ansehen"
     },
     "neutralLabel": {
       "numbered": "Foto {{position}} von {{total}}",

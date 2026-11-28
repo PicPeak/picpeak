@@ -1851,7 +1851,9 @@
       "comment": "Comment",
       "like": "Like",
       "unlike": "Unlike",
-      "selectPhoto": "Select {{name}}"
+      "selectPhoto": "Select {{name}}",
+      "openPhoto": "View {{name}}",
+      "openVideo": "View video {{name}}"
     },
     "neutralLabel": {
       "numbered": "Photo {{position}} of {{total}}",

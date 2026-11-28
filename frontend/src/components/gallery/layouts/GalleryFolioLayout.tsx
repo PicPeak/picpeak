@@ -9,7 +9,7 @@ import { ArrowDown, CheckSquare, ClipboardList, Download, Heart, LogOut, Package
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import { ActionMenu, AuthenticatedImage, PoweredBy, type ActionMenuItem } from '../../common';
-import { PhotoCard } from '../PhotoCard';
+import { LANE_CONTROL_BOX, PhotoCard } from '../PhotoCard';
 import { BackToAccountLink } from '../BackToAccountLink';
 import { BulkRatingPopover } from '../BulkRatingPopover';
 import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityToggle';
@@ -246,7 +246,7 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
         likeToggleLabels
         checkboxTestId
         topLeftControl={showToggle && onToggleVisibility
-          ? <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} />
+          ? <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} className={`inline-flex ${LANE_CONTROL_BOX}`} />
           : undefined}
       />
     );

@@ -19,8 +19,9 @@ const { album, theme, feedback } = vi.hoisted(() => ({
 vi.mock('react-i18next', async () => ({
   ...await vi.importActual('react-i18next'),
   useTranslation: () => ({
-    t: (key: string, fallback?: unknown) => {
-      if (typeof fallback === 'string') return fallback;
+    t: (key: string, fallback?: unknown, values?: Record<string, unknown>) => {
+      // Interpolated, as the tile's names are ("View {{name}}").
+      if (typeof fallback === 'string') return fallback.replace(/{{(\w+)}}/g, (_, name: string) => String(values?.[name] ?? name));
       const count = (fallback as { count?: number } | undefined)?.count;
       return count === undefined ? key : `${key}:${count}`;
     },
@@ -148,7 +149,7 @@ describe('Gallery Folio', () => {
     const onPhotoClick = vi.fn();
     mount({ onPhotoClick });
     // The tile itself is the button (PhotoCard's lane).
-    fireEvent.click(screen.getByRole('button', { name: 'photo-2.jpg' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View photo-2.jpg' }));
     expect(onPhotoClick).toHaveBeenCalledWith(1);
   });
 
@@ -265,6 +266,13 @@ describe('Gallery Folio', () => {
     expect(within(lane).getByRole('button', { name: 'Like photo' })).toBeInTheDocument();
     const video = screen.getByText('Video').closest('[data-photo-card-lane]');
     expect(video).not.toBeNull();
+  });
+
+  it('gives the client\'s hide toggle the lane\'s 32 px box, at the lane\'s start', () => {
+    mount({ isClient: true, onToggleVisibility: vi.fn() });
+    const toggle = screen.getByTestId('client-visibility-toggle-1');
+    expect(toggle).toHaveClass('w-8', 'h-8');
+    expect(toggle.closest('[data-lane-controls]')).toHaveAttribute('data-lane-controls', 'start');
   });
 
   it('has no menu when there is nothing secondary to put in it', () => {
