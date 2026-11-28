@@ -2,8 +2,10 @@
  * Website builder pages behind nginx (issue 2618): `/` and the page location
  * keep the backend's stricter policy for a website page (no scripts, no
  * framing) instead of nginx's site policy, keep the other security headers,
- * and are compressed also behind an outer proxy. Checked against the config
- * text; `nginx -t` and a stub-backend run verified the behaviour.
+ * and are compressed also behind an outer proxy, and a page whose address
+ * starts like a static path (/uploads-guide) still reaches the website
+ * location. Checked against the config text; `nginx -t` and a stub-backend
+ * run verified the behaviour.
  */
 const fs = require('fs');
 const path = require('path');
@@ -43,4 +45,39 @@ test.each([['location = / {'], ['location ~ "^/(?!(?:']])('%s carries the full h
     expect(body).toContain(`add_header ${header} `);
   }
   expect(body).toContain('gzip_proxied any;');
+});
+
+// nginx's choice of location for a path: an exact match; else the longest
+// prefix, final when it is `^~`; else the first regex that matches, in
+// order; else that longest prefix. Named locations are not chosen by path.
+function locations() {
+  return [...conf.matchAll(/^\s*location\s+(=|\^~|~\*|~)?\s*("(?:[^"\\]|\\.)*"|\S+)\s*\{/gm)].map(([, mod = '', raw]) => ({
+    mod, path: raw.startsWith('"') ? raw.slice(1, -1) : raw, label: `${mod ? `${mod} ` : ''}${raw}`,
+  })).filter((l) => !l.path.startsWith('@'));
+}
+function resolve(uri) {
+  const all = locations();
+  const exact = all.find((l) => l.mod === '=' && l.path === uri);
+  if (exact) return exact.label;
+  const prefix = all.filter((l) => (l.mod === '' || l.mod === '^~') && uri.startsWith(l.path))
+    .sort((a, b) => b.path.length - a.path.length)[0];
+  if (prefix && prefix.mod === '^~') return prefix.label;
+  const regex = all.find((l) => (l.mod === '~' || l.mod === '~*') && new RegExp(l.path, l.mod === '~*' ? 'i' : '').test(uri));
+  if (regex) return regex.label;
+  return prefix ? prefix.label : null;
+}
+
+test('a website page whose address starts like a static path still reaches the website location (its own, stricter policy)', () => {
+  const website = locations().find((l) => l.path.startsWith('^/(?!(?:')).label;
+  for (const uri of ['/uploads-guide', '/fonts-and-colours', '/photos-tips', '/thumbnails-and-more', '/api-docs', '/health-check', '/static-shots', '/assets-list']) {
+    expect([uri, resolve(uri)]).toEqual([uri, website]);
+  }
+  // The static and proxied paths keep their own locations.
+  expect(resolve('/uploads/logos/logo.png')).toBe('^~ /uploads/');
+  expect(resolve('/fonts/Inter/400.woff2')).toBe('^~ /fonts/');
+  expect(resolve('/photos/1/2')).toBe('/photos');
+  expect(resolve('/api/public/settings')).toBe('/api');
+  expect(resolve('/site-media/p1.x/640')).toBe('^~ /site-media/');
+  // (A bare /uploads or /fonts, which nothing requests, gets nginx's 301 to
+  // the slash form of a proxied prefix location; checked in a stub run.)
 });
