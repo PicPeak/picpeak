@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { contrastRatio } from '../../../../utils/contrast';
+import { GALLERY_THEME_PRESETS } from '../../../../types/theme.types';
 import {
   FOLIO_PALETTE_COLORS,
   FOLIO_PALETTES,
@@ -83,6 +84,15 @@ describe('Folio palettes', () => {
     // The soft highlight (a chosen filter chip) and what is written on it.
     expect(contrastRatio(style['--ui-accent-on-soft'], colors.elevated)).toBeGreaterThanOrEqual(4.5);
     expect(style['--ui-accent-soft']).toBe(colors.elevated);
+  });
+
+  it('gives the Folio preset the paper palette itself, so the page around the layout matches', () => {
+    const preset = GALLERY_THEME_PRESETS.galleryFolio.config;
+    const paper = FOLIO_PALETTE_COLORS.paper;
+    expect({
+      background: preset.backgroundColor, surface: preset.surfaceColor, elevated: preset.elevatedColor,
+      border: preset.surfaceBorderColor, text: preset.textColor, muted: preset.mutedTextColor,
+    }).toEqual(paper);
   });
 
   it('writes the palette as the theme tokens the gallery reads', () => {

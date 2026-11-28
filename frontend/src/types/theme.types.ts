@@ -1,3 +1,5 @@
+import { FOLIO_PALETTE_COLORS } from '../components/gallery/layouts/folioSettings';
+
 // Gallery Layout Types
 export type GalleryLayoutType = 'grid' | 'masonry' | 'carousel' | 'timeline' | 'mosaic' | 'gallery-premium' | 'gallery-story' | 'gallery-folio';
 
@@ -489,15 +491,16 @@ export const GALLERY_THEME_PRESETS: Record<string, EventTheme> = {
     name: 'Gallery Folio (Beta)',
     description: 'Quiet, image-first client gallery with a photographic cover',
     config: {
-      primaryColor: '#24211d',
+      // The page around the layout (login, modals) in Folio's own paper.
+      primaryColor: FOLIO_PALETTE_COLORS.paper.text,
       accentColor: '#8a7356',
-      accentDarkColor: '#24211d',
-      backgroundColor: '#f4f1eb',
-      textColor: '#24211d',
-      surfaceColor: '#faf8f4',
-      elevatedColor: '#ebe6dc',
-      surfaceBorderColor: '#ddd6c8',
-      mutedTextColor: '#6a6359',
+      accentDarkColor: FOLIO_PALETTE_COLORS.paper.text,
+      backgroundColor: FOLIO_PALETTE_COLORS.paper.background,
+      textColor: FOLIO_PALETTE_COLORS.paper.text,
+      surfaceColor: FOLIO_PALETTE_COLORS.paper.surface,
+      elevatedColor: FOLIO_PALETTE_COLORS.paper.elevated,
+      surfaceBorderColor: FOLIO_PALETTE_COLORS.paper.border,
+      mutedTextColor: FOLIO_PALETTE_COLORS.paper.muted,
       colorMode: 'light',
       fontFamily: "'Inter', sans-serif",
       headingFontFamily: "'Playfair Display', serif",
