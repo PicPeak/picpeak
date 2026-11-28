@@ -416,7 +416,8 @@ function targetHref(target, ctx) {
   case 'booking':
     return ctx.booking && ctx.booking.enabled ? ctx.booking.url : null;
   case 'legal':
-    return `/${target.slug}`;
+    // Its own address, or the external one the CMS page leads to.
+    return ctx.legalPages?.[target.slug]?.href || `/${target.slug}`;
   case 'url':
     return target.url;
   default:
@@ -779,7 +780,8 @@ function menuLabel(item, ctx) {
     const page = ctx.document.pages.find((p) => p.id === item.target.pageId);
     return page ? (page.navLabel || page.title || s.home) : '';
   }
-  if (item.target.kind === 'legal') return (ctx.legalLinks || []).find((l) => l.href === `/${item.target.slug}`)?.label || '';
+  // By slug, whether or not the footer shows the page.
+  if (item.target.kind === 'legal') return ctx.legalPages?.[item.target.slug]?.label || '';
   if (item.target.kind === 'booking') return s.book;
   return '';
 }
@@ -925,7 +927,7 @@ ${body}
  * Render one page of the document. `ctx`:
  *   document, page, preview, locale, branding, theme (resolved palette),
  *   fonts { body, heading }, photos, assets, events, covers, packages,
- *   booking { enabled, url }, legalLinks, baseUrl, robots, customCss,
+ *   booking { enabled, url }, legalLinks (footer), legalPages (by slug), baseUrl, robots, customCss,
  *   sanitizeCustomHtml(html) -> html
  */
 function renderPage(input) {

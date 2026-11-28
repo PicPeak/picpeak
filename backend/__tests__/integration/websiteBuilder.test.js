@@ -1894,6 +1894,21 @@ describe('legal and system pages in the website design', () => {
     expect((await service.resolvePublicPage('another-one')).html).toBe(page.html);
   });
 
+  test('a legal page in the menu shows with its name though the footer hides it, and leads to its external address', async () => {
+    await db('cms_pages').whereIn('slug', ['agb', 'datenschutz']).update({ show_in_footer: false });
+    const state = (await request(app).get('/api/admin/website').set(auth(adminId))).body;
+    const document = { ...state.document, menu: { items: [
+      { id: 'm1', label: '', target: { kind: 'legal', slug: 'agb' } },
+      { id: 'm2', label: '', target: { kind: 'legal', slug: 'datenschutz' } },
+    ] } };
+    const saved = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document, revision: state.draft.revision }).expect(200);
+    await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({ revision: saved.body.draft.revision }).expect(200);
+    const html = (await service.resolvePublicPage('about')).html;
+    const nav = html.match(/<nav class="pp-nav[^"]*" aria-label="Main"><ul>([\s\S]*?)<\/ul>/)[1];
+    expect(nav).toBe('<li><a href="/agb">Terms</a></li><li><a href="https://legal.example/privacy" rel="noopener noreferrer">Privacy Policy</a></li>');
+    await db('cms_pages').whereIn('slug', ['agb', 'datenschutz']).update({ show_in_footer: true });
+  });
+
   test('while the website is not live, legal and unknown addresses stay with the app', async () => {
     await setFeatureFlags(db, { websiteBuilder: false });
     cache.clearWebsiteCache();

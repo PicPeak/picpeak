@@ -516,18 +516,26 @@ async function bookingOptions() {
   return { flagOn, services: services.map((s) => ({ id: s.id, name: s.name })) };
 }
 
-async function legalLinks(locale) {
+/**
+ * The legal pages: `pages` by slug, each with its name and address (its
+ * external address when it has one), for a menu item or a link to it;
+ * `footer`, the ones shown in the footer, in their order.
+ */
+async function legalPages(locale) {
   const rows = await db('cms_pages').whereIn('slug', LEGAL_SLUGS);
   const bySlug = new Map(rows.map((r) => [r.slug, r]));
   const { safeUrl } = require('./document');
   const fallback = { impressum: 'Impressum', datenschutz: locale === 'de' ? 'Datenschutz' : 'Privacy Policy', agb: locale === 'de' ? 'AGB' : 'Terms & Conditions' };
-  return LEGAL_SLUGS.map((slug) => {
+  const pages = {};
+  const footer = [];
+  for (const slug of LEGAL_SLUGS) {
     const row = bySlug.get(slug);
-    if (!row || !(row.show_in_footer === true || row.show_in_footer === 1)) return null;
+    if (!row) continue;
     const external = (row.use_external_url === true || row.use_external_url === 1) ? safeUrl(row.external_url) : '';
-    const label = (locale === 'de' ? row.title_de : row.title_en) || fallback[slug];
-    return { href: external || `/${slug}`, label };
-  }).filter(Boolean);
+    pages[slug] = { href: external || `/${slug}`, label: (locale === 'de' ? row.title_de : row.title_en) || fallback[slug] };
+    if (row.show_in_footer === true || row.show_in_footer === 1) footer.push(pages[slug]);
+  }
+  return { pages, footer };
 }
 
 function robotsDirective(seo) {
@@ -564,7 +572,7 @@ async function buildContext(document, page, {
     media.loadEligibleEvents(refs.eventIds),
     withPackages ? loadPackages(refs.packageIds) : new Map(),
     bookingState(),
-    legalLinks(locale),
+    legalPages(locale),
     getFrontendBaseUrl().catch(() => ''),
   ]);
   // The live contact forms show the spam check; the preview never loads it.
@@ -587,7 +595,8 @@ async function buildContext(document, page, {
     covers,
     packages,
     booking,
-    legalLinks: legal,
+    legalLinks: legal.footer,
+    legalPages: legal.pages,
     captcha,
     baseUrl: baseUrl || '',
     robots: preview ? 'noindex' : robotsDirective(settings),

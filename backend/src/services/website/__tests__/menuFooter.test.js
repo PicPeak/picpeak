@@ -65,6 +65,15 @@ describe('the menu', () => {
     expect(nav).toBe('<li><a href="#b-form">Contact</a></li><li><a href="/faq">FAQ</a></li><li><a href="https://shop.example" rel="noopener noreferrer">Shop</a></li><li><a href="/datenschutz">Privacy</a></li>');
   });
 
+  test('a legal page in the menu keeps its name and link whether or not the footer shows it', () => {
+    const menu = { items: [{ id: 'm', label: '', target: { kind: 'legal', slug: 'datenschutz' } }, { id: 'n', label: '', target: { kind: 'legal', slug: 'agb' } }] };
+    const legalPages = { datenschutz: { label: 'Privacy Policy', href: 'https://legal.example/privacy' }, agb: { label: 'Terms', href: '/agb' } };
+    // Neither is in the footer's legal links (hidden there, or none at all).
+    const { header } = render({ pages: LEGACY_PAGES, menu }, { ctx: { legalLinks: [], legalPages } });
+    expect(header).toContain('<a href="https://legal.example/privacy" rel="noopener noreferrer">Privacy Policy</a>');
+    expect(header).toContain('<a href="/agb">Terms</a>');
+  });
+
   test('design: layout, style, sticky, colours and the phone menu', () => {
     const { header } = render({ pages: LEGACY_PAGES, menu: {
       layout: 'center', style: 'pill', sticky: false, mobile: 'panel', background: '#102030', text: '#FFFFFF', items: [{ id: 'm', target: { kind: 'page', pageId: 'home' } }],
