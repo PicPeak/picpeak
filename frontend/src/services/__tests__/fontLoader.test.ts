@@ -52,4 +52,33 @@ describe('font loader', () => {
     await loadFontForFamily("'Third Serif', serif");
     expect(faces()).toContain('font-weight:700');
   });
+
+  it('a weight replaced in another format (or removed) changes its @font-face instead of leaving the old file', async () => {
+    vi.mocked(fontsService.list).mockResolvedValueOnce([{ ...font('Fourth Serif'), weights: [400, 700], formats: { 400: 'woff2' as const, 700: 'woff2' as const } }]);
+    await loadFontForFamily("'Fourth Serif', serif");
+    expect(faces()).toContain('/fonts/Fourth-Serif/400.woff2');
+    vi.mocked(fontsService.list).mockResolvedValueOnce([{ ...font('Fourth Serif'), weights: [400], formats: { 400: 'ttf' as const } }]);
+    forgetFontsList();
+    await loadFontForFamily("'Fourth Serif', serif");
+    expect(faces()).toContain("/fonts/Fourth-Serif/400.ttf') format('truetype')");
+    expect(faces()).not.toContain('/fonts/Fourth-Serif/400.woff2');
+    expect(faces()).not.toContain('/fonts/Fourth-Serif/700.woff2');
+    expect(faces().match(/font-family:'Fourth Serif'/g)).toHaveLength(1);
+    // Deleted altogether: its face goes too.
+    vi.mocked(fontsService.list).mockResolvedValueOnce([]);
+    forgetFontsList();
+    await loadFontForFamily("'Fourth Serif', serif");
+    expect(faces()).not.toContain('Fourth Serif');
+  });
+
+  it('a family in use is compared with the list again once the list is old', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.mocked(fontsService.list).mockResolvedValueOnce([font('Fifth Serif')]);
+    await loadFontForFamily("'Fifth Serif', serif");
+    vi.setSystemTime(Date.now() + 6 * 60 * 1000);
+    vi.mocked(fontsService.list).mockResolvedValueOnce([{ ...font('Fifth Serif'), formats: { 400: 'woff' as const } }]);
+    await loadFontForFamily("'Fifth Serif', serif");
+    expect(faces()).toContain('/fonts/Fifth-Serif/400.woff');
+    expect(faces()).not.toContain('/fonts/Fifth-Serif/400.woff2');
+  });
 });

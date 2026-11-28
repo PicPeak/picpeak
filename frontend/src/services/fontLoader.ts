@@ -17,8 +17,10 @@ const FONT_STYLE_ID = 'self-hosted-fonts';
 
 let fontsListPromise: Promise<FontDefinition[]> | null = null;
 let fontsListFetchedAt = 0;
-// Weights with a @font-face on the page, per family.
-const injected = new Map<string, Set<number>>();
+// The @font-face on the page: per family, per weight, its source. The
+// style element is written from this, so a face whose file changed (another
+// format) or went away is replaced, not left pointing at a deleted file.
+const faces = new Map<string, Map<number, string>>();
 // Families already matched against the current list.
 const loaded = new Set<string>();
 
@@ -41,40 +43,50 @@ export function forgetFontsList(): void {
   loaded.clear();
 }
 
-function ensureFontFaceLoaded(family: string, weights: number[], formats?: FontDefinition['formats']): void {
-  const have = injected.get(family) || new Set<number>();
-  const missing = weights.filter((w) => !have.has(w));
-  if (!missing.length) return;
-  missing.forEach((w) => have.add(w));
-  injected.set(family, have);
-
+function writeFaces(): void {
   let styleEl = document.getElementById(FONT_STYLE_ID) as HTMLStyleElement | null;
   if (!styleEl) {
     styleEl = document.createElement('style');
     styleEl.id = FONT_STYLE_ID;
     document.head.appendChild(styleEl);
   }
+  const blocks: string[] = [];
+  faces.forEach((weights, family) => weights.forEach((src, w) => {
+    blocks.push(`@font-face{font-family:'${family}';font-style:normal;font-weight:${w};font-display:swap;src:${src};}`);
+  }));
+  styleEl.textContent = blocks.join('\n');
+}
 
+/** The family's faces as the list has them now: added, changed or removed weights. */
+function syncFontFaces(font: FontDefinition): void {
   // Folder name on disk = family name with hyphens (fontFaceSource), in the
   // weight's own format: an uploaded font may be WOFF or TTF.
-  const blocks = missing.map(
-    (w) => `@font-face{font-family:'${family}';font-style:normal;font-weight:${w};font-display:swap;src:${fontFaceSource(family, w, formats)};}`
-  );
-  styleEl.textContent += '\n' + blocks.join('\n');
+  const next = new Map(font.weights.map((w) => [w, fontFaceSource(font.family, w, font.formats)] as [number, string]));
+  const current = faces.get(font.family);
+  const same = current && current.size === next.size && [...next].every(([w, src]) => current.get(w) === src);
+  if (same) return;
+  faces.set(font.family, next);
+  writeFaces();
 }
 
 const findFamily = (fonts: FontDefinition[], family: string) => fonts.find((f) => f.family.toLowerCase() === family.toLowerCase());
 
 export async function loadFontForFamily(cssFontFamily: string | undefined | null): Promise<void> {
   const family = extractFamilyName(cssFontFamily);
-  if (!family || loaded.has(family)) return;
+  // A family already matched is compared again once the list is old.
+  if (!family || (loaded.has(family) && Date.now() < fontsListFetchedAt + FONTS_LIST_TTL_MS)) return;
   let match = findFamily(await getFontsList(), family);
   if (!match && Date.now() >= fontsListFetchedAt + MISS_RETRY_MS) {
     // Perhaps uploaded since the list was fetched.
     fontsListFetchedAt = 0;
     match = findFamily(await getFontsList(), family);
   }
-  if (!match) return; // unknown family: the browser falls back to the CSS generic
+  if (!match) {
+    // Unknown (or deleted since): the browser falls back to the CSS generic.
+    loaded.delete(family);
+    if (faces.delete(family)) writeFaces();
+    return;
+  }
   loaded.add(family);
-  ensureFontFaceLoaded(match.family, match.weights, match.formats);
+  syncFontFaces(match);
 }
