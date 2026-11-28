@@ -241,7 +241,7 @@ async function collectFiles(includePhotos, requiredReferences) {
   if (getStorage().kind() !== 's3') return recoveryFiles.localPrintInventory(db, acc, key => dirs.some(root => key.startsWith(`${root}/`)));
   const remote = (await recoveryFiles.adapterInventory(db, dirs, undefined, requiredReferences))
     .filter(file => !file.relativePath.startsWith('fonts/') || portableFontFile(file.relativePath, file.size));
-  return [...acc.filter(file => !recoveryFiles.managedKey(file.rel.split(path.sep).join('/'))),
+  return [...recoveryFiles.localBesideStore(acc, remote, file => file.rel.split(path.sep).join('/')),
     ...remote.map(file => ({ ...file, rel: file.relativePath }))];
 }
 

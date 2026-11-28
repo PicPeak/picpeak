@@ -54,6 +54,20 @@ function managedKey(key) {
   return MANAGED_ROOTS.some(root => under(key, root));
 }
 
+/**
+ * The local files that stay in an inventory beside the object store's: what
+ * is not under a managed root, and fonts on this disk the store does not
+ * have (placed there before uploads went to the store, or by hand; listed
+ * and served all the same, fontsService), as the font list merges them.
+ */
+function localBesideStore(localFiles, remote, keyOf) {
+  const inStore = new Set(remote.map(file => file.relativePath));
+  return localFiles.filter((file) => {
+    const key = keyOf(file);
+    return !managedKey(key) || (under(key, 'fonts') && !inStore.has(key));
+  });
+}
+
 function remoteDestination(key) {
   return managedKey(key) && getStorage().kind() === 's3';
 }
@@ -370,6 +384,6 @@ async function materialize(files, directory, maxBytes = DEFAULT_MAX_BYTES, refer
   return output;
 }
 
-module.exports = { MANAGED_ROOTS, DEFAULT_MAX_BYTES, REFERENCES_SUFFIX, validKey, managedKey, remoteDestination, objectOptions,
+module.exports = { MANAGED_ROOTS, DEFAULT_MAX_BYTES, REFERENCES_SUFFIX, validKey, managedKey, localBesideStore, remoteDestination, objectOptions,
   printTemporaryKey, discardedPrintFile, retainedPrintKey, localPrintInventory,
   restoreObjectOptions, selectedManifestFiles, adapterInventory, requiredKeys, captureStream, captureAdapter, verifyAdapter, materialize };

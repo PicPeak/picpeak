@@ -818,8 +818,9 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
   if (getStorage().kind() !== 's3') return recoveryFiles.localPrintInventory(db, files, selected);
   const remote = await recoveryFiles.adapterInventory(db, targets.map(t => t.path), selected, config.recovery_reference_keys);
   // Managed rows are served by S3, so a leftover local file is not a backup
-  // substitute. The remaining local estate includes CRM PDFs/static assets.
-  return [...files.filter(file => !recoveryFiles.managedKey(file.relativePath.split(path.sep).join('/'))), ...remote];
+  // substitute. The remaining local estate includes CRM PDFs/static assets,
+  // and fonts only on this disk (recoveryFiles.localBesideStore).
+  return [...recoveryFiles.localBesideStore(files, remote, file => file.relativePath.split(path.sep).join('/')), ...remote];
 }
 
 // A run that fails before its manifest is written leaves no restore point,

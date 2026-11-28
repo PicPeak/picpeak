@@ -67,3 +67,37 @@ test('the import takes font files and a family\'s meta.json into fonts/, nothing
 test('kept in an object store, fonts belong to the recovery inventory', () => {
   expect(require('../../src/services/recoveryFiles').MANAGED_ROOTS).toContain('fonts');
 });
+
+describe('with an object store, fonts only on this disk still travel', () => {
+  // An S3-like store holding one uploaded font; another font only on this disk.
+  const { Readable } = require('stream');
+  const objects = new Map([['fonts/Bucket-Serif/400.woff2', Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(60, 7)])]]);
+  const store = {
+    kind: () => 's3',
+    list: async (prefix) => [...objects.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key, size: objects.get(key).length, mtime: new Date() })),
+    get: async (key) => Readable.from([objects.get(key)]),
+    stat: async (key) => (objects.has(key) ? { size: objects.get(key).length, mtime: new Date() } : null),
+    exists: async (key) => objects.has(key),
+  };
+  beforeAll(() => {
+    const dir = path.join(process.env.STORAGE_PATH, 'fonts', 'Disk-Only');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, '700.woff2'), Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(60, 9)]));
+    require('../../src/services/storage').setStorageForTesting(store);
+  });
+  afterAll(() => require('../../src/services/storage').resetStorage());
+
+  const keysOf = (files) => files.map((f) => String(f.relativePath || f.rel).split(path.sep).join('/'));
+
+  test('the file backup inventory has the disk-only font beside the stored one', async () => {
+    const backupService = require('../../src/services/backupService');
+    const keys = keysOf(await backupService.getFilesToBackup({}));
+    expect(keys).toEqual(expect.arrayContaining(['fonts/Disk-Only/700.woff2', 'fonts/Bucket-Serif/400.woff2']));
+  });
+
+  test('the export collects the disk-only font beside the stored one', async () => {
+    const { collectFiles } = require('../../src/services/picpeakExportService');
+    const keys = keysOf(await collectFiles(false, []));
+    expect(keys).toEqual(expect.arrayContaining(['fonts/Disk-Only/700.woff2', 'fonts/Bucket-Serif/400.woff2']));
+  });
+});
