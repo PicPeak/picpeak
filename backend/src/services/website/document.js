@@ -291,7 +291,9 @@ const BLOCK_FIELDS = {
       // rendered as (safe by construction), so the page does not change.
       body: html ? rich(b.body, MAX_RICH_TEXT, 'body') : richText(str(b.body, 10000, 'body')),
       // Two columns: the right one, when the editor filled it separately.
-      bodyRight: html && b.variant === 'columns' ? rich(b.bodyRight, MAX_RICH_TEXT, 'bodyRight') : '',
+      // Kept in the other layouts too, so switching back brings it back;
+      // only the two-column layout shows it (renderer.js).
+      bodyRight: html ? rich(b.bodyRight, MAX_RICH_TEXT, 'bodyRight') : '',
       format: 'html',
     };
   },

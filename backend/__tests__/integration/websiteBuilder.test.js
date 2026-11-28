@@ -2263,3 +2263,36 @@ describe('site-wide switches take the settings permission and are logged', () =>
     expect(JSON.parse((await logged('font_deleted')).metadata)).toEqual({ family: 'Logged Serif' });
   });
 });
+
+describe('switching a block variant keeps what the other variant uses', () => {
+  const { normalizeDocument } = require('../../src/services/website/document');
+  const textBlock = (variant) => ({ id: 't1', type: 'text', variant, format: 'html', body: '<p>Left</p>', bodyRight: '<p>Right <script>x</script>column</p>' });
+  const page = (blocks) => ({ id: 'home', title: 'Home', slug: 'home', isHome: true, blocks });
+
+  test('a text block saved in one column keeps its right column, sanitised, for switching back', () => {
+    const { document } = normalizeDocument({ pages: [page([textBlock('left')])] });
+    const block = document.pages[0].blocks[0];
+    expect(block.bodyRight).toContain('Right');
+    expect(block.bodyRight).not.toContain('<script');
+    // Switching back to two columns shows it again.
+    const back = normalizeDocument({ pages: [page([{ ...block, variant: 'columns' }])] }).document.pages[0].blocks[0];
+    expect(back.bodyRight).toBe(block.bodyRight);
+  });
+
+  test('the right column shows only in the two-column layout', async () => {
+    await setFeatureFlags(db, { websiteBuilder: true });
+    const html = async (variant) => (await request(app).post('/api/admin/website/preview').set(auth(adminId))
+      .send({ document: { pages: [page([textBlock(variant)])] }, pageId: 'home' })).body.html;
+    expect(await html('columns')).toContain('Right');
+    expect(await html('left')).not.toContain('Right');
+  });
+
+  test('hero and call-to-action keep every field across their variants', () => {
+    const hero = { id: 'h1', type: 'hero', heading: 'Hi', subheading: 'Sub', buttonLabel: 'Go', buttonUrl: 'https://x.example/' };
+    const cta = { id: 'c1', type: 'cta', heading: 'Book', text: '<p>Now</p>', buttons: [{ label: 'Go', target: { kind: 'url', url: 'https://x.example/' } }] };
+    const [splitHero, splitCta] = normalizeDocument({ pages: [page([{ ...hero, variant: 'split' }, { ...cta, variant: 'split' }])] }).document.pages[0].blocks;
+    const [minimalHero, centeredCta] = normalizeDocument({ pages: [page([{ ...hero, variant: 'minimal' }, { ...cta, variant: 'centered' }])] }).document.pages[0].blocks;
+    expect({ ...splitHero, variant: null }).toEqual({ ...minimalHero, variant: null });
+    expect({ ...splitCta, variant: null }).toEqual({ ...centeredCta, variant: null });
+  });
+});
