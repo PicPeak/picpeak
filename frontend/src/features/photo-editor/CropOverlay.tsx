@@ -28,10 +28,14 @@ export function dragCrop(start: CropRect, handle: Handle, dx: number, dy: number
   if (handle.includes('s')) { h = clamp(h + dy, MIN_CROP, 1 - y); }
   if (aspect) {
     // Width leads on a side handle that moves it, height otherwise; the
-    // other follows and the box is cut back to fit the frame.
+    // other follows. The box is cut back to the room the frame leaves on
+    // the side it grows to, measured from the edges that stay, and only then
+    // placed against them: placed first, it could start outside the frame.
     if (handle === 'n' || handle === 's') w = h * aspect; else h = w / aspect;
-    if (x + w > 1) { w = 1 - x; h = w / aspect; }
-    if (y + h > 1) { h = 1 - y; w = h * aspect; }
+    const roomW = handle.includes('w') ? right : 1 - x;
+    const roomH = handle.includes('n') ? bottom : 1 - y;
+    if (w > roomW) { w = roomW; h = w / aspect; }
+    if (h > roomH) { h = roomH; w = h * aspect; }
     if (handle.includes('w')) x = right - w;
     if (handle.includes('n')) y = bottom - h;
   }

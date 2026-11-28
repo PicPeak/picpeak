@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (_k: string, fallback?: string) => fallback ?? _k }) }));
 
-import { CropOverlay } from '../CropOverlay';
+import { CropOverlay, dragCrop } from '../CropOverlay';
 
 const setup = () => {
   const onChange = vi.fn();
@@ -46,4 +46,27 @@ describe('CropOverlay after a straighten without a crop', () => {
     expect(resized.w).toBeCloseTo(0.7);
     expect(resized.h).toBeCloseTo(0.7);
   });
+});
+
+describe('dragCrop with an aspect, from a corner', () => {
+  const start = { x: 0.4, y: 0.1, w: 0.4, h: 0.4 };
+  const edges = (r: { x: number; y: number; w: number; h: number }) => ({ left: r.x, top: r.y, right: r.x + r.w, bottom: r.y + r.h });
+  const cases: Array<[string, number, string[]]> = [
+    // handle, dx, the edges that stay where they were
+    ['nw', -0.3, ['right', 'bottom']],
+    ['ne', 0.3, ['left', 'bottom']],
+    ['sw', -0.3, ['right', 'top']],
+    ['se', 0.3, ['left', 'top']],
+  ];
+  for (const [handle, dx, fixed] of cases) {
+    it(`keeps the opposite corner and the frame from ${handle}`, () => {
+      const out = dragCrop(start, handle as any, dx, 0, 1);
+      const before = edges(start);
+      const after = edges(out);
+      for (const edge of fixed) expect((after as any)[edge]).toBeCloseTo((before as any)[edge]);
+      expect(out.w / out.h).toBeCloseTo(1);
+      expect(Math.min(out.x, out.y)).toBeGreaterThanOrEqual(0);
+      expect(Math.max(after.right, after.bottom)).toBeLessThanOrEqual(1 + 1e-9);
+    });
+  }
 });
