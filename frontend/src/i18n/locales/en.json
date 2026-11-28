@@ -1854,7 +1854,8 @@
       "like": "Like",
       "unlike": "Unlike",
       "selectPhoto": "Select {{name}}",
-      "liked": "Liked"
+      "liked": "Liked",
+      "collage": "Collage"
     },
     "neutralLabel": {
       "numbered": "Photo {{position}} of {{total}}",
@@ -1956,7 +1957,9 @@
       "zoomOut": "Zoom out",
       "fitToScreen": "Fit to screen",
       "playSlideshow": "Play slideshow",
-      "pauseSlideshow": "Pause slideshow"
+      "pauseSlideshow": "Pause slideshow",
+      "previousPhoto": "Previous photo",
+      "nextPhoto": "Next photo"
     },
     "video": {
       "play": "Play",
@@ -1965,7 +1968,8 @@
       "unmute": "Unmute",
       "fullscreen": "Fullscreen",
       "exitFullscreen": "Exit fullscreen"
-    }
+    },
+    "eventLogo": "Event logo"
   },
   "categories": {
     "title": "Photo Categories",
@@ -4429,7 +4433,8 @@
     "catalogedMedia": "Catalogued media",
     "storageUnavailable": "unavailable",
     "storageNoMeasurement": "no measurement available",
-    "loadFailed": "Could not load the analytics"
+    "loadFailed": "Could not load the analytics",
+    "dashboardFrameTitle": "Analytics dashboard"
   },
   "branding": {
     "title": "Branding & Themes",
@@ -6299,7 +6304,8 @@
       "htmlView": "HTML view",
       "textView": "Text view"
     },
-    "fromNamePlaceholder": "Photo Sharing"
+    "fromNamePlaceholder": "Photo Sharing",
+    "subjectPlaceholder": "Email subject"
   },
   "cms": {
     "title": "CMS Pages",
@@ -7458,7 +7464,10 @@
     "panelTitleWithCount_one": "Photo feedback ({{count}} comment)",
     "panelTitleWithCount_other": "Photo feedback ({{count}} comments)",
     "moderationError": "Failed to moderate feedback",
-    "deleteError": "Failed to delete feedback"
+    "deleteError": "Failed to delete feedback",
+    "sectionTitle": "Feedback & Comments",
+    "favorites": "Favorites",
+    "avgRatingShort": "Avg rating"
   },
   "filter": {
     "feedbackFilters": "Feedback Filters",
@@ -10584,7 +10593,9 @@
       "offeredNotInTotal": "Not booked",
       "book": "Book",
       "removeBooking": "Remove booking",
-      "bookedInTotal": "Booked"
+      "bookedInTotal": "Booked",
+      "moveUp": "Move up",
+      "moveDown": "Move down"
     },
     "customerPicker": {
       "search": "Search customer by email or company…"

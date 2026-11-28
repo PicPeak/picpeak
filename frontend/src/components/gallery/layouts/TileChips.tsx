@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next';
 
 /** The "Collage" chip on a collage tile, bottom-left unless a layout puts it bottom-right. */
 export function CollageChip({ corner = 'left' }: { corner?: 'left' | 'right' }) {
+  const { t } = useTranslation();
   return (
     <div className={corner === 'right' ? 'absolute bottom-2 right-2' : 'absolute bottom-2 left-2'}>
-      <span className="px-2 py-1 bg-black/60 text-white text-xs rounded">Collage</span>
+      <span className="px-2 py-1 bg-black/60 text-white text-xs rounded">{t('gallery.tile.collage', 'Collage')}</span>
     </div>
   );
 }

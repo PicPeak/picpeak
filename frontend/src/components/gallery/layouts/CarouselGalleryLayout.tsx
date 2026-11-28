@@ -135,7 +135,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           <button
             onClick={goToPrevious}
             className="p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
-            aria-label={t('embed.previous', 'Previous photo')}
+            aria-label={t('gallery.viewer.previousPhoto', 'Previous photo')}
           >
             <ChevronLeft className="w-6 h-6" />
           </button>
@@ -143,7 +143,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           <button
             onClick={goToNext}
             className="p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
-            aria-label={t('embed.next', 'Next photo')}
+            aria-label={t('gallery.viewer.nextPhoto', 'Next photo')}
           >
             <ChevronRight className="w-6 h-6" />
           </button>

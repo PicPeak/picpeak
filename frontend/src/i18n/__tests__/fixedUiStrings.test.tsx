@@ -7,7 +7,7 @@ import i18n from '../config';
 import { SkipLink } from '../../components/common/SkipLink';
 import { Button } from '../../components/common/Button';
 import { CMSContentBlock } from '../../components/common/CMSContentBlock';
-import { LikedChip } from '../../components/gallery/layouts/TileChips';
+import { CollageChip, LikedChip } from '../../components/gallery/layouts/TileChips';
 import { EmailPreviewModal } from '../../components/admin/EmailPreviewModal';
 
 vi.mock('../../hooks/usePublicSettings', () => ({
@@ -41,7 +41,14 @@ describe('fixed UI strings go through i18n', () => {
     );
     expect(screen.getByText('Zum Hauptinhalt springen')).toBeInTheDocument();
     expect(screen.getByLabelText('Wird geladen...')).toBeInTheDocument();
-    expect(screen.getByTitle('Gefällt mir')).toBeInTheDocument();
+    // The state, not the "Gefällt mir" action label of the like button.
+    expect(screen.getByTitle('Mit „Gefällt mir“ markiert')).toBeInTheDocument();
+  });
+
+  it('labels the collage chip in the gallery language', async () => {
+    await i18n.changeLanguage('pt');
+    render(<CollageChip />);
+    expect(screen.getByText('Colagem')).toBeInTheDocument();
   });
 
   it('translates the email preview modal chrome', async () => {

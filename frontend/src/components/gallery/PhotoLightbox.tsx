@@ -1266,7 +1266,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         onClick={goToPrevious}
         hidden={annotating}
         className={`absolute left-4 ${navArrowPlacement.className} p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-20`}
-        aria-label={t('embed.previous', 'Previous photo')}
+        aria-label={t('gallery.viewer.previousPhoto', 'Previous photo')}
         style={navArrowPlacement.style}
       >
         <ChevronLeft className="w-6 h-6 text-white" />
@@ -1277,7 +1277,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           onClick={goToNext}
           hidden={annotating}
           className={`absolute ${navArrowPlacement.className} p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-30`}
-          aria-label={t('embed.next', 'Next photo')}
+          aria-label={t('gallery.viewer.nextPhoto', 'Next photo')}
           style={{ ...navArrowPlacement.style, right: isDesktopFeedback ? `${desktopFeedbackWidth + 16}px` : '1rem' }}
         >
           <ChevronRight className="w-6 h-6 text-white" />

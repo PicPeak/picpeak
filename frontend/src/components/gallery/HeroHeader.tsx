@@ -165,7 +165,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                     buildResourceUrl(eventLogo) :
                     '/picpeak-logo-transparent.png'
                   }
-                  alt={t('slideshow.watermarkSource.event', 'Event logo')}
+                  alt={t('gallery.eventLogo', 'Event logo')}
                   className={`${getLogoSizeClasses(heroLogoSize)} mx-auto`}
                   style={{
                     filter: eventLogo
@@ -192,7 +192,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                     buildResourceUrl(eventLogo) :
                     '/picpeak-logo-transparent.png'
                   }
-                  alt={t('slideshow.watermarkSource.event', 'Event logo')}
+                  alt={t('gallery.eventLogo', 'Event logo')}
                   className={`${getLogoSizeClasses(heroLogoSize)} mx-auto`}
                   style={{
                     filter: eventLogo
@@ -229,7 +229,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                     buildResourceUrl(eventLogo) :
                     '/picpeak-logo-transparent.png'
                   }
-                  alt={t('slideshow.watermarkSource.event', 'Event logo')}
+                  alt={t('gallery.eventLogo', 'Event logo')}
                   className={`${getLogoSizeClasses(heroLogoSize)} mx-auto`}
                   style={{
                     filter: eventLogo

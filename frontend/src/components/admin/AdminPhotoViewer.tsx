@@ -895,7 +895,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
             <div className="mt-6 pt-6 border-t border-neutral-700">
               <h4 className="text-white font-medium mb-4 flex items-center gap-2">
                 <MessageSquare className="w-4 h-4" />
-                Feedback & Comments
+                {t('feedback.sectionTitle', 'Feedback & Comments')}
               </h4>
               
               {/* Feedback Stats */}
@@ -906,7 +906,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                       <Star className="w-4 h-4" fill="currentColor" />
                       <span className="text-white font-medium">{Number(averageRating).toFixed(1)}</span>
                     </div>
-                    <p className="text-xs text-neutral-400">{t('feedback.avgRating', 'Average Rating')}</p>
+                    <p className="text-xs text-neutral-400">{t('feedback.avgRatingShort', 'Avg rating')}</p>
                   </div>
                 )}
                 
@@ -916,7 +916,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                       <Heart className="w-4 h-4" fill="currentColor" />
                       <span className="text-white font-medium">{likeCount}</span>
                     </div>
-                    <p className="text-xs text-neutral-400">Likes</p>
+                    <p className="text-xs text-neutral-400">{t('feedback.likes', 'Likes')}</p>
                   </div>
                 )}
                 
@@ -926,7 +926,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                       <Star className="w-4 h-4" />
                       <span className="text-white font-medium">{favoriteCount}</span>
                     </div>
-                    <p className="text-xs text-neutral-400">Favorites</p>
+                    <p className="text-xs text-neutral-400">{t('feedback.favorites', 'Favorites')}</p>
                   </div>
                 )}
                 
@@ -936,7 +936,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                       <MessageSquare className="w-4 h-4" />
                       <span className="text-white font-medium">{comments.length}</span>
                     </div>
-                    <p className="text-xs text-neutral-400">Comments</p>
+                    <p className="text-xs text-neutral-400">{t('feedback.comments', 'Comments')}</p>
                   </div>
                 )}
               </div>

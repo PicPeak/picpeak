@@ -718,7 +718,7 @@ export const BrandingPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <img 
                       src={brandingSettings.favicon_url.startsWith('http') ? brandingSettings.favicon_url : buildResourceUrl(brandingSettings.favicon_url)} 
-                      alt={t('branding.currentFavicon', 'Current favicon')} 
+                      alt="" 
                       className="w-8 h-8"
                     />
                     <span className="text-sm text-soft">{t('branding.currentFavicon')}</span>
@@ -768,7 +768,7 @@ export const BrandingPage: React.FC = () => {
                     <div className="relative">
                       <img 
                         src={brandingSettings.logo_url.startsWith('http') ? brandingSettings.logo_url : buildResourceUrl(brandingSettings.logo_url)} 
-                        alt="Logo"
+                        alt={t('branding.logo', 'Logo')}
                         className="h-16 object-contain bg-inset rounded p-2"
                       />
                       <button
@@ -1077,7 +1077,7 @@ export const BrandingPage: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <img 
                         src={brandingSettings.watermark_logo_url.startsWith('http') ? brandingSettings.watermark_logo_url : buildResourceUrl(brandingSettings.watermark_logo_url)} 
-                        alt="Current watermark" 
+                        alt="" 
                         className="h-16 w-auto object-contain bg-inset p-2 rounded"
                       />
                       <span className="text-sm text-soft">{t('branding.currentWatermark')}</span>

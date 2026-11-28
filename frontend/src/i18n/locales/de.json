@@ -2587,7 +2587,8 @@
       "like": "Gefällt mir",
       "unlike": "Gefällt mir zurücknehmen",
       "selectPhoto": "{{name}} auswählen",
-      "liked": "Gefällt mir"
+      "liked": "Mit „Gefällt mir“ markiert",
+      "collage": "Collage"
     },
     "neutralLabel": {
       "numbered": "Foto {{position}} von {{total}}",
@@ -2689,16 +2690,19 @@
       "zoomOut": "Verkleinern",
       "fitToScreen": "An Bildschirm anpassen",
       "playSlideshow": "Diashow abspielen",
-      "pauseSlideshow": "Diashow anhalten"
+      "pauseSlideshow": "Diashow anhalten",
+      "previousPhoto": "Vorheriges Foto",
+      "nextPhoto": "Nächstes Foto"
     },
     "video": {
       "play": "Abspielen",
-      "pause": "Pausieren",
-      "mute": "Ton aus",
-      "unmute": "Ton an",
+      "pause": "Anhalten",
+      "mute": "Stummschalten",
+      "unmute": "Ton einschalten",
       "fullscreen": "Vollbild",
       "exitFullscreen": "Vollbild beenden"
-    }
+    },
+    "eventLogo": "Event-Logo"
   },
   "categories": {
     "title": "Fotokategorien",
@@ -5615,7 +5619,7 @@
       "galleryTab": "Galerie"
     },
     "customCssPlaceholder": "/* Eigenes CSS hier einfügen */",
-    "footerTextPlaceholder": "© {{year}} Deine Firma. Alle Rechte vorbehalten."
+    "footerTextPlaceholder": "© {{year}} Ihre Firma. Alle Rechte vorbehalten."
   },
   "admin": {
     "title": "Admin-Panel",
@@ -6760,7 +6764,8 @@
     "catalogedMedia": "Katalogisierte Medien",
     "storageUnavailable": "nicht verfügbar",
     "storageNoMeasurement": "keine Messung verfügbar",
-    "loadFailed": "Die Analysedaten konnten nicht geladen werden"
+    "loadFailed": "Die Analysedaten konnten nicht geladen werden",
+    "dashboardFrameTitle": "Analytics-Dashboard"
   },
   "email": {
     "title": "E-Mail-Konfiguration",
@@ -6982,7 +6987,8 @@
       "htmlView": "HTML-Ansicht",
       "textView": "Textansicht"
     },
-    "fromNamePlaceholder": "Foto-Sharing"
+    "fromNamePlaceholder": "Foto-Sharing",
+    "subjectPlaceholder": "E-Mail-Betreff"
   },
   "cms": {
     "title": "CMS-Seiten",
@@ -7402,7 +7408,10 @@
     "panelTitleWithCount_one": "Feedback zum Foto ({{count}} Kommentar)",
     "panelTitleWithCount_other": "Feedback zum Foto ({{count}} Kommentare)",
     "moderationError": "Feedback konnte nicht moderiert werden",
-    "deleteError": "Feedback konnte nicht gelöscht werden"
+    "deleteError": "Feedback konnte nicht gelöscht werden",
+    "sectionTitle": "Feedback & Kommentare",
+    "favorites": "Favoriten",
+    "avgRatingShort": "Ø Bewertung"
   },
   "filter": {
     "feedbackFilters": "Feedback-Filter",
@@ -10549,7 +10558,9 @@
       "offeredNotInTotal": "Nicht gebucht",
       "book": "Buchen",
       "removeBooking": "Buchung aufheben",
-      "bookedInTotal": "Gebucht"
+      "bookedInTotal": "Gebucht",
+      "moveUp": "Nach oben",
+      "moveDown": "Nach unten"
     },
     "customerPicker": {
       "search": "Kunde nach E-Mail oder Firma suchen…"

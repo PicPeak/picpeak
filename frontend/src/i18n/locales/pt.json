@@ -1863,7 +1863,8 @@
       "like": "Curtir",
       "unlike": "Descurtir",
       "selectPhoto": "Selecionar {{name}}",
-      "liked": "Curtida"
+      "liked": "Curtida",
+      "collage": "Colagem"
     },
     "neutralLabel": {
       "numbered": "Foto {{position}} de {{total}}",
@@ -1968,7 +1969,9 @@
       "zoomOut": "Diminuir zoom",
       "fitToScreen": "Ajustar à tela",
       "playSlideshow": "Iniciar apresentação",
-      "pauseSlideshow": "Pausar apresentação"
+      "pauseSlideshow": "Pausar apresentação",
+      "previousPhoto": "Foto anterior",
+      "nextPhoto": "Próxima foto"
     },
     "video": {
       "play": "Reproduzir",
@@ -1978,6 +1981,7 @@
       "fullscreen": "Tela cheia",
       "exitFullscreen": "Sair da tela cheia"
     },
+    "eventLogo": "Logotipo do evento",
     "expiresIn_many": "A galeria expira em {{count}} dias",
     "downloading_many": "Baixando {{count}} fotos…",
     "photosSelected_many": "{{count}} fotos selecionadas",
@@ -4468,7 +4472,8 @@
     "catalogedMedia": "Mídia catalogada",
     "storageUnavailable": "indisponível",
     "storageNoMeasurement": "sem medição disponível",
-    "loadFailed": "Não foi possível carregar as estatísticas"
+    "loadFailed": "Não foi possível carregar as estatísticas",
+    "dashboardFrameTitle": "Painel de estatísticas"
   },
   "branding": {
     "title": "Identidade visual e temas",
@@ -6359,7 +6364,8 @@
       "htmlView": "Visualização HTML",
       "textView": "Visualização em texto"
     },
-    "fromNamePlaceholder": "Compartilhamento de fotos"
+    "fromNamePlaceholder": "Compartilhamento de fotos",
+    "subjectPlaceholder": "Assunto do e-mail"
   },
   "cms": {
     "title": "Páginas CMS",
@@ -7519,6 +7525,9 @@
     "panelTitleWithCount_other": "Feedback da foto ({{count}} comentários)",
     "moderationError": "Falha ao moderar o feedback",
     "deleteError": "Falha ao excluir o feedback",
+    "sectionTitle": "Feedback e comentários",
+    "favorites": "Favoritos",
+    "avgRatingShort": "Média",
     "totalRatings_many": "{{count}} avaliações",
     "pendingModeration_many": "{{count}} pendentes",
     "rateStar_many": "Avaliar {{count}} estrelas",
@@ -10664,7 +10673,9 @@
       "offeredNotInTotal": "Não contratado",
       "book": "Contratar",
       "removeBooking": "Remover contratação",
-      "bookedInTotal": "Contratado"
+      "bookedInTotal": "Contratado",
+      "moveUp": "Mover para cima",
+      "moveDown": "Mover para baixo"
     },
     "customerPicker": {
       "search": "Pesquisar cliente por e-mail ou empresa…"

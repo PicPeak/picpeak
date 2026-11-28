@@ -1160,7 +1160,7 @@ export const EmailConfigPage: React.FC = () => {
                     type="text"
                     value={currentTranslation.subject || ''}
                     onChange={(e) => handleTranslationChange('subject', e.target.value)}
-                    placeholder="Email subject"
+                    placeholder={t('email.subjectPlaceholder', 'Email subject')}
                   />
                 </div>
 
