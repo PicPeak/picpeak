@@ -154,14 +154,6 @@ async function createVideoAsset(file, adminId) {
   }
 }
 
-async function removeKeys(keys) {
-  const storage = getStorage();
-  for (const key of Object.values(keys)) {
-    // eslint-disable-next-line no-await-in-loop -- a handful of keys
-    await storage.delete(key).catch(() => {});
-  }
-}
-
 /** Every file stored under an upload's own folder, website/<publicId>/. */
 async function removeUploadFiles(publicId) {
   const storage = getStorage();
@@ -188,7 +180,7 @@ async function deleteAsset(publicId) {
     throw err;
   }
   await db('website_assets').where({ id: row.id }).del();
-  await removeKeys(parseRenditionKeys(row));
+  await removeUploadFiles(row.public_id);
 }
 
 module.exports = { listAssets, createImageAsset, createVideoAsset, deleteAsset, publicAsset };

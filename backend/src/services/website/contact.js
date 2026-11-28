@@ -135,8 +135,6 @@ async function storeSubmission(values, page) {
 // At most one confirmation a day to an address, whatever the senders do.
 const CONFIRMATION_WINDOW_MS = DAY_MS;
 
-// email_queue.created_at comes back as a Date (PostgreSQL) or epoch ms
-// (SQLite), so it is read with toMillis rather than compared in SQL.
 // An address as the cap counts it: trimmed and in one letter case (the whole
 // address; a +tag stays, it is part of what the visitor typed).
 const confirmationKey = (email) => String(email).trim().toLowerCase();
@@ -148,7 +146,6 @@ const confirmationKey = (email) => String(email).trim().toLowerCase();
  * 24 hours across midnight.
  */
 async function reserveConfirmation(key) {
-  if (!(await db.schema.hasTable('website_contact_confirmations'))) return true;
   const now = new Date();
   const claim = crypto.randomUUID();
   const day = now.toISOString().slice(0, 10);
@@ -162,6 +159,8 @@ async function reserveConfirmation(key) {
   return Boolean(row && row.claim === claim);
 }
 
+// email_queue.created_at comes back as a Date (PostgreSQL) or epoch ms
+// (SQLite), so it is read with toMillis rather than compared in SQL.
 async function confirmedRecently(key) {
   const { toMillis } = require('../../utils/queueTimestamps');
   const since = Date.now() - CONFIRMATION_WINDOW_MS;
