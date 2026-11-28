@@ -61,6 +61,20 @@ interface PreviewFrameProps {
   loading?: boolean;
 }
 
+/**
+ * A click in the preview selects its block. A link (or image map area) and a
+ * submit button would take the preview away, so only those are cancelled;
+ * a question's summary and the phone menu still open and close.
+ */
+export function onPreviewClick(event: MouseEvent, select: (blockId: string) => void): void {
+  // Not `instanceof Element`: the preview's nodes belong to the iframe's window.
+  const node = event.target as Element | null;
+  const target = node && typeof node.closest === 'function' ? node : null;
+  if (target?.closest('a[href], area[href], button[type="submit"], input[type="submit"], form button:not([type])')) event.preventDefault();
+  const id = target?.closest('[data-block-id]')?.getAttribute('data-block-id');
+  if (id) select(id);
+}
+
 export const PreviewFrame: React.FC<PreviewFrameProps> = ({ html, device, selectedBlockId, onSelectBlock, loading }) => {
   const { t } = useTranslation();
   const container = useRef<HTMLDivElement>(null);
@@ -95,13 +109,7 @@ export const PreviewFrame: React.FC<PreviewFrameProps> = ({ html, device, select
     const doc = frame.current?.contentDocument;
     if (!doc) return;
     if (scrollY.current) frame.current?.contentWindow?.scrollTo(0, scrollY.current);
-    doc.addEventListener('click', (event) => {
-      // Links and buttons in the preview would navigate the frame away.
-      event.preventDefault();
-      const target = (event.target as Element | null)?.closest?.('[data-block-id]');
-      const id = target?.getAttribute('data-block-id');
-      if (id) onSelect.current(id);
-    }, true);
+    doc.addEventListener('click', (event) => onPreviewClick(event, (id) => onSelect.current(id)), true);
     doc.addEventListener('submit', (event) => event.preventDefault(), true);
     frame.current?.contentWindow?.addEventListener('scroll', () => {
       scrollY.current = frame.current?.contentWindow?.scrollY || 0;
