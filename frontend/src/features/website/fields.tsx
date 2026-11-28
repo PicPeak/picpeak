@@ -323,7 +323,7 @@ export const VideoField: React.FC<{
 
 // A button on a picture tile: shown on hover or keyboard focus, and always
 // where there is no hovering (a touch screen).
-const tileButton = 'inline-flex w-6 h-6 items-center justify-center rounded-full bg-panel text-soft shadow opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(pointer:coarse)]:opacity-100 disabled:hidden';
+const tileButton = 'inline-flex w-6 h-6 items-center justify-center rounded-full bg-panel text-soft shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(pointer:coarse)]:opacity-100 disabled:hidden';
 
 /** An ordered list of images (grid, strip): add, remove, move earlier or later. */
 export const ImageListField: React.FC<{

@@ -43,7 +43,7 @@ const RowDetails: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <div ref={ref} className="border-t border-line p-3 space-y-3">{children}</div>;
 };
 
-const iconButton = 'inline-flex items-center justify-center w-7 h-7 rounded-md text-faint hover:text-body hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent';
+const iconButton = 'inline-flex items-center justify-center w-7 h-7 rounded-md text-faint hover:text-body hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-30 disabled:hover:bg-transparent';
 
 const Row: React.FC<RowProps> = ({ id, index, count, label, onMove, children, details, selected, readOnly }) => {
   const { t } = useTranslation();

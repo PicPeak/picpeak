@@ -79,6 +79,13 @@ describe('menu section', () => {
     expect(screen.queryByText(/the button is not shown/)).toBeNull();
   });
 
+  it('shows the interface\'s focus ring on the drag handle and the move buttons', () => {
+    open();
+    const buttons = [...screen.getAllByRole('button', { name: /^Move / })];
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const button of buttons) expect(button.className).toContain('focus-visible:ring-2');
+  });
+
   it('sets the design', () => {
     const { menu } = open();
     fireEvent.click(screen.getByRole('button', { name: 'Logo centred' }));
