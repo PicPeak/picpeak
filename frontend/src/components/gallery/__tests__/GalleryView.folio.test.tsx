@@ -137,6 +137,14 @@ describe('Gallery Folio in the gallery shell', () => {
     expect(shownIds()).toBe('4');
   });
 
+  it('keeps the folder strip under the shared lightbox', () => {
+    // Folio opens photos in the shared lightbox (z-50); the strip's raise
+    // above Story's fixed nav would leave its buttons on top of the viewer.
+    show();
+    const band = screen.getByRole('button', { name: 'gallery.openFolder' }).closest('.pointer-events-none') as HTMLElement;
+    expect(band).not.toHaveClass('z-[60]');
+  });
+
   it.each([true, false])('offers the gallery\'s categories above the photos (filter bar %s)', (filterBar) => {
     // Folio has no tabs or scenes of its own: the chips are its way to a category.
     show({ filterBar });

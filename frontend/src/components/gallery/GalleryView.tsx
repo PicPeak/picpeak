@@ -2249,7 +2249,10 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // With the selection bar (issue 1733) the band starts below that
           // nav in Story: the bar is wider than the gap the nav leaves, and on
           // a phone it would cover the nav's logout and favourites.
-          <div className={`relative z-[60] pointer-events-none max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 flex-wrap ${
+          // Folio has no fixed nav over the band and opens photos in the
+          // shared lightbox (z-50), so its band is not raised: raised, its
+          // buttons would sit on top of the open viewer.
+          <div className={`relative ${theme.galleryLayout === 'gallery-folio' ? '' : 'z-[60]'} pointer-events-none max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 flex-wrap ${
             selectionBarShown && theme.galleryLayout === 'gallery-story' ? 'pt-20' : ''
           }`}>
             {hasFolderNav && (
