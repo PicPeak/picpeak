@@ -169,7 +169,21 @@ const NEUTRALS = ['#ffffff', '#f5f5f4', '#e7e5e4', '#57534e', '#1c1917'];
  */
 export const BackgroundField: React.FC<{ block: Block; brandColors?: string[]; onChange: (next: Block) => void }> = ({ block, brandColors = [], onChange }) => {
   const { t } = useTranslation();
-  const swatches = [...new Set([...brandColors, ...NEUTRALS])];
+  // Two rows, the branding's colours and the neutrals it does not have:
+  // one wrapped line of both left a single swatch on a line of its own.
+  const neutrals = NEUTRALS.filter((colour) => !brandColors.includes(colour));
+  const swatches = [...brandColors, ...neutrals];
+  const swatchRow = (label: string, colours: string[]) => colours.length > 0 && (
+    <div role="group" aria-label={label} className="flex flex-wrap gap-1.5">
+      {colours.map((colour) => (
+        <button key={colour} type="button" onClick={() => onChange({ ...block, backgroundColor: colour })}
+          aria-label={t('website.background.useColour', 'Use colour {{colour}}', { colour }) as string}
+          aria-pressed={block.backgroundColor === colour}
+          className={`h-7 w-7 rounded-md border ${block.backgroundColor === colour ? 'ring-2 ring-accent ring-offset-1' : 'border-line-strong'}`}
+          style={{ backgroundColor: colour }} />
+      ))}
+    </div>
+  );
   const options: { value: Background; label: string }[] = [
     { value: 'default', label: t('website.background.default', 'Page') },
     { value: 'light', label: t('website.background.light', 'Light') },
@@ -184,15 +198,8 @@ export const BackgroundField: React.FC<{ block: Block; brandColors?: string[]; o
       <ChoiceField label={t('website.fields.background', 'Background')} value={block.background} options={options} onChange={choose} />
       {block.background === 'custom' && (
         <div className="space-y-3 rounded-lg border border-line p-3">
-          <div className="flex flex-wrap gap-1.5">
-            {swatches.map((colour) => (
-              <button key={colour} type="button" onClick={() => onChange({ ...block, backgroundColor: colour })}
-                aria-label={t('website.background.useColour', 'Use colour {{colour}}', { colour }) as string}
-                aria-pressed={block.backgroundColor === colour}
-                className={`h-7 w-7 rounded-md border ${block.backgroundColor === colour ? 'ring-2 ring-accent ring-offset-1' : 'border-line-strong'}`}
-                style={{ backgroundColor: colour }} />
-            ))}
-          </div>
+          {swatchRow(t('website.background.brandColours', 'Branding colours'), brandColors)}
+          {swatchRow(t('website.background.neutralColours', 'Neutral colours'), neutrals)}
           <ColorField label={t('website.background.colour', 'Background colour')} value={block.backgroundColor || null}
             onChange={(backgroundColor) => onChange({ ...block, backgroundColor: backgroundColor || swatches[0] })} />
           <ColorField label={t('website.background.textColour', 'Text colour')} value={block.textColor || null}

@@ -68,7 +68,9 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({ open, onClose, onSelec
     <div className="flex flex-wrap items-center justify-end gap-2">
       <Button variant="secondary" onClick={close}>{t('common.cancel', 'Cancel')}</Button>
       <Button variant="primary" disabled={!selected.length} onClick={() => { onSelect(selected); close(); }}>
-        {t('website.picker.addSelected', 'Add {{count}} images', { count: selected.length })}
+        {selected.length
+          ? t('website.picker.addSelected', 'Add {{count}} images', { count: selected.length })
+          : t('website.picker.addNone', 'Add images')}
       </Button>
     </div>
   ) : undefined;

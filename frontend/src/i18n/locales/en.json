@@ -13167,7 +13167,9 @@
       "colour": "Background colour",
       "textColour": "Text colour",
       "textAutomatic": "Automatic, for contrast",
-      "textReset": "Pick the text colour automatically"
+      "textReset": "Pick the text colour automatically",
+      "brandColours": "Branding colours",
+      "neutralColours": "Neutral colours"
     },
     "fields": {
       "badLink": "Use https://, mailto:, tel:, a page like /about or an anchor like #contact.",
@@ -13376,7 +13378,8 @@
       "searchGalleries": "Search galleries by name",
       "noMatch": "No gallery on the website matches.",
       "watermarkNote": "Photos from this gallery appear with its watermark; upload images directly for a clean portfolio.",
-      "refreshFailed": "Could not refresh this list. What you see may be out of date."
+      "refreshFailed": "Could not refresh this list. What you see may be out of date.",
+      "addNone": "Add images"
     },
     "preview": {
       "title": "Preview of the page",

@@ -209,6 +209,16 @@ describe('chosen entries that are gone', () => {
     expect(onChange.mock.calls.at(-1)?.[0]).toMatchObject({ textColor: '#ffcc00' });
   });
 
+  it('the branding colours and the neutrals each have a row, so no swatch is left alone on a line', () => {
+    const text = { id: 't', type: 'text' as const, variant: 'left', background: 'custom' as const, backgroundColor: '#1e3a2f', textColor: null, heading: '', body: '' };
+    render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={text} onChange={vi.fn()} brandColors={['#6f8466', '#f7f4ef', '#ffffff']} /></QueryClientProvider>);
+    const rows = screen.getAllByRole('group', { name: /colours$/ });
+    expect(rows).toHaveLength(2);
+    expect(rows[0].querySelectorAll('button')).toHaveLength(3);
+    // A neutral the branding already has is not offered twice.
+    expect(rows[1].querySelectorAll('button')).toHaveLength(4);
+  });
+
   it('switching to a custom background starts from a colour', () => {
     const onChange = vi.fn();
     const text = { id: 't', type: 'text' as const, variant: 'left', background: 'default' as const, heading: '', body: '' };

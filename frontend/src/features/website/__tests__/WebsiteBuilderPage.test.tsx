@@ -259,7 +259,9 @@ describe('WebsiteBuilderPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add block' }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByText('Contact form'));
-    // The new block opens in the form.
+    // The new block opens in the form, under its name in full (a heading of
+    // its own, not squeezed beside the buttons).
+    expect(await screen.findByRole('heading', { name: 'Contact form' })).not.toHaveClass('truncate');
     expect(await screen.findByText('Messages arrive in Messages › Customers and are mailed to the studio. Who gets them, a confirmation to the visitor and the spam check: Design › Contact form.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'All blocks' }));
     expect(screen.getAllByText('Contact form').length).toBeGreaterThan(0);

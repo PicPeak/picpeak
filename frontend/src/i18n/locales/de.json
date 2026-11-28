@@ -13132,7 +13132,9 @@
       "colour": "Hintergrundfarbe",
       "textColour": "Textfarbe",
       "textAutomatic": "Automatisch, für guten Kontrast",
-      "textReset": "Textfarbe automatisch wählen"
+      "textReset": "Textfarbe automatisch wählen",
+      "brandColours": "Farben aus dem Branding",
+      "neutralColours": "Neutrale Farben"
     },
     "fields": {
       "badLink": "Verwenden Sie https://, mailto:, tel:, eine Seite wie /ueber-uns oder einen Anker wie #kontakt.",
@@ -13341,7 +13343,8 @@
       "searchGalleries": "Galerien nach Namen suchen",
       "noMatch": "Keine Galerie auf der Website passt dazu.",
       "watermarkNote": "Fotos aus dieser Galerie erscheinen mit ihrem Wasserzeichen; laden Sie Bilder direkt hoch, um ein Portfolio ohne Wasserzeichen zu zeigen.",
-      "refreshFailed": "Diese Liste konnte nicht neu geladen werden. Was Sie sehen, ist vielleicht nicht aktuell."
+      "refreshFailed": "Diese Liste konnte nicht neu geladen werden. Was Sie sehen, ist vielleicht nicht aktuell.",
+      "addNone": "Bilder hinzufügen"
     },
     "preview": {
       "title": "Vorschau der Seite",

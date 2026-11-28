@@ -176,3 +176,14 @@ describe('UploadsPane', () => {
     expect(websiteService.listAssets).toHaveBeenCalledWith(expect.objectContaining({ q: 'beach', kind: 'image' }));
   });
 });
+
+describe('ImagePicker', () => {
+  it('names its button "Add images" until something is picked, not "Add 0 images"', async () => {
+    vi.mocked(websiteService.listAssets).mockResolvedValue({ assets: [], hasMore: false } as never);
+    const { ImagePicker } = await import('../ImagePicker');
+    wrap(<ImagePicker open multiple onClose={() => {}} onSelect={() => {}} />);
+    const add = await screen.findByRole('button', { name: 'Add images' });
+    expect(add).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /Add \{\{count\}\}|Add 0/ })).toBeNull();
+  });
+});

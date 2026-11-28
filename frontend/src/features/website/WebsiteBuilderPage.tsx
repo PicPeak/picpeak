@@ -305,7 +305,7 @@ export const WebsiteBuilderPage: React.FC = () => {
         <Button size="sm" variant="ghost" leftIcon={<ArrowLeft className="w-4 h-4" />} onClick={() => setBlockId(null)}>
           {t('website.blocks.back', 'All blocks')}
         </Button>
-        <span className="flex-1 min-w-0 text-sm font-semibold text-heading truncate">{blockLabel(t, block.type)}</span>
+        <span className="flex-1" />
         {canEdit && (
           <>
             {/* On a wrapper: a disabled button shows no tooltip of its own everywhere. */}
@@ -323,6 +323,8 @@ export const WebsiteBuilderPage: React.FC = () => {
           </>
         )}
       </div>
+      {/* On its own line: next to the buttons a longer name was cut off. */}
+      <h3 className="text-sm font-semibold text-heading">{blockLabel(t, block.type)}</h3>
       {/* Sections are anchored as #b-<block id>: a button or text link can point here. */}
       <div className="flex flex-wrap items-center gap-2 rounded-lg bg-subtle border border-line px-3 py-2">
         <span className="text-xs text-muted">{t('website.blocks.anchor', 'Link to this block')}</span>
