@@ -2114,6 +2114,19 @@ describe('mails of the contact form', () => {
     expect(off.body.contact.confirmation).toBe(false);
   });
 
+  test('a save from a stale view is refused, so a colleague\'s newer settings are not overwritten', async () => {
+    const first = (await request(app).get('/api/admin/website/contact-settings').set(auth(adminId))).body;
+    expect(Number.isInteger(first.revision)).toBe(true);
+    const saved = await settings({ revision: first.revision, contact: { recipients: ['colleague@studio.example'] } });
+    expect(saved.status).toBe(200);
+    expect(saved.body.revision).toBe(first.revision + 1);
+    // The other admin still holds the first view.
+    const stale = await settings({ revision: first.revision, contact: { recipients: ['me@studio.example'] } });
+    expect(stale.status).toBe(409);
+    expect(stale.body.code).toBe('WEBSITE_CONTACT_CONFLICT');
+    expect((await request(app).get('/api/admin/website/contact-settings').set(auth(adminId))).body.contact.recipients).toEqual(['colleague@studio.example']);
+  });
+
   test('changing where messages go takes the settings permission', async () => {
     expect((await settings({ contact: { recipients: ['x@evil.example'] } }, viewerId)).status).toBe(403);
   });

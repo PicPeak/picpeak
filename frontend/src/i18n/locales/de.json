@@ -13639,7 +13639,9 @@
       "editConfirmationMail": "Bestätigungs-Mail bearbeiten",
       "apiKeyUnreadable": "Der gespeicherte API-Schlüssel kann nicht mehr gelesen werden (der geheime Schlüssel des Servers wurde geändert). Geben Sie den API-Schlüssel erneut ein: Bis dahin nimmt das Kontaktformular keine Nachrichten an.",
       "unsaved": "noch nicht gespeichert",
-      "unsavedBar": "Die Einstellungen des Kontaktformulars sind noch nicht gespeichert. Sie gelten, sobald sie gespeichert sind."
+      "unsavedBar": "Die Einstellungen des Kontaktformulars sind noch nicht gespeichert. Sie gelten, sobald sie gespeichert sind.",
+      "loadLatest": "Neueste laden",
+      "conflict": "Jemand anderes hat diese Einstellungen inzwischen geändert. Laden Sie die neuesten und nehmen Sie Ihre Änderung erneut vor."
     },
     "saveAll": "Entwurf und Kontakteinstellungen speichern"
   },

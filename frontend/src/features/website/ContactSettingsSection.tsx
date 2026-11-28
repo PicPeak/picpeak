@@ -36,6 +36,15 @@ export const ContactSettingsSection: React.FC<{ settings: ContactSettingsDraft; 
         </h3>
         <p className="text-xs text-muted">{t('website.contact.intro', 'For every contact form on the website. Saved with the bar below, and in effect at once, not with the draft.')}</p>
       </div>
+      {settings.conflict && (
+        <Notice tone="warning" size="sm" action={(
+          <button type="button" className="text-sm font-medium text-accent hover:underline" onClick={() => { void settings.loadLatest(); }}>
+            {t('website.contact.loadLatest', 'Load the latest')}
+          </button>
+        )}>
+          {t('website.contact.conflict', 'Someone else changed these settings meanwhile. Load the latest and make your change again.')}
+        </Notice>
+      )}
       <fieldset disabled={readOnly} className="space-y-4">
         <legend className="sr-only">{t('website.contact.title', 'Contact form')}</legend>
         <div className="space-y-1">

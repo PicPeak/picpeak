@@ -24,6 +24,8 @@ export interface WebsiteTraffic {
 
 export type CaptchaProvider = 'none' | 'friendly' | 'recaptcha';
 export interface ContactSettings {
+  /** Counts the saves; a save names the one it was made from (409 when stale). */
+  revision: number;
   contact: {
     recipients: string[];
     /** Used while `recipients` is empty: the business, else the support address. */
@@ -39,6 +41,7 @@ export interface ContactSettings {
   };
 }
 export interface ContactSettingsUpdate {
+  revision?: number;
   /** `apiKey`: a new key, '' to remove it, absent to keep it. */
   captcha: { provider: CaptchaProvider; friendly: { siteKey: string; endpoint: 'global' | 'eu'; apiKey?: string } };
   contact: { recipients: string[]; confirmation: boolean };

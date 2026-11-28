@@ -19,6 +19,9 @@ const KEYS = {
   friendlyEndpoint: 'website_captcha_friendly_endpoint',
   recipients: 'website_contact_recipients',
   confirmation: 'website_contact_confirmation',
+  // Counts the saves: a save names the one it was made from, so a stale
+  // view cannot overwrite a colleague's newer settings (as the draft's).
+  revision: 'website_contact_revision',
 };
 const MAX_RECIPIENTS = 5;
 const PROVIDERS = ['none', 'friendly', 'recaptcha'];
@@ -54,6 +57,7 @@ function recipientList(value) {
 async function readContactSettings() {
   const s = await read([...Object.values(KEYS), 'security_recaptcha_site_key', 'security_recaptcha_secret_key']);
   return {
+    revision: Number.isInteger(s[KEYS.revision]) ? s[KEYS.revision] : 0,
     contact: {
       recipients: recipientList(s[KEYS.recipients]),
       defaultRecipient: await defaultRecipient(),
@@ -124,7 +128,21 @@ async function writeContactSettings(input) {
   }
   const confirmation = (contact.confirmation === undefined ? current.contact.confirmation : contact.confirmation === true) && next.provider !== 'none';
 
+  // The revision row exists before the conditional bump below can rely on it.
+  await db('app_settings').insert({ setting_key: KEYS.revision, setting_value: JSON.stringify(0), setting_type: 'website', updated_at: new Date().toISOString() })
+    .onConflict('setting_key').ignore();
   await db.transaction(async (trx) => {
+    const row = await trx('app_settings').where({ setting_key: KEYS.revision }).first('setting_value');
+    const revision = Number(JSON.parse(row.setting_value)) || 0;
+    const expected = body.revision === undefined ? revision : body.revision;
+    // Moved on since the admin's view: refused, and only the bump that
+    // still finds the revision it read goes through.
+    const bumped = expected === revision && await trx('app_settings')
+      .where({ setting_key: KEYS.revision, setting_value: row.setting_value })
+      .update({ setting_value: JSON.stringify(revision + 1), updated_at: new Date().toISOString() });
+    if (!bumped) {
+      throw new AppError('Someone else changed the contact form settings meanwhile; load the latest and make your change again', 409, 'WEBSITE_CONTACT_CONFLICT');
+    }
     if (friendly.siteKey !== undefined) await write(trx, KEYS.friendlySiteKey, next.siteKey);
     if (friendly.endpoint !== undefined) await write(trx, KEYS.friendlyEndpoint, friendly.endpoint);
     if (friendly.apiKey !== undefined) await write(trx, KEYS.friendlyApiKey, friendly.apiKey ? box.encryptSecret(friendly.apiKey) : '');

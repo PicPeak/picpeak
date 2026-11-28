@@ -29,12 +29,13 @@ const Host: React.FC<{ readOnly: boolean }> = ({ readOnly }) => {
   return (
     <>
       <ContactSettingsSection settings={settings} readOnly={readOnly} />
-      {settings.canChange && <button type="button" onClick={() => { void settings.save(); }}>Save contact form settings</button>}
+      {settings.canChange && <button type="button" onClick={() => { settings.save().catch(() => {}); }}>Save contact form settings</button>}
     </>
   );
 };
 
 const SETTINGS = {
+  revision: 1,
   contact: { recipients: [] as string[], defaultRecipient: 'support@studio.example', confirmation: false },
   captcha: { provider: 'none' as const, friendly: { siteKey: '', endpoint: 'global' as const, apiKeySet: false }, recaptchaReady: false },
 };
@@ -111,5 +112,16 @@ describe('contact form settings', () => {
     open();
     expect(await screen.findByText(/can no longer be read/)).toBeInTheDocument();
     expect(screen.getByText(/refuses messages until/)).toBeInTheDocument();
+  });
+
+  it('after a refused stale save, offers the latest settings', async () => {
+    vi.mocked(websiteService.getContactSettings).mockResolvedValue(SETTINGS);
+    vi.mocked(websiteService.saveContactSettings).mockRejectedValue({ response: { status: 409, data: { code: 'WEBSITE_CONTACT_CONFLICT' } } });
+    open();
+    fireEvent.change(await screen.findByLabelText('Send new messages to'), { target: { value: 'me@studio.example' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save contact form settings' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Load the latest' }));
+    await waitFor(() => expect(screen.getByLabelText('Send new messages to')).toHaveValue(''));
+    expect(screen.queryByRole('button', { name: 'Load the latest' })).toBeNull();
   });
 });

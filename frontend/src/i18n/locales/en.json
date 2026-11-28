@@ -13674,7 +13674,9 @@
       "editConfirmationMail": "Edit the confirmation mail",
       "apiKeyUnreadable": "The saved API key can no longer be read (the server’s secret key changed). Enter the API key again: the contact form refuses messages until it is.",
       "unsaved": "not saved yet",
-      "unsavedBar": "Contact form settings are not saved yet. They apply as soon as they are saved."
+      "unsavedBar": "Contact form settings are not saved yet. They apply as soon as they are saved.",
+      "loadLatest": "Load the latest",
+      "conflict": "Someone else changed these settings meanwhile. Load the latest and make your change again."
     },
     "saveAll": "Save draft and contact settings"
   },
