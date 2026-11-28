@@ -77,7 +77,7 @@ const STRINGS = {
     terms: 'AGB',
     previewForm: 'Das Formular ist in der Vorschau deaktiviert.',
     bookingHidden: 'Auf der Website ausgeblendet: Die Online-Buchung ist aus oder es ist noch nichts buchbar.',
-    captchaFailed: 'Die Spam-Prüfung hat nicht geklappt. Bitte schliessen Sie sie ab und senden Sie die Nachricht erneut.',
+    captchaFailed: 'Die Spam-Prüfung hat nicht geklappt. Bitte schließen Sie sie ab und senden Sie die Nachricht erneut.',
     secondContactForm: 'Pro Seite wird nur ein Kontaktformular gezeigt. Entfernen Sie dieses oder verschieben Sie es auf eine andere Seite.',
     reloadForm: 'Dieses Formular wurde soeben aktualisiert. Bitte laden Sie die Seite neu und senden Sie Ihre Nachricht erneut.',
     follow: 'Folgen',
