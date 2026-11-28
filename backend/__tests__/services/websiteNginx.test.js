@@ -82,12 +82,13 @@ test('a website page whose address starts like a static path still reaches the w
   // the slash form of a proxied prefix location; checked in a stub run.)
 });
 
-test('the website location passes a website 404 through and hands every other answer to the SPA shell', () => {
+test('a plain 404 gets the SPA shell; only the website\'s marked not-found page passes as a 404', () => {
   const website = block('location ~ "^/(?!(?:');
-  // nginx answers 502/503/504 with the shell; a 404 is the website's own page.
-  expect(website).toMatch(/error_page 502 503 504 = \/index\.html;/);
-  expect(website).not.toMatch(/error_page[^;]*\b404\b/);
-  // The backend hands a path it does not answer back with X-Accel-Redirect.
+  // Any 404 the backend answers here gets the shell (an older backend, a
+  // path nothing answers), as do nginx's own failures.
+  expect(website).toMatch(/proxy_intercept_errors on;/);
+  expect(website).toMatch(/error_page 404 502 503 504 = \/index\.html;/);
+  // The backend hands a path back with X-Accel-Redirect (server.js).
   expect(website).toContain('proxy_set_header X-PicPeak-Spa-Fallback "1";');
   const spa = block('location = /__spa {');
   expect(spa).toContain('internal;');
@@ -96,4 +97,14 @@ test('the website location passes a website 404 through and hands every other an
   expect(spa).toContain('rewrite ^ /index.html last;');
   expect(spa).not.toMatch(/try_files|add_header|root /);
   expect(block('location = /index.html {')).toContain('add_header X-Robots-Tag "noindex" always;');
+  // The website's own not-found page: internal only, asked without the
+  // mark, its 404 not intercepted, the website's policy and headers kept.
+  const notFound = block('location ^~ /__website/ {');
+  expect(notFound).toContain('internal;');
+  expect(notFound).toContain('rewrite ^/__website(/.*)$ $1 break;');
+  expect(notFound).not.toContain('X-PicPeak-Spa-Fallback');
+  expect(notFound).toMatch(/error_page 502 503 504 = \/index\.html;/);
+  expect(notFound).not.toMatch(/error_page[^;]*\b404\b/);
+  expect(notFound).toContain('add_header Content-Security-Policy $picpeak_site_csp always;');
+  expect(notFound).toContain('add_header X-Frame-Options "SAMEORIGIN" always;');
 });

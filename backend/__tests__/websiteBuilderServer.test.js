@@ -139,9 +139,18 @@ test('behind nginx, a path the website does not answer is handed back for the SP
   expect((await request(app).get('/about')).text).toContain('<div id="root">SPA</div>');
   await setFeatureFlags(db, { websiteBuilder: true });
   require('../src/services/website/cache').clearWebsiteCache();
-  // The website's own pages and its not-found page are answered directly.
+  // The website's own pages are answered directly.
   expect((await viaNginx('/about')).headers['x-accel-redirect']).toBeUndefined();
-  expect((await viaNginx('/no-such-page')).status).toBe(404);
+  // Its not-found page is handed to nginx's /__website/ location, which asks
+  // again without the mark and lets the 404 through (nginx turns any plain
+  // 404 from this location into the SPA shell, as for an older backend).
+  const missing = await viaNginx('/no-such-page');
+  expect(missing.status).toBe(200);
+  expect(missing.headers['x-accel-redirect']).toBe('/__website/no-such-page');
+  expect(missing.text).toBe('');
+  const asked = await request(app).get('/no-such-page');
+  expect(asked.status).toBe(404);
+  expect(asked.text).toContain('class="pp-header"');
 });
 
 test('the public site switch still turns the website off', async () => {

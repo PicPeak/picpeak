@@ -506,14 +506,25 @@ const ownedByApp = (slug) => require('./src/services/website/document').ownedByA
 // A path the website does not answer (the builder off, the site not live)
 // goes on to the app. Behind nginx, whose website location marks its
 // requests (X-PicPeak-Spa-Fallback), the answer is an internal redirect to
-// the SPA shell: nginx no longer turns a 404 into the shell, so the website's
-// own not-found page can be a real 404. Without nginx, the routes below.
+// the SPA shell. Without nginx, the routes below.
+const viaNginxWebsiteLocation = (req) => req.get('X-PicPeak-Spa-Fallback') === '1';
+
 function notOurs(req, res, next) {
-  if (req.get('X-PicPeak-Spa-Fallback') === '1') {
+  if (viaNginxWebsiteLocation(req)) {
     res.setHeader('X-Accel-Redirect', '/__spa');
     return res.status(200).end();
   }
   return next();
+}
+
+// That location turns every 404 into the SPA shell (so an older backend's,
+// or a path nothing answers, still gets the app), so the website's own
+// not-found page goes to nginx's internal /__website/ location instead,
+// which asks again without the mark and lets the page's 404 through. It is
+// counted there, once.
+function handOverNotFound(req, res, slug) {
+  res.setHeader('X-Accel-Redirect', `/__website/${slug}`);
+  return res.status(200).end();
 }
 
 async function handleWebsitePageRequest(req, res, next) {
@@ -522,6 +533,7 @@ async function handleWebsitePageRequest(req, res, next) {
     if (ownedByApp(req.params[0])) return notOurs(req, res, next);
     const page = await require('./src/services/website/service').resolvePublicPage(req.params[0]);
     if (!page) return notOurs(req, res, next);
+    if (page.notFound && viaNginxWebsiteLocation(req)) return handOverNotFound(req, res, req.params[0]);
     return sendWebsitePage(req, res, page, req.params[0]);
   } catch (error) {
     logger.error('Failed to render website page', { error: error.message });
