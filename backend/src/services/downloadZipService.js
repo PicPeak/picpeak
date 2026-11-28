@@ -23,7 +23,7 @@ const { db } = require('../database/db');
 const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { getStorage } = require('./storage');
-const { getUseOriginalFilenames, getZipEntryNames, zipEntryPath } = require('./downloadFilenameService');
+const { getUseOriginalFilenames, getZipEntryNames, zipEntryPath, zipEntryDate } = require('./downloadFilenameService');
 const { uniquifyZipNames } = require('../utils/filenameSanitizer');
 const {
   renderPhotoForDownload, renderPreviewForDownload, previewDownloadName, renderedDownloadType, resolveWatermarkSettings, isVideo,
@@ -414,6 +414,7 @@ class DownloadZipService {
                 if (!preview) throw new Error('No sales preview of this photo');
                 archive.append(preview.buffer, {
                   name: finalName(previewDownloadName(archiveName, preview.extension)),
+                  date: zipEntryDate(photo),
                 });
                 continue;
               }
@@ -425,7 +426,7 @@ class DownloadZipService {
 
             if (rendered) {
               // A capped HEIC/AVIF/RAW comes back as JPEG: name it so.
-              archive.append(rendered, { name: finalName(renderedDownloadType(rendered, photo, archiveName).name) });
+              archive.append(rendered, { name: finalName(renderedDownloadType(rendered, photo, archiveName).name), date: zipEntryDate(photo) });
             } else if (storageKey) {
               await waitForReadSlot();
               if (cancelled) return;
@@ -437,10 +438,10 @@ class DownloadZipService {
                 if (cancelled) return;
                 return failBuild(new Error('Build invalidated'));
               }
-              archive.append(trackRead(stream), { name: finalName(archiveName) });
+              archive.append(trackRead(stream), { name: finalName(archiveName), date: zipEntryDate(photo) });
             } else {
               const filePath = resolvePhotoFilePath(event, photo);
-              archive.file(filePath, { name: finalName(archiveName) });
+              archive.file(filePath, { name: finalName(archiveName), date: zipEntryDate(photo) });
             }
           }
 

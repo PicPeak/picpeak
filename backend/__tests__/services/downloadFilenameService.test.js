@@ -6,6 +6,7 @@
 const {
   pickRawDownloadName,
   getZipEntryNames,
+  zipEntryDate,
 } = require('../../src/services/downloadFilenameService');
 
 describe('pickRawDownloadName', () => {
@@ -72,5 +73,41 @@ describe('getZipEntryNames', () => {
     const [name] = getZipEntryNames(photos, true);
     expect(name).not.toContain('..');
     expect(name).not.toContain('/');
+  });
+});
+
+describe('zipEntryDate (issue 2617)', () => {
+  // archiver writes the Date's UTC fields as the entry's zone-less time.
+  const shown = (date) => date.toISOString().slice(0, 19);
+  const serverWall = (iso) => {
+    const d = new Date(iso);
+    return shown(new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds())));
+  };
+
+  it('prefers the camera clock as written, offset dropped', () => {
+    expect(shown(zipEntryDate({
+      captured_at_wall: '2025-06-01T09:45:04+02:00', captured_at: '2025-06-01T06:45:04.000Z', uploaded_at: '2026-01-01T10:00:00.000Z',
+    }))).toBe('2025-06-01T09:45:04');
+  });
+
+  it('falls back to captured_at, then uploaded_at, in the server zone', () => {
+    expect(shown(zipEntryDate({ captured_at_wall: '', captured_at: '2024-12-24T17:00:10.000Z', uploaded_at: '2026-01-01T10:00:00.000Z' })))
+      .toBe(serverWall('2024-12-24T17:00:10.000Z'));
+    expect(shown(zipEntryDate({ captured_at_wall: null, captured_at: null, uploaded_at: '2023-03-04 05:06:08' })))
+      .toBe(serverWall('2023-03-04T05:06:08.000Z'));
+  });
+
+  it('skips a malformed camera clock instead of writing a zero or rolled-over date', () => {
+    const fallback = '2024-12-24T17:00:10.000Z';
+    for (const wall of ['2025-00-01T09:45:03', '2025-13-01T09:45:03', '2025-02-30T09:45:03', '2025-06-31T09:45:03', '2025-06-01T24:00:00', '2025-06-01T09:60:00']) {
+      expect(shown(zipEntryDate({ captured_at_wall: wall, captured_at: fallback, uploaded_at: null }))).toBe(serverWall(fallback));
+    }
+    expect(shown(zipEntryDate({ captured_at_wall: '2025-00-01T09:45:03', captured_at: null, uploaded_at: '2023-03-04 05:06:08' })))
+      .toBe(serverWall('2023-03-04T05:06:08.000Z'));
+    expect(zipEntryDate({ captured_at_wall: '2025-00-01T09:45:03', captured_at: null, uploaded_at: null })).toBeUndefined();
+  });
+
+  it('leaves the date to archiver when the row has none', () => {
+    expect(zipEntryDate({ captured_at_wall: null, captured_at: null, uploaded_at: null })).toBeUndefined();
   });
 });

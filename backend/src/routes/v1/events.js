@@ -80,7 +80,7 @@ const { getStorage } = require('../../services/storage');
 const { isStorageNotFoundError } = require('../../services/storage/storageErrors');
 const { requireCapability } = require('../../middleware/requireCapability');
 const { resolvePhotoStorageKey, resolvePhotoFilePath, isManagedOriginalKey } = require('../../services/photoResolver');
-const { pickRawDownloadName } = require('../../services/downloadFilenameService');
+const { pickRawDownloadName, zipEntryDate } = require('../../services/downloadFilenameService');
 const { buildContentDisposition, sanitizeForZipEntry } = require('../../utils/filenameSanitizer');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
 const { pipeStreamToResponse } = require('../../utils/streamResponse');
@@ -1839,7 +1839,7 @@ router.get(
           // Tracked like a storage read, so destroyAll() reclaims it on an
           // abort instead of leaving archiver holding the buffer. The pacer
           // above, not the guard, is what keeps renders behind the client.
-          pacer.append(guard.track(Readable.from([rendered])), { name: entryNames[i] });
+          pacer.append(guard.track(Readable.from([rendered])), { name: entryNames[i], date: zipEntryDate(photos[i]) });
           appended += 1;
           continue;
         }
@@ -1849,7 +1849,7 @@ router.get(
           missingIds.push(photos[i].id);
           continue;
         }
-        pacer.append(guard.track(source.stream), { name: entryNames[i] });
+        pacer.append(guard.track(source.stream), { name: entryNames[i], date: zipEntryDate(photos[i]) });
         appended += 1;
       }
       if (cancelled) return;

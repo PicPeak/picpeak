@@ -22,6 +22,19 @@ const { JOB_DIMENSION_REPAIR, JOB_CAPTURE_DATE_BACKFILL, JOB_ORIENTATION_BACKFIL
 
 const { startLeaseKeeper } = maintenanceJobs;
 
+// The prebuilt Download All archive dates its entries by capture time (issue
+// 2617), so a pass that wrote capture dates leaves it stale in those galleries.
+async function invalidateDownloadArchives(eventIds) {
+  const downloadZipService = require('../services/downloadZipService');
+  for (const eventId of eventIds) {
+    try {
+      await downloadZipService.invalidateIfBuilt(eventId);
+    } catch (err) {
+      logger.warn(`Download zip invalidation failed for event ${eventId}: ${err.message}`);
+    }
+  }
+}
+
 // Query modifiers (`.modify(...)`) shared by the jobs below.
 
 // Not a video, by all three markers, because no single one is reliable.
@@ -344,6 +357,7 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
       let errorCount = 0;
       let skippedCount = 0;
       let lostClaim = false;
+      const datedEvents = new Set();
 
       // Same reasoning as the dimension repair: detached from the request, so
       // an unexpected throw must not leave the claim held.
@@ -366,10 +380,16 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
             // when the row already has its value.
             const needsDate = !photo.captured_at;
             const needsWall = photo.captured_at_wall == null;
-            const readFile = async (localPath) => ({
-              capture: needsDate || needsWall ? await extractCapture(localPath) : null,
-              exif: photo.exif_json ? null : await extractPhotoExif(localPath),
-            });
+            // '{}' is a final "no camera details", except where the date is
+            // missing too: both sit in the EXIF segment, and a reader that
+            // did not reach it (issue 2617) left exactly this pair behind.
+            // A file this run finds a date in has its details read again.
+            const emptyExif = photo.exif_json === '{}';
+            const readFile = async (localPath) => {
+              const capture = needsDate || needsWall ? await extractCapture(localPath) : null;
+              const rereadExif = emptyExif && needsDate && Boolean(capture && capture.capturedAt);
+              return { capture, exif: !photo.exif_json || rereadExif ? await extractPhotoExif(localPath) : null };
+            };
             let capture;
             let exif;
             if (isExternal) {
@@ -414,11 +434,11 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
 
             // Same fence as the date below, and whereNull for the same
             // reason. A null read (the file could not be read) writes nothing
-            // and stays for the next run.
-            if (exif) {
-              exifCount += await db('photos')
-                .where({ id: photo.id, path: photo.path, filename: photo.filename })
-                .whereNull('exif_json')
+            // and stays for the next run. Details read again replace '{}'
+            // only, and only when the file has some after all.
+            if (exif && (!emptyExif || Object.keys(exif).length)) {
+              const row = db('photos').where({ id: photo.id, path: photo.path, filename: photo.filename });
+              exifCount += await (emptyExif ? row.where('exif_json', '{}') : row.whereNull('exif_json'))
                 .update({ exif_json: JSON.stringify(exif) });
             }
 
@@ -427,10 +447,12 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
             // capture (the file could not be read) writes nothing. A photo
             // still without a date gets it with the date below.
             if (!needsDate && needsWall && capture) {
-              wallCount += await db('photos')
+              const walled = await db('photos')
                 .where({ id: photo.id, path: photo.path, filename: photo.filename })
                 .whereNull('captured_at_wall')
                 .update({ captured_at_wall: capture.wall || '' });
+              wallCount += walled;
+              if (walled) datedEvents.add(photo.event_id);
             }
 
             // The counters below are about capture dates; a photo that was
@@ -474,7 +496,12 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
             // Neither is an error and neither needs a retry: captured_at is
             // still NULL for the fenced case, so the status endpoint keeps
             // reporting it as backlog and the next run picks it up.
-            if (updated) successCount++; else skippedCount++;
+            if (updated) {
+              successCount++;
+              datedEvents.add(photo.event_id);
+            } else {
+              skippedCount++;
+            }
 
             if (successCount % 50 === 0 && successCount > 0) {
               logger.info(`Capture date backfill progress: ${successCount} updated...`);
@@ -502,6 +529,8 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
           .catch(() => {});
       } finally {
         lease.stop();
+        // However the run ended: the dates it wrote are in the database.
+        await invalidateDownloadArchives(datedEvents);
       }
     });
   } catch (error) {
@@ -669,6 +698,7 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
       let lostClaim = false;
       let videoDated = 0;
       let videoPosters = 0;
+      const datedEvents = new Set();
 
       // A video stored before issue 2263 was fixed: dimensions as coded, not
       // as displayed (a portrait phone clip reads as landscape), no capture
@@ -701,7 +731,10 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
         if (Object.keys(values).length) {
           // Dated only while still undated, as in the capture-date backfill.
           if (values.captured_at && await db('photos').where(fence).whereNull('captured_at')
-            .update({ captured_at: values.captured_at })) videoDated++;
+            .update({ captured_at: values.captured_at })) {
+            videoDated++;
+            datedEvents.add(photo.event_id);
+          }
           delete values.captured_at;
           if (Object.keys(values).length && await db('photos').where(fence).update(values)) corrected++;
         }
@@ -966,6 +999,8 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
           .catch(() => {});
       } finally {
         lease.stop();
+        // However the run ended: the dates it wrote are in the database.
+        await invalidateDownloadArchives(datedEvents);
       }
     });
   } catch (error) {

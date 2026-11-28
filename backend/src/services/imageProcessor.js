@@ -1,6 +1,6 @@
 const sharp = require('./isolatedSharp');
 const { isResourceError, isTransient } = require('./imageResourcePolicy');
-const exifr = require('exifr');
+const { parseExif } = require('./photoExif');
 const path = require('path');
 const fsp = require('fs').promises;
 const os = require('os');
@@ -2752,7 +2752,7 @@ async function extractCapture(imagePath) {
   let exif;
   try {
     // Raw values: the revived Date has already lost the camera digits.
-    exif = await exifr.parse(imagePath, {
+    exif = await parseExif(imagePath, {
       pick: CAPTURE_DATE_TAGS.flat(),
       reviveValues: false,
     });

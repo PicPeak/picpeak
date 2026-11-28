@@ -11,7 +11,7 @@ const { db } = require('../database/db');
 const { hasColumnCached } = require('../utils/schemaCache');
 const { livePhotos, wherePhotoProcessed, applyPhotoVisibilityFilter } = require('../utils/photoVisibility');
 const { captureDateOrderSql } = require('../utils/captureDateSql');
-const { cameraWallClock, toServerWallClock } = require('../utils/dateNormalize');
+const { photoWallClock } = require('../utils/dateNormalize');
 
 const CHAPTER_STYLES = ['off', 'divider', 'hero'];
 
@@ -70,14 +70,12 @@ async function chapterRowsForEvent(eventId, conn = db) {
 }
 
 /**
- * 'HH:MM' of a photo's capture: the camera clock as the EXIF wrote it
- * (captured_at_wall, issue 2305), else, for photos read before that column,
- * the stored instant formatted in the server's zone, as the admin photo list
- * does. The server-zone reading moves a time in a spring-forward gap and
- * every time after a TZ change, so it is only the legacy fallback.
+ * 'HH:MM' of a photo's capture, on the wall clock the admin photo list shows
+ * (photoWallClock): the camera's own where it was read, else, for photos read
+ * before that column, the stored instant in the server's zone.
  */
-function wallTimeOf(capturedAt, capturedAtWall) {
-  const wall = cameraWallClock(capturedAtWall) || toServerWallClock(capturedAt);
+function wallTimeOf(photo) {
+  const wall = photoWallClock(photo);
   return wall ? wall.slice(11, 16) : null;
 }
 
@@ -104,7 +102,7 @@ async function suggestedChapterTimes(eventId) {
   const rows = await db.from(ranked).where('rn', 1).select('category_id', 'captured_at', 'captured_at_wall');
   const times = new Map();
   for (const row of rows) {
-    const time = wallTimeOf(row.captured_at, row.captured_at_wall);
+    const time = wallTimeOf(row);
     if (time) times.set(Number(row.category_id), time);
   }
   return times;

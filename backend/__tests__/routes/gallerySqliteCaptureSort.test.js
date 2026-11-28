@@ -140,6 +140,18 @@ describe('capture-date ordering on SQLite (#1172)', () => {
     expect(await orderedFilenames('asc')).toEqual(['iso-0115.jpg', 'fallback-2300.jpg']);
   });
 
+  test('an upload time written as ISO text compares by clock too', async () => {
+    // uploaded_at comes in both text shapes: knex's 'YYYY-MM-DD HH:MM:SS' and
+    // the ISO string the API routes write. Left as written, the 'T' put the
+    // ISO 05:00 behind every other key of that day.
+    await addPhoto('plain-upload-2300.jpg', null, '2026-06-03 23:00:00');
+    await addPhoto('captured-1200.jpg', '2026-06-03T12:00:00.000Z', '2026-09-01 00:00:00');
+    await addPhoto('iso-upload-0500.jpg', null, '2026-06-03T05:00:00.000Z');
+
+    expect(await orderedFilenames('asc')).toEqual(['iso-upload-0500.jpg', 'captured-1200.jpg', 'plain-upload-2300.jpg']);
+    expect(await orderedFilenames('desc')).toEqual(['plain-upload-2300.jpg', 'captured-1200.jpg', 'iso-upload-0500.jpg']);
+  });
+
   test('an epoch-integer uploaded_at is compared as a date, not as its digits', async () => {
     // uploaded_at is not always text either: a legacy archive restore leaves
     // epoch milliseconds in it (__tests__/integration/sqliteEpochTimestamps.js).
@@ -152,6 +164,59 @@ describe('capture-date ordering on SQLite (#1172)', () => {
     expect((row.t || row).toString()).toBe('integer');
 
     expect(await orderedFilenames('asc')).toEqual(['captured-2020.jpg', 'epoch-upload-2028.jpg']);
+  });
+
+  test('a same-second burst orders by the camera\'s file name, then by id (issue 2617)', async () => {
+    // Inserted against the camera counter, so id order is the reverse.
+    const ids = [];
+    for (const name of ['IMG_0003.jpg', 'IMG_0002.jpg', 'IMG_0001.jpg', 'IMG_0001.jpg']) {
+      ids.push(await addPhoto(`stored-${ids.length}.jpg`, managed('2026-06-03T13:15:42Z'), '2026-09-01 00:00:00'));
+      await db('photos').where({ id: ids[ids.length - 1] }).update({ original_filename: name });
+    }
+    const orderedIds = async (order) => {
+      const res = await request(app).get(`/api/gallery/${SLUG}/photos?sort=capture_date&order=${order}`);
+      expect(res.status).toBe(200);
+      return res.body.photos.map((p) => p.id);
+    };
+    expect(await orderedIds('asc')).toEqual([ids[2], ids[3], ids[1], ids[0]]);
+    expect(await orderedIds('desc')).toEqual([ids[0], ids[1], ids[3], ids[2]]);
+  });
+
+  test('milliseconds apart are not a tie for the name to break (issue 2617)', async () => {
+    // Both storage classes: ISO text and the managed epoch integer.
+    for (const store of [(iso) => iso, managed]) {
+      await db('photos').where({ event_id: eventId }).del();
+      await addPhoto('Z.mp4', store('2026-06-03T10:00:00.100Z'), '2026-09-01 00:00:00');
+      await addPhoto('A.mp4', store('2026-06-03T10:00:00.900Z'), '2026-09-01 00:00:00');
+      expect(await orderedFilenames('asc')).toEqual(['Z.mp4', 'A.mp4']);
+      expect(await orderedFilenames('desc')).toEqual(['A.mp4', 'Z.mp4']);
+    }
+  });
+
+  test('a burst without original names orders by the stored camera name (issue 2617)', async () => {
+    // External imports keep the camera name in filename, original_filename NULL.
+    const at = managed('2026-06-03T13:15:42Z');
+    const c = await addPhoto('IMG_0003.jpg', at, '2026-09-01 00:00:00');
+    const b = await addPhoto('stored-b.jpg', at, '2026-09-01 00:00:00');
+    await db('photos').where({ id: b }).update({ original_filename: 'IMG_0002.jpg' });
+    const a = await addPhoto('IMG_0001.jpg', at, '2026-09-01 00:00:00');
+    const res = await request(app).get(`/api/gallery/${SLUG}/photos?sort=capture_date&order=asc`);
+    expect(res.body.photos.map((p) => p.id)).toEqual([a, b, c]);
+  });
+
+  test('an empty original name is no name: the browser is sent null and takes the stored one (issue 2617)', async () => {
+    const at = managed('2026-06-03T13:15:42Z');
+    const add = async (filename, original) => {
+      const id = await addPhoto(filename, at, '2026-09-01 00:00:00');
+      await db('photos').where({ id }).update({ original_filename: original });
+      return id;
+    };
+    const c = await add('stored-c.jpg', 'IMG_0003.jpg');
+    const b = await add('IMG_0002.jpg', '');
+    const a = await add('stored-a.jpg', 'IMG_0001.jpg');
+    const res = await request(app).get(`/api/gallery/${SLUG}/photos?sort=capture_date&order=asc`);
+    expect(res.body.photos.map((p) => p.id)).toEqual([a, b, c]);
+    expect(res.body.photos.find((p) => p.id === b).original_filename).toBeNull();
   });
 
   test('all three storage classes order together correctly', async () => {

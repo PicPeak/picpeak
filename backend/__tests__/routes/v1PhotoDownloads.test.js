@@ -69,7 +69,7 @@ async function readZip(buffer) {
   const entries = await zip.entries();
   const out = {};
   for (const [name, entry] of Object.entries(entries)) {
-    out[name] = { method: entry.method, data: await zip.entryData(name) };
+    out[name] = { method: entry.method, time: entry.time, data: await zip.entryData(name) };
   }
   await zip.close();
   return out;
@@ -566,6 +566,13 @@ describe('v1 original downloads (issue 1473)', () => {
       expect(sha256(entries['MISSING_FILES.txt'].data)).toBe(sha256(bytes.manifestName));
       const escapeRow = await db('photos').where({ event_id: namesEventId, filename: 'escape.jpg' }).first();
       expect(entries['MISSING_FILES_1.txt'].data.toString()).toContain(String(escapeRow.id));
+    });
+
+    it('dates each entry by the camera clock (issue 2617)', async () => {
+      await db('photos').where({ id: photos.upper }).update({ captured_at_wall: '2025-06-01T09:45:04+02:00' });
+      const entries = await readZip((await get(`/api/v1/events/${namesEventId}/photos/download`)).body);
+      // node-stream-zip reads the zone-less ZIP time as UTC.
+      expect(new Date(entries['IMG.jpg'].time).toISOString()).toBe('2025-06-01T09:45:04.000Z');
     });
 
     it('answers a refused path on the single route as PHOTO_FILE_MISSING', async () => {

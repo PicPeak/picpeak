@@ -153,6 +153,51 @@ describe('admin photo list sorting (issue 1739)', () => {
         'managed-2027.jpg', 'no-exif-2026.jpg', 'imported-2020.jpg', 'managed-2019.jpg',
       ]);
     });
+
+    it('orders a same-second burst by the camera\'s file name, then by id (issue 2617)', async () => {
+      // Inserted against the camera counter, so id order is the reverse.
+      const at = managed('2026-06-03T13:15:42.000Z');
+      const ids = [];
+      for (const name of ['IMG_0003.jpg', 'IMG_0002.jpg', 'IMG_0001.jpg', 'IMG_0001.jpg']) {
+        ids.push(await addPhoto(`stored-${ids.length}.jpg`, { original_filename: name, captured_at: at }));
+      }
+      expect((await list('sort=capture_date&order=asc')).map((p) => p.id)).toEqual([ids[2], ids[3], ids[1], ids[0]]);
+      expect((await list('sort=capture_date&order=desc')).map((p) => p.id)).toEqual([ids[0], ids[1], ids[3], ids[2]]);
+    });
+
+    it('keeps milliseconds apart before the name tie-break (issue 2617)', async () => {
+      await addPhoto('Z.mp4', { original_filename: 'Z.mp4', captured_at: managed('2026-06-03T10:00:00.100Z') });
+      await addPhoto('A.mp4', { original_filename: 'A.mp4', captured_at: managed('2026-06-03T10:00:00.900Z') });
+      expect(await names('sort=capture_date&order=asc')).toEqual(['Z.mp4', 'A.mp4']);
+      expect(await names('sort=capture_date&order=desc')).toEqual(['A.mp4', 'Z.mp4']);
+    });
+
+    it('compares burst names plainly, as the browser does (issue 2617)', async () => {
+      const at = managed('2026-06-03T13:15:42.000Z');
+      for (const name of ['IMG_9.jpg', 'IMG_10.jpg', 'img_2.jpg', 'IMG_3.jpg']) {
+        await addPhoto(`stored-${name}`, { original_filename: name, captured_at: at });
+      }
+      expect((await list('sort=capture_date&order=asc')).map((p) => p.original_filename))
+        .toEqual(['IMG_10.jpg', 'IMG_3.jpg', 'IMG_9.jpg', 'img_2.jpg']);
+    });
+
+    it('takes the stored name for an empty original name too, as the gallery API reports it (issue 2617)', async () => {
+      const at = managed('2026-06-03T13:15:42.000Z');
+      const c = await addPhoto('stored-c.jpg', { original_filename: 'IMG_0003.jpg', captured_at: at });
+      const b = await addPhoto('IMG_0002.jpg', { original_filename: '', captured_at: at });
+      const a = await addPhoto('stored-a.jpg', { original_filename: 'IMG_0001.jpg', captured_at: at });
+      expect((await list('sort=capture_date&order=asc')).map((p) => p.id)).toEqual([a, b, c]);
+      expect((await list('sort=capture_date&order=desc')).map((p) => p.id)).toEqual([c, b, a]);
+    });
+
+    it('takes the stored name where no original name is kept, as external imports store it (issue 2617)', async () => {
+      const at = managed('2026-06-03T13:15:42.000Z');
+      const c = await addPhoto('IMG_0003.jpg', { original_filename: null, captured_at: at });
+      const b = await addPhoto('stored-b.jpg', { original_filename: 'IMG_0002.jpg', captured_at: at });
+      const a = await addPhoto('IMG_0001.jpg', { original_filename: null, captured_at: at });
+      expect((await list('sort=capture_date&order=asc')).map((p) => p.id)).toEqual([a, b, c]);
+      expect((await list('sort=capture_date&order=desc')).map((p) => p.id)).toEqual([c, b, a]);
+    });
   });
 
   it('returns the capture time as a zone-less wall clock in the server zone', async () => {

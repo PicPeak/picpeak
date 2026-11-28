@@ -12,11 +12,73 @@
  */
 
 const path = require('path');
+const fsp = require('fs').promises;
 const exifr = require('exifr');
 const logger = require('../utils/logger');
 
 const EXIF_TAGS = ['Make', 'Model', 'LensModel', 'FocalLength', 'FNumber', 'ExposureTime', 'ISO'];
 const MAX_TEXT_LENGTH = 100;
+
+// exifr's Node build reads the first 64 KB of a file and, when only EXIF tags
+// are asked for, no further: a JPEG whose EXIF segment sits behind large XMP,
+// ICC or Photoshop blocks (some editors' exports) comes back empty (issue
+// 2617). Only JPEG has that gap, so only a JPEG is looked at again, and not
+// through exifr, which reads whole segments: the marker chain is walked with
+// small header reads and the one EXIF segment (64 KB at most) is read on its own.
+const JPEG_SOI = Buffer.from([0xff, 0xd8]);
+const JPEG_EOI = Buffer.from([0xff, 0xd9]);
+const MAX_JPEG_SEGMENTS = 256;
+
+/** The EXIF APP1 segment of a JPEG, marker included, or null. */
+async function readJpegExifSegment(filePath) {
+  const handle = await fsp.open(filePath, 'r');
+  try {
+    const head = Buffer.alloc(4);
+    const id = Buffer.alloc(6);
+    if ((await handle.read(head, 0, 2, 0)).bytesRead < 2 || !head.subarray(0, 2).equals(JPEG_SOI)) return null;
+    let offset = 2;
+    for (let i = 0; i < MAX_JPEG_SEGMENTS; i += 1) {
+      if ((await handle.read(head, 0, 4, offset)).bytesRead < 4 || head[0] !== 0xff) return null;
+      // A fill byte: any number of 0xFF may precede a marker. Counted like a
+      // segment, so a run of them cannot keep the walk going.
+      if (head[1] === 0xff) {
+        offset += 1;
+        continue;
+      }
+      // Start of scan or end of image: the metadata segments are behind us.
+      if (head[1] === 0xda || head[1] === 0xd9) return null;
+      const length = head.readUInt16BE(2);
+      if (length < 2) return null;
+      // The six-byte identifier first: XMP shares APP1 and can be large.
+      if (head[1] === 0xe1 && length >= 8
+        && (await handle.read(id, 0, 6, offset + 4)).bytesRead === 6 && id.toString('latin1') === 'Exif\0\0') {
+        const segment = Buffer.alloc(2 + length);
+        const { bytesRead } = await handle.read(segment, 0, segment.length, offset);
+        return bytesRead === segment.length ? segment : null;
+      }
+      offset += 2 + length;
+    }
+    return null;
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * exifr.parse, with a second look for a JPEG: when `found` says the default
+ * read did not give what the caller asked for, the file's EXIF segment
+ * (readJpegExifSegment) is parsed on its own and laid over the first result.
+ * Throws what exifr throws.
+ */
+async function parseExif(filePath, options, found = Boolean) {
+  const first = await exifr.parse(filePath, options);
+  if (found(first)) return first;
+  const segment = await readJpegExifSegment(filePath);
+  if (!segment) return first;
+  // Closed with an end marker: exifr does not reach a segment that ends the buffer.
+  const late = await exifr.parse(Buffer.concat([JPEG_SOI, segment, JPEG_EOI]), options);
+  return late ? { ...first, ...late } : first;
+}
 
 function cleanText(value) {
   if (typeof value !== 'string') return null;
@@ -64,7 +126,7 @@ function normalizeExif(raw) {
  */
 async function extractPhotoExif(filePath) {
   try {
-    return normalizeExif(await exifr.parse(filePath, { pick: EXIF_TAGS }));
+    return normalizeExif(await parseExif(filePath, { pick: EXIF_TAGS }));
   } catch (error) {
     logger.debug(`Could not read EXIF details from ${path.basename(String(filePath))}: ${error.message}`);
     return error && error.code ? null : {};
@@ -88,4 +150,4 @@ function parseStoredExif(value) {
   return Object.keys(exif).length ? exif : null;
 }
 
-module.exports = { extractPhotoExif, exifColumn, normalizeExif, parseStoredExif };
+module.exports = { extractPhotoExif, exifColumn, normalizeExif, parseStoredExif, parseExif };

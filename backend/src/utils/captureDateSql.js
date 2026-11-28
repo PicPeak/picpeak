@@ -1,3 +1,12 @@
+// One sortable key, 'YYYY-MM-DD HH:MM:SS.mmm', out of either SQLite shape.
+// The milliseconds stay ('.000' for a text value without any), so two shots a
+// fraction of a second apart are not a tie for the name tie-break to reorder
+// (issue 2617). Both columns hold ISO text from some writers and knex's
+// space-separated shape from others, so text loses its 'T' in either.
+const epochKey = (column) => `strftime('%Y-%m-%d %H:%M:%f', ${column} / 1000.0, 'unixepoch')`;
+const textKey = (column) => `replace(replace(substr(${column}, 1, 19), 'T', ' '), 'Z', '')`
+  + ` || CASE WHEN substr(${column}, 20, 1) = '.' THEN substr(${column}, 20, 4) ELSE '.000' END`;
+
 /**
  * ORDER BY expression for "capture date, falling back to uploaded_at when the
  * photo carries none". Shared by the guest gallery and the admin photo list.
@@ -38,10 +47,33 @@
 const captureDateOrderSql = (client) => (client === 'pg'
   ? 'COALESCE(photos.captured_at, photos.uploaded_at)'
   : `CASE
-            WHEN typeof(photos.captured_at) IN ('integer', 'real') THEN datetime(photos.captured_at / 1000, 'unixepoch')
-            WHEN photos.captured_at IS NOT NULL THEN replace(replace(substr(photos.captured_at, 1, 19), 'T', ' '), 'Z', '')
-            WHEN typeof(photos.uploaded_at) IN ('integer', 'real') THEN datetime(photos.uploaded_at / 1000, 'unixepoch')
-            ELSE substr(photos.uploaded_at, 1, 19)
+            WHEN typeof(photos.captured_at) IN ('integer', 'real') THEN ${epochKey('photos.captured_at')}
+            WHEN photos.captured_at IS NOT NULL THEN ${textKey('photos.captured_at')}
+            WHEN typeof(photos.uploaded_at) IN ('integer', 'real') THEN ${epochKey('photos.uploaded_at')}
+            ELSE ${textKey('photos.uploaded_at')}
           END`);
 
-module.exports = { captureDateOrderSql };
+/**
+ * ORDER BY expression for a tie on the capture date: the camera's file name.
+ * A burst shares one EXIF second and its files are numbered in shot order,
+ * which upload order (photos.id, the last key) is not. Shared by the guest
+ * gallery and the admin photo list; the browser's capture-date comparator
+ * (frontend useGalleryFiltering) sorts the loaded gallery by the same rule.
+ *
+ * The stored name stands in where there is no original one: external imports
+ * keep the camera name in filename, and '' counts as none because the gallery
+ * API reports it to the browser as null.
+ *
+ * Compared byte by byte, so every side can agree: BINARY is SQLite's default,
+ * and PostgreSQL is told so, since its database collation decides otherwise
+ * (a glibc or ICU locale folds case; the alpine image happens to be bytewise).
+ *
+ * Known limit: not a natural sort. An unpadded counter (IMG_10 before IMG_3)
+ * and a counter rolling over inside a burst (9999, then 0001) order wrong.
+ *
+ * @param {string} client  knex client name (db.client.config.client)
+ */
+const captureNameTieBreakSql = (client) => (
+  `COALESCE(NULLIF(photos.original_filename, ''), photos.filename)${client === 'pg' ? ' COLLATE "C"' : ''}`);
+
+module.exports = { captureDateOrderSql, captureNameTieBreakSql };
