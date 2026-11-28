@@ -66,3 +66,14 @@ it('while the website is on, links every page to the builder instead of a second
   }
   expect(screen.queryByText('editor')).toBeNull();
 });
+
+it('shows no stray 0 for a flag SQLite stores as a number', async () => {
+  flagOn.mockReturnValue(false);
+  PAGES[0] = { ...PAGES[0], use_external_url: 0 as unknown as boolean };
+  const { container } = renderPage();
+  await screen.findAllByText('editor');
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  const texts: string[] = [];
+  while (walker.nextNode()) texts.push((walker.currentNode.nodeValue || '').trim());
+  expect(texts).not.toContain('0');
+});

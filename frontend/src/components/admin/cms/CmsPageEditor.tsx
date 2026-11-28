@@ -161,7 +161,7 @@ export const CmsPageEditor: React.FC<CmsPageEditorProps> = ({ slug, saveMode = '
               <span className="block text-xs text-muted mt-1">{t('cms.useExternalUrlHelp')}</span>
             </span>
           </label>
-          {editForm.use_external_url && (
+          {!!editForm.use_external_url && (
             <div className="mt-3">
               <Input
                 type="url"
