@@ -17,7 +17,7 @@ const crypto = require('crypto');
 const { db, logActivity } = require('../../database/db');
 const { toTimestamp } = require('../../utils/dateNormalize');
 const logger = require('../../utils/logger');
-const { publishedDocument } = require('./service');
+const { publishedDocument } = require('./publicPages');
 const { META_BYTES } = require('../mailRetentionService');
 const { DAY_MS, EMAIL_PATTERN } = require('./validators');
 
