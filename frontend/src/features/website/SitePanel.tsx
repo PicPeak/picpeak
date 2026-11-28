@@ -6,9 +6,8 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
-import { fontsService, FONTS_QUERY_KEY } from '../../services/fonts.service';
+import { useFonts } from '../../hooks/useFonts';
 import { settingsTabHref } from '../settings/settingsNav';
 import { ChoiceField, ColorField, SelectField, TextArea, labelClass } from './fields';
 import { ContactSettingsSection } from './ContactSettingsSection';
@@ -27,7 +26,7 @@ interface SitePanelProps {
 
 export const SitePanel: React.FC<SitePanelProps> = ({ doc, contactSettings, update, readOnly }) => {
   const { t } = useTranslation();
-  const fonts = useQuery({ queryKey: FONTS_QUERY_KEY, queryFn: () => fontsService.list(), staleTime: 5 * 60 * 1000 });
+  const fonts = useFonts();
   const setTheme = (patch: Partial<WebsiteTheme>, field?: string) => update((d) => ({ ...d, theme: { ...d.theme, ...patch } }), field);
   const fontOptions = [
     { value: '', label: t('website.site.fromBranding', 'From branding') },

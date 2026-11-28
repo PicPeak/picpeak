@@ -478,6 +478,17 @@ describe('uploaded fonts', () => {
   });
 });
 
+// The same cases hold the frontend's fontFaceSource (fonts.service.ts), so
+// the page and the admin link a font file by one address.
+describe('a font file\'s @font-face source, as the frontend builds it too', () => {
+  const cases = require('../../../../__tests__/fixtures/fontFaceSources.json');
+  const { fontFaces } = require('../renderer')._internal;
+  test.each(cases.map((c) => [c.name, c]))('%s', (_name, c) => {
+    const css = fontFaces({ body: null, heading: { family: c.family, weights: [c.weight], formats: c.formats, versions: c.versions } });
+    expect(css).toContain(`font-weight:${c.weight};font-display:swap;src:${c.src}}`);
+  });
+});
+
 describe('booking button', () => {
   const booking = (over) => ({ type: 'booking', id: 'b1', heading: 'Book', buttonLabel: 'Book a session', ...over });
 

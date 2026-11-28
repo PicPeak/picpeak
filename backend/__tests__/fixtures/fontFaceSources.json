@@ -1,0 +1,8 @@
+[
+  { "name": "woff2 without a version", "family": "Inter", "weight": 400, "formats": { "400": "woff2" }, "versions": {}, "src": "url('/fonts/Inter/400.woff2') format('woff2')" },
+  { "name": "a family listed without formats is woff2", "family": "Old", "weight": 400, "src": "url('/fonts/Old/400.woff2') format('woff2')" },
+  { "name": "spaces in the family become hyphens; the file's version is its query", "family": "Playfair Display", "weight": 600, "formats": { "600": "woff2" }, "versions": { "600": "mwyzcpl2hx8" }, "src": "url('/fonts/Playfair-Display/600.woff2?v=mwyzcpl2hx8') format('woff2')" },
+  { "name": "ttf is named truetype", "family": "Studio Sans", "weight": 400, "formats": { "400": "ttf" }, "versions": { "400": "k3x9" }, "src": "url('/fonts/Studio-Sans/400.ttf?v=k3x9') format('truetype')" },
+  { "name": "woff", "family": "Studio Sans", "weight": 700, "formats": { "700": "woff" }, "versions": {}, "src": "url('/fonts/Studio-Sans/700.woff') format('woff')" },
+  { "name": "a version of another shape is left out", "family": "Inter", "weight": 600, "formats": { "600": "woff2" }, "versions": { "600": "../x?y" }, "src": "url('/fonts/Inter/600.woff2') format('woff2')" }
+]
