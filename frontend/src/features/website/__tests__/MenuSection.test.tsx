@@ -67,6 +67,18 @@ describe('menu section', () => {
     expect(document.activeElement).toBe(label);
   });
 
+  it('says what happens to a menu item without a block, not to a button', () => {
+    const Holder = () => {
+      const [doc, setDoc] = React.useState(DOC);
+      return <MenuSection doc={doc} update={(fn) => setDoc(fn)} readOnly={false} />;
+    };
+    render(<Holder />);
+    fireEvent.click(screen.getAllByRole('button', { name: /Edit menu item/ })[0]);
+    fireEvent.change(screen.getByLabelText('Leads to'), { target: { value: 'anchor' } });
+    expect(screen.getByText('Choose a block, or the item is not shown in the menu.')).toBeInTheDocument();
+    expect(screen.queryByText(/the button is not shown/)).toBeNull();
+  });
+
   it('sets the design', () => {
     const { menu } = open();
     fireEvent.click(screen.getByRole('button', { name: 'Logo centred' }));

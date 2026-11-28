@@ -13560,7 +13560,9 @@
       "chooseBlock": "Block wählen",
       "whichLegal": "Rechtliche Seite",
       "address": "Adresse",
-      "noBlock": "Wählen Sie einen Block, sonst wird die Schaltfläche nicht gezeigt."
+      "noBlock": "Wählen Sie einen Block, sonst wird die Schaltfläche nicht gezeigt.",
+      "noBlockMenu": "Wählen Sie einen Block, sonst wird der Eintrag im Menü nicht gezeigt.",
+      "noBlockLink": "Wählen Sie einen Block, sonst wird der Link nicht gezeigt."
     },
     "menu": {
       "title": "Menü",

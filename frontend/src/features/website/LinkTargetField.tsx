@@ -34,8 +34,15 @@ export const LinkTargetField: React.FC<{
   label?: string;
   value: LinkTarget | null;
   onChange: (value: LinkTarget | null) => void;
-}> = ({ label, value, onChange }) => {
+  /** What the target belongs to: its hints name it. */
+  of?: 'button' | 'menuItem' | 'link';
+}> = ({ label, value, onChange, of = 'button' }) => {
   const { t } = useTranslation();
+  const noBlockHint = {
+    button: t('website.link.noBlock', 'Choose a block, or the button is not shown.'),
+    menuItem: t('website.link.noBlockMenu', 'Choose a block, or the item is not shown in the menu.'),
+    link: t('website.link.noBlockLink', 'Choose a block, or the link is not shown.'),
+  }[of];
   const doc = useContext(WebsiteDocContext);
   const pages = doc?.pages || [];
   const firstPage = pages[0]?.id || '';
@@ -85,7 +92,7 @@ export const LinkTargetField: React.FC<{
         <LinkField label={t('website.link.address', 'Address')} value={value.url} onChange={(url) => onChange({ kind: 'url', url })} />
       )}
       {value?.kind === 'anchor' && !value.blockId && (
-        <p className="text-xs text-warning-text">{t('website.link.noBlock', 'Choose a block, or the button is not shown.')}</p>
+        <p className="text-xs text-warning-text">{noBlockHint}</p>
       )}
     </div>
   );

@@ -53,7 +53,7 @@ const LinksEditor: React.FC<{ links: { label: string; target: LinkTarget }[]; on
               <Trash2 className="w-4 h-4" />
             </Button>
           </div>
-          <LinkTargetField value={link.target} onChange={(target) => { if (target) onChange(links.map((l, i) => (i === index ? { ...l, target } : l))); }} />
+          <LinkTargetField of="link" value={link.target} onChange={(target) => { if (target) onChange(links.map((l, i) => (i === index ? { ...l, target } : l))); }} />
         </div>
       ))}
       <Button size="sm" variant="secondary" leftIcon={<Plus className="w-4 h-4" />} disabled={links.length >= MAX_LINKS}

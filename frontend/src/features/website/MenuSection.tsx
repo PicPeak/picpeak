@@ -87,7 +87,7 @@ export const MenuSection: React.FC<MenuSectionProps> = ({ doc, update, readOnly 
                 helperText={current.target.kind === 'page' ? t('website.menu.labelHint', 'Empty: the page’s menu label or title.') : undefined}
                 onChange={(label) => patchItem(current.id, { label }, 'label')} />
               <Switch checked={!current.hidden} onChange={(shown) => patchItem(current.id, { hidden: !shown })} label={t('website.menu.shown', 'Shown in the menu')} />
-              <LinkTargetField value={current.target} onChange={(target) => { if (target) patchItem(current.id, { target }); }} />
+              <LinkTargetField of="menuItem" value={current.target} onChange={(target) => { if (target) patchItem(current.id, { target }); }} />
               <Button size="sm" variant="ghost" leftIcon={<Trash2 className="w-4 h-4" />}
                 onClick={() => { setMenu({ items: menu.items.filter((item) => item.id !== current.id) }); setEditing(null); }}>
                 {t('website.menu.remove', 'Remove from the menu')}

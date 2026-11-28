@@ -13595,7 +13595,9 @@
       "chooseBlock": "Choose a block",
       "whichLegal": "Legal page",
       "address": "Address",
-      "noBlock": "Choose a block, or the button is not shown."
+      "noBlock": "Choose a block, or the button is not shown.",
+      "noBlockMenu": "Choose a block, or the item is not shown in the menu.",
+      "noBlockLink": "Choose a block, or the link is not shown."
     },
     "menu": {
       "title": "Menu",
