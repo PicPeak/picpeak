@@ -88,7 +88,7 @@ describe('normalizeDocument', () => {
           { type: 'script', html: '<script>' },
           { type: 'text', variant: 'nope', background: 'url(x)', heading: 'x'.repeat(500), body: 'b', onclick: 'x' },
           { type: 'gallery', images: Array.from({ length: 100 }, (_, i) => ({ source: 'photo', id: i + 1 })), columns: 99 },
-          { type: 'hero', buttonUrl: 'javascript:alert(1)', image: { source: 'asset', id: '../../x' } },
+          { type: 'hero', buttonTarget: { kind: 'url', url: 'javascript:alert(1)' }, image: { source: 'asset', id: '../../x' } },
         ],
       })],
     });
@@ -99,8 +99,31 @@ describe('normalizeDocument', () => {
     expect(text.onclick).toBeUndefined();
     expect(gallery.images).toHaveLength(60);
     expect(gallery.columns).toBe(3);
-    expect(hero.buttonUrl).toBe('');
+    expect(hero.buttonTarget).toBeNull();
     expect(hero.image).toBeNull();
+  });
+
+  test('a block button leads where a menu item can: a page, a block, booking, a legal page or an address', () => {
+    const blocks = (targets) => targets.map((buttonTarget, i) => ({ type: ['hero', 'imageText', 'pricing'][i % 3], buttonLabel: 'Go', buttonTarget }));
+    const targets = [
+      { kind: 'page', pageId: 'about' }, { kind: 'anchor', pageId: 'home', blockId: 'contact' }, { kind: 'booking' },
+      { kind: 'legal', slug: 'impressum' }, { kind: 'url', url: 'https://x.example/' }, { kind: 'url', url: 'mailto:hi@x.example' },
+    ];
+    const { document } = normalizeDocument({ pages: [page({ blocks: blocks(targets) })] });
+    expect(document.pages[0].blocks.map((b) => b.buttonTarget)).toEqual(targets);
+    // The address a button used to store is no field of the block.
+    expect(document.pages[0].blocks.every((b) => !('buttonUrl' in b))).toBe(true);
+  });
+
+  test('a button link stored as an address keeps leading there', () => {
+    const { document } = normalizeDocument({ pages: [page({ blocks: [
+      { type: 'hero', buttonLabel: 'Go', buttonUrl: '/portfolio' },
+      { type: 'pricing', buttonLabel: 'Ask', buttonUrl: '#b-contact' },
+      { type: 'imageText', buttonLabel: 'Bad', buttonUrl: 'javascript:alert(1)' },
+    ] })] });
+    expect(document.pages[0].blocks.map((b) => b.buttonTarget)).toEqual([
+      { kind: 'url', url: '/portfolio' }, { kind: 'url', url: '#b-contact' }, null,
+    ]);
   });
 
   test('theme colours and fonts must be values, not CSS', () => {

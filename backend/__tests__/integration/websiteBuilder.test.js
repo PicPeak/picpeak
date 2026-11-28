@@ -2288,7 +2288,7 @@ describe('switching a block variant keeps what the other variant uses', () => {
   });
 
   test('hero and call-to-action keep every field across their variants', () => {
-    const hero = { id: 'h1', type: 'hero', heading: 'Hi', subheading: 'Sub', buttonLabel: 'Go', buttonUrl: 'https://x.example/' };
+    const hero = { id: 'h1', type: 'hero', heading: 'Hi', subheading: 'Sub', buttonLabel: 'Go', buttonTarget: { kind: 'url', url: 'https://x.example/' } };
     const cta = { id: 'c1', type: 'cta', heading: 'Book', text: '<p>Now</p>', buttons: [{ label: 'Go', target: { kind: 'url', url: 'https://x.example/' } }] };
     const [splitHero, splitCta] = normalizeDocument({ pages: [page([{ ...hero, variant: 'split' }, { ...cta, variant: 'split' }])] }).document.pages[0].blocks;
     const [minimalHero, centeredCta] = normalizeDocument({ pages: [page([{ ...hero, variant: 'minimal' }, { ...cta, variant: 'centered' }])] }).document.pages[0].blocks;

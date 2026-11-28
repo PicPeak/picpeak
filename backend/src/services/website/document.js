@@ -240,6 +240,12 @@ function linkTarget(value) {
   }
 }
 
+// Where a block's button leads. A link stored as an address (`buttonUrl`)
+// keeps leading there, as an address target.
+function buttonTarget(block) {
+  return linkTarget(block.buttonTarget) || linkTarget({ kind: 'url', url: block.buttonUrl });
+}
+
 // A social profile: http(s) only; for e-mail an address, as mailto.
 function socialUrl(network, value) {
   const raw = str(value, 500, 'url');
@@ -278,7 +284,7 @@ const BLOCK_FIELDS = {
     heading: str(b.heading, 200, 'heading'),
     subheading: str(b.subheading, 600, 'subheading'),
     buttonLabel: str(b.buttonLabel, 60, 'buttonLabel'),
-    buttonUrl: safeUrl(b.buttonUrl),
+    buttonTarget: buttonTarget(b),
     image: imageRef(b.image),
     video: videoRef(b.video),
   }),
@@ -302,7 +308,7 @@ const BLOCK_FIELDS = {
     body: str(b.body, 5000, 'body'),
     image: imageRef(b.image),
     buttonLabel: str(b.buttonLabel, 60, 'buttonLabel'),
-    buttonUrl: safeUrl(b.buttonUrl),
+    buttonTarget: buttonTarget(b),
   }),
   gallery: (b) => ({
     heading: str(b.heading, 200, 'heading'),
@@ -337,7 +343,7 @@ const BLOCK_FIELDS = {
     packageIds: idList(b.packageIds, 12, 'packageIds'),
     showPrices: bool(b.showPrices, true),
     buttonLabel: str(b.buttonLabel, 60, 'buttonLabel'),
-    buttonUrl: safeUrl(b.buttonUrl),
+    buttonTarget: buttonTarget(b),
   }),
   contact: (b) => ({
     heading: str(b.heading, 200, 'heading'),

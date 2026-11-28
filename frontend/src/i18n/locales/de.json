@@ -13248,7 +13248,8 @@
       "socialUrlBad": "Mit https:// beginnen",
       "addSocial": "Link hinzufügen",
       "moveImageEarlier": "Bild {{n}} nach vorne",
-      "moveImageLater": "Bild {{n}} nach hinten"
+      "moveImageLater": "Bild {{n}} nach hinten",
+      "profileUrlHint": "Die Adresse Ihres Profils, auf die der Block verlinkt."
     },
     "defaults": {
       "heroHeading": "Ihre Überschrift",

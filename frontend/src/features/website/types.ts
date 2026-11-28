@@ -24,7 +24,7 @@ export interface HeroBlock extends BlockBase {
   heading: string;
   subheading: string;
   buttonLabel: string;
-  buttonUrl: string;
+  buttonTarget: LinkTarget | null;
   image: ImageRef | null;
   video: { source: 'asset'; id: string } | null;
 }
@@ -36,7 +36,7 @@ export interface ImageTextBlock extends BlockBase {
   body: string;
   image: ImageRef | null;
   buttonLabel: string;
-  buttonUrl: string;
+  buttonTarget: LinkTarget | null;
 }
 export interface GalleryBlock extends BlockBase { type: 'gallery'; heading: string; images: ImageRef[]; columns: number }
 export interface FeaturedGalleriesBlock extends BlockBase {
@@ -55,7 +55,7 @@ export interface PricingBlock extends BlockBase {
   packageIds: number[];
   showPrices: boolean;
   buttonLabel: string;
-  buttonUrl: string;
+  buttonTarget: LinkTarget | null;
 }
 export interface ContactBlock extends BlockBase {
   type: 'contact';

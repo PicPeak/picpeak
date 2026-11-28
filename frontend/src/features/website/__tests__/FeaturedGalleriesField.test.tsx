@@ -63,7 +63,7 @@ describe('chosen entries that are gone', () => {
 
   it('lists an archived package as unavailable, also while quotes are off, and lets it be removed', async () => {
     vi.mocked(websiteService.listPackages).mockResolvedValue({ available: true, packages: [{ id: 3, name: 'Full day', description: '', currency: 'CHF' }] });
-    const block = { id: 'p', type: 'pricing' as const, variant: 'cards', background: 'default' as const, heading: '', intro: '', packageIds: [3, 99], showPrices: true, buttonLabel: '', buttonUrl: '' };
+    const block = { id: 'p', type: 'pricing' as const, variant: 'cards', background: 'default' as const, heading: '', intro: '', packageIds: [3, 99], showPrices: true, buttonLabel: '', buttonTarget: null };
     const onChange = vi.fn();
     const { unmount } = render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={block} onChange={onChange} /></QueryClientProvider>);
     expect(await screen.findByText('Package no longer in the catalogue')).toBeInTheDocument();
@@ -84,7 +84,7 @@ describe('chosen entries that are gone', () => {
       { id: 3, name: 'Full day', description: '', currency: 'CHF', unavailable: 'archived_items' },
       { id: 4, name: 'Half day', description: '', currency: 'CHF', unavailable: 'archived_items' },
     ] });
-    const block = { id: 'p', type: 'pricing' as const, variant: 'cards', background: 'default' as const, heading: '', intro: '', packageIds: [3], showPrices: true, buttonLabel: '', buttonUrl: '' };
+    const block = { id: 'p', type: 'pricing' as const, variant: 'cards', background: 'default' as const, heading: '', intro: '', packageIds: [3], showPrices: true, buttonLabel: '', buttonTarget: null };
     const onChange = vi.fn();
     render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={block} onChange={onChange} /></QueryClientProvider>);
     expect(await screen.findAllByText('Contains archived items, not shown')).toHaveLength(2);
@@ -113,7 +113,7 @@ describe('chosen entries that are gone', () => {
     vi.mocked(websiteService.listPackages)
       .mockRejectedValueOnce(new Error('Network down'))
       .mockResolvedValue({ available: true, packages: [{ id: 3, name: 'Full day', description: '', currency: 'CHF' }] });
-    const block = { id: 'p', type: 'pricing' as const, variant: 'cards', background: 'default' as const, heading: '', intro: '', packageIds: [3], showPrices: true, buttonLabel: '', buttonUrl: '' };
+    const block = { id: 'p', type: 'pricing' as const, variant: 'cards', background: 'default' as const, heading: '', intro: '', packageIds: [3], showPrices: true, buttonLabel: '', buttonTarget: null };
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><BlockEditor block={block} onChange={vi.fn()} /></QueryClientProvider>);
     expect(await screen.findByRole('alert')).toBeInTheDocument();
@@ -126,7 +126,7 @@ describe('chosen entries that are gone', () => {
   it('without the permission to view quotes it says so, and calls no chosen package unavailable', async () => {
     vi.mocked(usePermission).mockImplementation((p: string) => p !== 'quotes.view');
     vi.mocked(websiteService.listPackages).mockClear();
-    const block = { id: 'p', type: 'pricing' as const, variant: 'cards', background: 'default' as const, heading: '', intro: '', packageIds: [3], showPrices: true, buttonLabel: '', buttonUrl: '' };
+    const block = { id: 'p', type: 'pricing' as const, variant: 'cards', background: 'default' as const, heading: '', intro: '', packageIds: [3], showPrices: true, buttonLabel: '', buttonTarget: null };
     render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={block} onChange={vi.fn()} /></QueryClientProvider>);
     expect(await screen.findByText(/needs the permission to view quotes/)).toBeInTheDocument();
     expect(screen.queryByText('Package no longer in the catalogue')).toBeNull();
@@ -147,7 +147,7 @@ describe('chosen entries that are gone', () => {
   });
 
   it('offers no picture for a minimal hero, and says so', () => {
-    const hero = { id: 'h', type: 'hero' as const, variant: 'minimal', background: 'default' as const, heading: 'Hi', subheading: '', buttonLabel: '', buttonUrl: '', image: null, video: null };
+    const hero = { id: 'h', type: 'hero' as const, variant: 'minimal', background: 'default' as const, heading: 'Hi', subheading: '', buttonLabel: '', buttonTarget: null, image: null, video: null };
     const { unmount } = render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={hero} onChange={vi.fn()} /></QueryClientProvider>);
     expect(screen.queryByText('Image')).toBeNull();
     expect(screen.getByText(/style shows no picture or video/)).toBeInTheDocument();

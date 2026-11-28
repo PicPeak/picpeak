@@ -247,7 +247,7 @@ function renderHero(block, ctx) {
     // The page's first hero picture is preloaded (renderHead).
     if (isFirst) ctx.heroPreload = { image, sizes };
   }
-  const text = `<div class="pp-hero__text">${block.heading ? `<h1 class="pp-h pp-display">${esc(block.heading)}</h1>` : ''}${block.subheading ? `<p class="pp-lead">${inline(block.subheading)}</p>` : ''}${button(block.buttonLabel, block.buttonUrl)}</div>`;
+  const text = `<div class="pp-hero__text">${block.heading ? `<h1 class="pp-h pp-display">${esc(block.heading)}</h1>` : ''}${block.subheading ? `<p class="pp-lead">${inline(block.subheading)}</p>` : ''}${button(block.buttonLabel, targetHref(block.buttonTarget, ctx))}</div>`;
   if (block.variant === 'split') {
     return section(block, `<div class="pp-wrap pp-split">${text}${media.length ? `<div class="pp-hero__frame">${media.join('')}</div>` : ''}</div>`, ctx);
   }
@@ -273,7 +273,7 @@ function renderImageText(block, ctx) {
   const figure = image
     ? `<div class="pp-frame" style="aspect-ratio:${aspect(image)}">${imgTag(image, { alt: block.image.alt, sizes: '(min-width: 900px) 50vw, 100vw' })}</div>`
     : '';
-  const text = `<div>${heading(block.heading)}<div class="pp-prose">${richText(block.body)}</div>${button(block.buttonLabel, block.buttonUrl)}</div>`;
+  const text = `<div>${heading(block.heading)}<div class="pp-prose">${richText(block.body)}</div>${button(block.buttonLabel, targetHref(block.buttonTarget, ctx))}</div>`;
   const reverse = block.variant === 'image-right' ? ' pp-split--reverse' : '';
   return section(block, `<div class="pp-wrap pp-split${reverse}">${figure}${text}</div>`, ctx);
 }
@@ -349,7 +349,7 @@ function renderPricing(block, ctx) {
     const price = block.showPrices && pkg.totalMinor > 0
       ? `<p class="pp-price"><span class="pp-muted">${esc(s.from)}</span> ${esc(formatMoney(pkg.totalMinor, pkg.currency, ctx.locale))}</p>` : '';
     const items = pkg.items.length ? `<ul class="pp-ticks">${pkg.items.map((name) => `<li>${esc(name)}</li>`).join('')}</ul>` : '';
-    return `<div class="pp-plan"><h3 class="pp-h">${esc(pkg.name)}</h3>${price}${pkg.description ? `<p>${esc(pkg.description)}</p>` : ''}${items}${button(block.buttonLabel, block.buttonUrl, { secondary: true })}</div>`;
+    return `<div class="pp-plan"><h3 class="pp-h">${esc(pkg.name)}</h3>${price}${pkg.description ? `<p>${esc(pkg.description)}</p>` : ''}${items}${button(block.buttonLabel, targetHref(block.buttonTarget, ctx), { secondary: true })}</div>`;
   }).join('');
   if (!cards && !ctx.preview) return '';
   return section(block, `<div class="pp-wrap">${heading(block.heading)}${block.intro ? `<div class="pp-prose pp-intro">${richText(block.intro)}</div>` : ''}<div class="pp-plans${block.variant === 'list' ? ' pp-plans--list' : ''}">${cards}</div></div>`, ctx);

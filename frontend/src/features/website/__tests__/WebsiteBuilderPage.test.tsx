@@ -87,7 +87,7 @@ const STATE: EditorState = {
         id: 'home', slug: 'home', title: 'Home', navLabel: '', hidden: false, isHome: true,
         seo: { title: '', description: '', image: null },
         blocks: [
-          { id: 'h1', type: 'hero', variant: 'minimal', background: 'default', heading: 'Hello there', subheading: '', buttonLabel: '', buttonUrl: '', image: null, video: null },
+          { id: 'h1', type: 'hero', variant: 'minimal', background: 'default', heading: 'Hello there', subheading: '', buttonLabel: '', buttonTarget: null, image: null, video: null },
           { id: 't1', type: 'text', variant: 'left', background: 'default', heading: 'About', body: 'We take photos.' },
         ],
       },
@@ -416,7 +416,7 @@ describe('WebsiteBuilderPage', () => {
   it('offers no duplicate or new block once a page has 60', async () => {
     const full = structuredClone(STATE);
     full.document.pages[0].blocks = Array.from({ length: 60 }, (_, i) => ({ id: `s${i}`, type: 'spacer', variant: 'medium', background: 'default', divider: false }));
-    full.document.pages[0].blocks[0] = { id: 'h1', type: 'hero', variant: 'minimal', background: 'default', heading: 'Hello there', subheading: '', buttonLabel: '', buttonUrl: '', image: null, video: null };
+    full.document.pages[0].blocks[0] = { id: 'h1', type: 'hero', variant: 'minimal', background: 'default', heading: 'Hello there', subheading: '', buttonLabel: '', buttonTarget: null, image: null, video: null };
     vi.mocked(websiteService.getState).mockResolvedValue(full);
     renderPage();
     fireEvent.click(await screen.findByText('Hello there'));

@@ -64,16 +64,17 @@ function rowSummary(row) {
 // ---------------------------------------------------------------------------
 
 function starterDocument() {
+  const home = newPageId();
   return {
     pages: [{
-      id: newPageId(),
+      id: home,
       slug: 'home',
       title: 'Home',
       isHome: true,
       blocks: [
-        // A section is reached as #b-<block id>; the ids here are fixed so
-        // the hero's button finds the contact form.
-        { id: 'hero', type: 'hero', variant: 'minimal', heading: 'Photography for the moments that matter', subheading: 'Weddings, portraits and events, told honestly and beautifully.', buttonLabel: 'Get in touch', buttonUrl: '#b-contact' },
+        // The block ids here are fixed so the hero's button finds the
+        // contact form.
+        { id: 'hero', type: 'hero', variant: 'minimal', heading: 'Photography for the moments that matter', subheading: 'Weddings, portraits and events, told honestly and beautifully.', buttonLabel: 'Get in touch', buttonTarget: { kind: 'anchor', pageId: home, blockId: 'contact' } },
         { id: 'about', type: 'text', variant: 'center', heading: 'About', body: 'Tell your visitors who you are and how you work.' },
         { id: 'contact', type: 'contact', variant: 'simple', heading: 'Let’s talk', intro: 'Tell me about your plans.' },
       ],

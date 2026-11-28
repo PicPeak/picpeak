@@ -49,7 +49,7 @@ describe('text is escaped everywhere', () => {
   test('block fields cannot inject markup', () => {
     const payload = '<img src=x onerror=alert(1)>"\'><script>alert(2)</script>';
     const html = render([home([
-      { type: 'hero', heading: payload, subheading: payload, buttonLabel: payload, buttonUrl: '/x' },
+      { type: 'hero', heading: payload, subheading: payload, buttonLabel: payload, buttonTarget: { kind: 'url', url: '/x' } },
       { type: 'text', heading: payload, body: payload },
       { type: 'testimonials', items: [{ quote: payload, author: payload, role: payload }] },
       { type: 'contact', heading: payload, intro: payload, submitLabel: payload, successMessage: payload },
@@ -71,9 +71,22 @@ describe('text is escaped everywhere', () => {
 });
 
 test('buttons never carry a script URL', () => {
-  const html = render([home([{ type: 'hero', heading: 'H', buttonLabel: 'Go', buttonUrl: 'javascript:alert(1)' }])]);
+  const html = render([home([{ type: 'hero', heading: 'H', buttonLabel: 'Go', buttonTarget: { kind: 'url', url: 'javascript:alert(1)' } }])]);
   expect(html).not.toMatch(/javascript:/i);
   expect(html).not.toContain('>Go</a>');
+});
+
+test('a block button follows its target: a page by id, a block by its anchor', () => {
+  const about = { id: 'about', slug: 'about-us', title: 'About', blocks: [{ id: 'team', type: 'text', heading: 'Team' }] };
+  const html = render([home([
+    { type: 'hero', heading: 'H', buttonLabel: 'About us', buttonTarget: { kind: 'page', pageId: 'about' } },
+    { type: 'imageText', heading: 'I', buttonLabel: 'The team', buttonTarget: { kind: 'anchor', pageId: 'about', blockId: 'team' } },
+    { type: 'hero', variant: 'minimal', heading: 'P', buttonLabel: 'Gone', buttonTarget: { kind: 'page', pageId: 'removed' } },
+  ]), about]);
+  expect(html).toContain('href="/about-us">About us</a>');
+  expect(html).toContain('href="/about-us#b-team">The team</a>');
+  // A target that leads nowhere any more shows no button.
+  expect(html).not.toContain('>Gone</a>');
 });
 
 test('the custom HTML block goes through the public-site sanitiser', () => {

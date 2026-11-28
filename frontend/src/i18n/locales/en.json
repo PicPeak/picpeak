@@ -13283,7 +13283,8 @@
       "socialUrlBad": "Start with https://",
       "addSocial": "Add link",
       "moveImageEarlier": "Move image {{n}} earlier",
-      "moveImageLater": "Move image {{n}} later"
+      "moveImageLater": "Move image {{n}} later",
+      "profileUrlHint": "The address of your profile, which the block links to."
     },
     "defaults": {
       "heroHeading": "Your headline",

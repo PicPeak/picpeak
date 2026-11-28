@@ -87,11 +87,11 @@ export function createBlock(type: BlockType, t: TFunction): Block {
   const base = { id: newId(), variant: BLOCK_VARIANTS[type][0], background: 'default' as const };
   switch (type) {
   case 'hero':
-    return { ...base, type, heading: t('website.defaults.heroHeading', 'Your headline'), subheading: '', buttonLabel: '', buttonUrl: '', image: null, video: null };
+    return { ...base, type, heading: t('website.defaults.heroHeading', 'Your headline'), subheading: '', buttonLabel: '', buttonTarget: null, image: null, video: null };
   case 'text':
     return { ...base, type, heading: '', body: `<p>${t('website.defaults.textBody', 'Write something here.')}</p>`, bodyRight: '', format: 'html' };
   case 'imageText':
-    return { ...base, type, heading: '', body: '', image: null, buttonLabel: '', buttonUrl: '' };
+    return { ...base, type, heading: '', body: '', image: null, buttonLabel: '', buttonTarget: null };
   case 'gallery':
     return { ...base, type, heading: '', images: [], columns: 3 };
   case 'featuredGalleries':
@@ -99,7 +99,7 @@ export function createBlock(type: BlockType, t: TFunction): Block {
   case 'testimonials':
     return { ...base, type, heading: t('website.defaults.testimonialsHeading', 'Kind words'), items: [] };
   case 'pricing':
-    return { ...base, type, heading: t('website.defaults.pricingHeading', 'Packages'), intro: '', packageIds: [], showPrices: true, buttonLabel: '', buttonUrl: '' };
+    return { ...base, type, heading: t('website.defaults.pricingHeading', 'Packages'), intro: '', packageIds: [], showPrices: true, buttonLabel: '', buttonTarget: null };
   case 'contact':
     return { ...base, type, heading: t('website.defaults.contactHeading', 'Get in touch'), intro: '', showPhone: false, showDate: false, submitLabel: '', successMessage: '' };
   case 'booking':

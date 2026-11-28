@@ -223,7 +223,14 @@ export function isSafeUrl(value: string): boolean {
   return false;
 }
 
-export const LinkField: React.FC<{ label: string; value: string; onChange: (value: string) => void }> = ({ label, value, onChange }) => {
+export const LinkField: React.FC<{
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  /** What this address is for, when the general hint would not say. */
+  hint?: string;
+  placeholder?: string;
+}> = ({ label, value, onChange, hint, placeholder = '/contact, https://…, mailto:…' }) => {
   const { t } = useTranslation();
   return (
     <TextField
@@ -231,9 +238,9 @@ export const LinkField: React.FC<{ label: string; value: string; onChange: (valu
       value={value}
       onChange={onChange}
       maxLength={500}
-      placeholder="/contact, https://…, mailto:…"
+      placeholder={placeholder}
       error={isSafeUrl(value) ? undefined : t('website.fields.badLink', 'Use https://, mailto:, tel:, a page like /about or an anchor like #contact.')}
-      helperText={isSafeUrl(value) ? t('website.fields.linkHint', 'A page like /about, a section like #contact, or https://, mailto:, tel:') : undefined}
+      helperText={isSafeUrl(value) ? hint || t('website.fields.linkHint', 'A page like /about, a section like #contact, or https://, mailto:, tel:') : undefined}
     />
   );
 };
