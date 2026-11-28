@@ -230,6 +230,16 @@ describe('one h1 a page', () => {
   });
 });
 
+test('logos line up with their heading, and stand several to a row on a phone', () => {
+  const html = render([home([{ type: 'logos', heading: 'As seen in', items: [] }])]);
+  // The heading is left-aligned; the row under it starts where it does.
+  expect(html).toMatch(/\.pp-logos__row\{[^}]*justify-content:flex-start/);
+  expect(html).toMatch(/\.pp-logos__row--grid\{[^}]*justify-items:start/);
+  // On a phone a row of fixed-size logos would stack one to a row: a grid
+  // of narrow columns takes three across 390 px, and a logo fits its column.
+  expect(html).toMatch(/@media \(max-width:600px\)\{\.pp-logos__row\{display:grid;grid-template-columns:repeat\(auto-fill,minmax\(96px,1fr\)\)[^}]*\}\.pp-logo img\{max-width:100%/);
+});
+
 test('the footer sits at the bottom of the window on a short page', () => {
   const html = render([home([{ type: 'text', heading: 'Short' }])]);
   // The page is a column at least as tall as the window, and the content
