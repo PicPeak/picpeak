@@ -11,6 +11,7 @@ import { Trash2, Type, Upload } from 'lucide-react';
 import { Button, Card } from '../common';
 import { useConfirm } from '../common/ConfirmDialog';
 import { fontsService, FONTS_QUERY_KEY } from '../../services/fonts.service';
+import { forgetFontsList } from '../../services/fontLoader';
 import { apiErrorText } from '../../utils/apiErrorText';
 
 const WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900];
@@ -26,10 +27,14 @@ export const FontsCard: React.FC = () => {
   const [generic, setGeneric] = useState<string>('sans-serif');
   const [file, setFile] = useState<File | null>(null);
   const { data: fonts = [] } = useQuery({ queryKey: ['admin-fonts'], queryFn: fontsService.listAdmin });
-  const refresh = () => Promise.all([
-    queryClient.invalidateQueries({ queryKey: ['admin-fonts'] }),
-    queryClient.invalidateQueries({ queryKey: FONTS_QUERY_KEY }),
-  ]);
+  const refresh = () => {
+    // The page's own font loader has a cached list too (fontLoader.ts).
+    forgetFontsList();
+    return Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['admin-fonts'] }),
+      queryClient.invalidateQueries({ queryKey: FONTS_QUERY_KEY }),
+    ]);
+  };
   const upload = useMutation({
     mutationFn: () => fontsService.upload(file as File, { family: family.trim(), weight, generic }),
     onSuccess: () => { toast.success(t('branding.fonts.uploaded', 'Font uploaded')); setFile(null); void refresh(); },

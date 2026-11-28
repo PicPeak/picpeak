@@ -25,7 +25,10 @@ vi.mock('../../../services/fonts.service', () => ({
   FONTS_QUERY_KEY: ['fonts'],
 }));
 
+vi.mock('../../../services/fontLoader', () => ({ forgetFontsList: vi.fn() }));
+
 import { fontsService, FONTS_QUERY_KEY } from '../../../services/fonts.service';
+import { forgetFontsList } from '../../../services/fontLoader';
 import { FontsCard } from '../FontsCard';
 
 describe('FontsCard', () => {
@@ -44,6 +47,8 @@ describe('FontsCard', () => {
     // Every font picker (branding theme, PDF typography, the website's Design
     // panel) reads the one public list: it is fetched again.
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: FONTS_QUERY_KEY }));
+    // And the page's own font loader, so the new font gets its @font-face.
+    expect(forgetFontsList).toHaveBeenCalled();
     expect(FONTS_QUERY_KEY).toEqual(['fonts']);
     fireEvent.click(screen.getByRole('button', { name: /Remove/ }));
     await waitFor(() => expect(fontsService.remove).toHaveBeenCalledWith('Studio Serif'));
