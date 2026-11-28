@@ -1231,3 +1231,19 @@ describe('focal point after a geometry change', () => {
     expect(photoEdits().focalAfterEdit(photo, null, validated({ exposure: 1 }))).toBeUndefined();
   });
 });
+
+describe('a pass that fails after its claim', () => {
+  it('releases the claim, so the next pass is not kept waiting for the stale lease', async () => {
+    const maintenanceJobs = require('../../src/services/maintenanceJobState');
+    const keeper = jest.spyOn(maintenanceJobs, 'startLeaseKeeper').mockImplementationOnce(() => ({
+      lost: () => { throw new Error('injected failure'); },
+      stop: () => {},
+    }));
+    try {
+      await expect(photoEdits().runPass({ active: () => true, sleep: async () => {} })).rejects.toThrow('injected failure');
+    } finally {
+      keeper.mockRestore();
+    }
+    expect(await photoEdits().runPass({ active: () => true, sleep: async () => {} })).not.toBe('busy');
+  });
+});

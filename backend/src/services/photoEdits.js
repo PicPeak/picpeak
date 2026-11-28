@@ -960,11 +960,13 @@ async function runPass({ active = () => running, sleep = (ms) => waits.sleep(ms)
         if (wait) await sleep(wait);
       })));
     }
-    await maintenanceJobs.release(JOB_NAME, token, counts).catch(() => {});
     if (counts.applied || counts.failed) logger.info(`Photo edits: ${counts.applied} applied, ${counts.failed} failed (retried later)`);
     return counts;
   } finally {
     lease.stop();
+    // Released whatever happened, as renditionRefresh does: a pass that
+    // threw would otherwise keep every replica 'busy' until the lease is stale.
+    await maintenanceJobs.release(JOB_NAME, token, counts).catch(() => {});
   }
 }
 
