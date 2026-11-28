@@ -7,7 +7,8 @@
  * body_text in a <pre> — so nothing a visitor types is ever rendered as
  * markup. The studio is told by mail (sendMails); the visitor gets a
  * confirmation only when the studio chose one and a spam check is on, and it
- * never repeats the message, so the form cannot carry text to a third party.
+ * carries nothing the visitor typed (not the message, not the name), so the
+ * form cannot carry text to a third party.
  *
  * Abuse guards: the route's per-IP limit, a honeypot field, a cap on all
  * submissions per day, and the form must exist on the published site.
@@ -177,8 +178,8 @@ async function confirmedRecently(key) {
 /**
  * The mails of a stored message (contact settings): a notification to the
  * studio's recipients, with the message; and, when chosen and the spam check
- * is on, a confirmation to the visitor with their name and the studio's
- * fixed text, never the message. Best effort: the message is in the inbox
+ * is on, a confirmation to the visitor with the studio's fixed text only,
+ * nothing the visitor typed. Best effort: the message is in the inbox
  * whatever happens here.
  */
 async function sendMails(values, page, { captchaOn }) {
@@ -208,8 +209,9 @@ async function sendMails(values, page, { captchaOn }) {
   const key = confirmationKey(values.email);
   if (settings.confirmation && captchaOn && !(await confirmedRecently(key)) && (await reserveConfirmation(key))) {
     const name = (await getAppSetting('branding_company_name', '')) || '';
+    // The studio's fixed text only: nothing the visitor typed (migration 384).
     await emailProcessor.queueEmail(null, key, 'website_contact_confirmation', {
-      sender_name: values.name.slice(0, 60), business_name: typeof name === 'string' ? name : '', __language: language,
+      business_name: typeof name === 'string' ? name : '', __language: language,
     });
   }
 }

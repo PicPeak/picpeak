@@ -97,7 +97,7 @@ export const ContactSettingsSection: React.FC<{ settings: ContactSettingsDraft; 
             label={t('website.contact.confirmation', 'Send the visitor a confirmation')}
             description={draft.provider === 'none'
               ? t('website.contact.confirmationNeedsCaptcha', 'Only with a spam check: without one, anyone could have it sent to any address.')
-              : t('website.contact.confirmationHint', 'Their name and your fixed text, never their message; at most one a day to an address.')} />
+              : t('website.contact.confirmationHint', 'Your fixed text only, nothing the visitor typed; at most one a day to an address.')} />
           <Link to={templateHref('website_contact_confirmation')} className="text-xs text-accent hover:underline">{t('website.contact.editConfirmationMail', 'Edit the confirmation mail')}</Link>
         </div>
       </fieldset>

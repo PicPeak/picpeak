@@ -2102,8 +2102,9 @@ describe('mails of the contact form', () => {
     const confirmations = await queued('website_contact_confirmation');
     expect(confirmations.map((r) => r.recipient_email)).toEqual(['third@example.com']);
     const data = JSON.parse(confirmations[0].email_data);
-    expect(data.sender_name).toBe('Linus');
-    expect(JSON.stringify(data)).not.toContain('Secret plans');
+    // Nothing the visitor typed: not the message, not even the name.
+    expect(data).not.toHaveProperty('sender_name');
+    expect(JSON.stringify(data)).not.toMatch(/Secret plans|Linus/);
     expect(await queued('website_contact_admin')).toHaveLength(4);
     // A day later, the address can get one again.
     await db('email_queue').where({ email_type: 'website_contact_confirmation' }).update({ created_at: Date.now() - 25 * 60 * 60 * 1000 });

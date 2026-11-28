@@ -13635,7 +13635,7 @@
       "editAdminMail": "Benachrichtigungs-Mail bearbeiten",
       "confirmation": "Dem Besucher eine Bestätigung senden",
       "confirmationNeedsCaptcha": "Nur mit Spam-Prüfung: ohne sie könnte jeder sie an beliebige Adressen senden lassen.",
-      "confirmationHint": "Ihr Name und Ihr fester Text, nie die Nachricht; höchstens eine pro Tag an eine Adresse.",
+      "confirmationHint": "Nur Ihr fester Text, nichts, was der Besucher eingegeben hat; höchstens eine pro Tag an eine Adresse.",
       "editConfirmationMail": "Bestätigungs-Mail bearbeiten",
       "apiKeyUnreadable": "Der gespeicherte API-Schlüssel kann nicht mehr gelesen werden (der geheime Schlüssel des Servers wurde geändert). Geben Sie den API-Schlüssel erneut ein: Bis dahin nimmt das Kontaktformular keine Nachrichten an.",
       "unsaved": "noch nicht gespeichert",
