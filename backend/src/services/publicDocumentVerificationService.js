@@ -23,6 +23,8 @@ const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 const { toTimestamp } = require('../utils/dateNormalize');
 const { maskEmail } = require('../utils/maskEmail');
+const { escapeHtml } = require('../utils/formatters');
+const { VERIFICATION_CODE_TEXT } = require('../utils/verificationCodeText');
 
 const TABLE = 'public_document_verification_codes';
 const CODE_TTL_MS = 15 * 60 * 1000;
@@ -100,10 +102,6 @@ async function secondsUntilNextSend(kind, tokenId, conn = db) {
   return 0;
 }
 
-const escapeHtml = (value) => String(value ?? '')
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-
 const COPY = {
   en: {
     documentLabel: { contract: 'contract', quote: 'quote' },
@@ -111,7 +109,7 @@ const COPY = {
     intro: (label, number, issuer) => `Use this code to open your ${label} ${number}${issuer ? ` from ${issuer}` : ''}:`,
     expiry: 'The code expires in 15 minutes.',
     ignore: 'If you did not request it, you can ignore this email. Nobody can open the document without the code.',
-    text: (code) => `Your verification code is ${code}. It expires in 15 minutes.`,
+    text: VERIFICATION_CODE_TEXT.en,
   },
   de: {
     documentLabel: { contract: 'Vertrag', quote: 'Angebot' },
@@ -119,7 +117,7 @@ const COPY = {
     intro: (label, number, issuer) => `Mit diesem Code öffnen Sie Ihren ${label} ${number}${issuer ? ` von ${issuer}` : ''}:`,
     expiry: 'Der Code ist 15 Minuten gültig.',
     ignore: 'Falls Sie ihn nicht angefordert haben, können Sie diese E-Mail ignorieren. Ohne den Code kann niemand das Dokument öffnen.',
-    text: (code) => `Ihr Bestätigungscode lautet ${code}. Er ist 15 Minuten gültig.`,
+    text: VERIFICATION_CODE_TEXT.de,
   },
   pt: {
     documentLabel: { contract: 'contrato', quote: 'orçamento' },
@@ -127,7 +125,7 @@ const COPY = {
     intro: (label, number, issuer) => `Use este código para abrir o seu ${label} ${number}${issuer ? ` de ${issuer}` : ''}:`,
     expiry: 'O código expira em 15 minutos.',
     ignore: 'Se você não o solicitou, pode ignorar este e-mail. Ninguém consegue abrir o documento sem o código.',
-    text: (code) => `Seu código de verificação é ${code}. Ele expira em 15 minutos.`,
+    text: VERIFICATION_CODE_TEXT.pt,
   },
 };
 

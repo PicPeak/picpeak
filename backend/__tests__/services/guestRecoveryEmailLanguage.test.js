@@ -39,4 +39,13 @@ describe('guest recovery email language', () => {
     expect(mail.subject).toBe('Your verification code: 123456');
     expect(mail.html).toContain('Welcome back to your gallery');
   });
+
+  test('a gallery without a name still gets a grammatical German heading', async () => {
+    mailer.getRecipientLanguage.mockResolvedValue('de');
+    await sendRecoveryEmail('guest@example.test', '123456', '');
+    const [mail] = sendMail.mock.calls[0];
+    expect(mail.html).toContain('Willkommen zurück in Ihrer Galerie');
+    expect(mail.html).not.toContain('bei Ihre Galerie');
+    expect(mail.text).toBe('Ihr Bestätigungscode lautet 123456. Er ist 15 Minuten gültig.');
+  });
 });

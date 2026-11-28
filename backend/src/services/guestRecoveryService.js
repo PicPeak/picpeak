@@ -15,6 +15,8 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { initializeTransporter, wrapEmailHtml, resolveFromIdentity, getRecipientLanguage } = require('./emailProcessor');
 const emailWebhookTransport = require('./emailWebhookTransport');
+const { escapeHtml } = require('../utils/formatters');
+const { VERIFICATION_CODE_TEXT } = require('../utils/verificationCodeText');
 
 const CODE_TTL_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
@@ -50,34 +52,27 @@ async function createCode(eventId, email) {
 // English, as the template-based emails do.
 const RECOVERY_COPY = {
   en: {
-    defaultEvent: 'your gallery',
     subject: (code) => `Your verification code: ${code}`,
-    heading: (name) => `Welcome back to ${name}`,
+    heading: (name) => (name ? `Welcome back to ${name}` : 'Welcome back to your gallery'),
     intro: 'Enter this code to recover your picks in the gallery:',
     expiry: 'This code expires in 15 minutes. If you did not request it, you can safely ignore this email.',
-    text: (code) => `Your verification code is ${code}. It expires in 15 minutes.`,
+    text: VERIFICATION_CODE_TEXT.en,
   },
   de: {
-    defaultEvent: 'Ihre Galerie',
     subject: (code) => `Ihr Bestätigungscode: ${code}`,
-    heading: (name) => `Willkommen zurück bei ${name}`,
+    heading: (name) => (name ? `Willkommen zurück bei ${name}` : 'Willkommen zurück in Ihrer Galerie'),
     intro: 'Geben Sie diesen Code ein, um Ihre Auswahl in der Galerie wiederherzustellen:',
     expiry: 'Der Code ist 15 Minuten gültig. Falls Sie ihn nicht angefordert haben, können Sie diese E-Mail ignorieren.',
-    text: (code) => `Ihr Bestätigungscode lautet ${code}. Er ist 15 Minuten gültig.`,
+    text: VERIFICATION_CODE_TEXT.de,
   },
   pt: {
-    defaultEvent: 'sua galeria',
     subject: (code) => `Seu código de verificação: ${code}`,
-    heading: (name) => `Que bom ver você de novo em ${name}`,
+    heading: (name) => (name ? `Que bom ver você de novo em ${name}` : 'Que bom ver você de novo na sua galeria'),
     intro: 'Digite este código para recuperar suas seleções na galeria:',
     expiry: 'Este código expira em 15 minutos. Se você não o solicitou, pode ignorar este e-mail com segurança.',
-    text: (code) => `Seu código de verificação é ${code}. Ele expira em 15 minutos.`,
+    text: VERIFICATION_CODE_TEXT.pt,
   },
 };
-
-const escapeHtml = (value) => String(value ?? '')
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 async function sendRecoveryEmail(toEmail, code, eventName = '', { eventId = null } = {}) {
   // This composes its own message rather than going through a template, so it
@@ -107,7 +102,7 @@ async function sendRecoveryEmail(toEmail, code, eventName = '', { eventId = null
   const subject = copy.subject(code);
   const htmlBody = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 600px;">
-      <h2>${escapeHtml(copy.heading(eventName || copy.defaultEvent))}</h2>
+      <h2>${escapeHtml(copy.heading(eventName))}</h2>
       <p>${copy.intro}</p>
       <div style="font-size: 32px; font-weight: bold; letter-spacing: 8px; background: #f5f5f5; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0;">
         ${code}
