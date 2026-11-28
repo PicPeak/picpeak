@@ -352,6 +352,8 @@ const FeaturedGalleriesField: React.FC<{
   // A chosen gallery that is deleted, archived or out of reach comes back
   // without a row: it still counts toward the limit, so it can be removed.
   const unavailable = answered ? chosenIds.filter((id) => !chosenRows.some((r) => r.id === id)) : [];
+  // Chosen galleries anyone can open in full from their card.
+  const open = chosenRows.filter((r) => !r.hasPassword);
   const toggle = (id: number, on: boolean) => onChange(on ? [...value, { id, text: '' }] : value.filter((x) => x.id !== id));
   const row = (g: WebsiteGallery, checked: boolean) => (
     <li key={g.id}>
@@ -365,6 +367,7 @@ const FeaturedGalleriesField: React.FC<{
   return (
     <fieldset className="space-y-2">
       <legend className="block text-sm font-medium text-body mb-1.5">{t('website.fields.galleries', 'Galleries')}</legend>
+      <SearchField value={search} onChange={setSearch} label={t('website.picker.searchGalleries', 'Search galleries by name')} />
       {chosenFailure.blocking || chosenFailure.notice}
       {(chosenRows.length > 0 || unavailable.length > 0) && (
         <ul className="space-y-1">
@@ -376,7 +379,6 @@ const FeaturedGalleriesField: React.FC<{
           ))}
         </ul>
       )}
-      <SearchField value={search} onChange={setSearch} label={t('website.picker.searchGalleries', 'Search galleries by name')} />
       {availableFailure.blocking || availableFailure.notice}
       {rows.length === 0 && !available.isLoading && !availableFailure.blocking && (
         <p className="text-sm text-muted">{q
@@ -389,11 +391,13 @@ const FeaturedGalleriesField: React.FC<{
           {t('website.picker.more', 'Show more')}
         </Button>
       )}
-      {chosenRows.filter((r) => !r.hasPassword).map((r) => (
-        <p key={`open-${r.id}`} className="text-xs text-warning-text">
-          {t('website.fields.galleryOpen', '{{name}} has no password: its card links to it, so every visitor of the website can open the whole gallery.', { name: r.name })}
+      {open.length > 0 && (
+        <p className="text-xs text-warning-text">
+          {open.length === 1
+            ? t('website.fields.galleryOpen', '{{name}} has no password: its card links to it, so every visitor of the website can open the whole gallery.', { name: open[0].name })
+            : t('website.fields.galleriesOpen', '{{names}} have no password: their cards link to them, so every visitor of the website can open these galleries in full.', { names: open.map((r) => r.name).join(', ') })}
         </p>
-      ))}
+      )}
       {missing.length > 0 && (
         <p className="text-xs text-warning-text">
           {t('website.fields.galleriesMissing', '{{count}} chosen galleries are no longer on the website and are not shown.', { count: missing.length })}

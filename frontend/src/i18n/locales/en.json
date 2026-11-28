@@ -13287,7 +13287,8 @@
       "maxItems": "No more than {{max}} fit here.",
       "buttonLabelHint": "Without a text, no button is shown.",
       "successDefault": "Thank you! Your message has been sent.",
-      "bookDefault": "Book now"
+      "bookDefault": "Book now",
+      "galleriesOpen": "{{names}} have no password: their cards link to them, so every visitor of the website can open these galleries in full."
     },
     "defaults": {
       "heroHeading": "Your headline",

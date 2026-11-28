@@ -13252,7 +13252,8 @@
       "maxItems": "Mehr als {{max}} passen hier nicht.",
       "buttonLabelHint": "Ohne Text wird keine Schaltfläche gezeigt.",
       "successDefault": "Vielen Dank! Ihre Nachricht wurde gesendet.",
-      "bookDefault": "Jetzt buchen"
+      "bookDefault": "Jetzt buchen",
+      "galleriesOpen": "{{names}} haben kein Passwort: Die Karten verlinken die Galerien, also kann jede Besucherin und jeder Besucher der Website diese Galerien ganz öffnen."
     },
     "defaults": {
       "heroHeading": "Ihre Überschrift",

@@ -146,6 +146,30 @@ describe('chosen entries that are gone', () => {
     expect(screen.getAllByText(/has no password: its card links to it/)).toHaveLength(1);
   });
 
+  it('several galleries without a password get one warning that names them, not one each', async () => {
+    vi.mocked(websiteService.listGalleries).mockReset();
+    vi.mocked(websiteService.listGalleries).mockImplementation(async (params = {}) => (params.ids
+      ? { galleries: [g(5, 'Open party'), g(6, 'Open day'), { ...g(7, 'Private wedding'), hasPassword: true }], hasMore: false }
+      : { galleries: [], hasMore: false }));
+    const block: FeaturedGalleriesBlock = { id: 'f', type: 'featuredGalleries', variant: 'cards', background: 'default', heading: '', intro: '', galleries: [{ id: 5, text: '' }, { id: 6, text: '' }, { id: 7, text: '' }] };
+    render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={block} onChange={vi.fn()} /></QueryClientProvider>);
+    await screen.findByLabelText('Open party');
+    expect(screen.getAllByText(/no password/)).toHaveLength(1);
+    expect(screen.getByText(/have no password: their cards link to them/)).toBeInTheDocument();
+  });
+
+  it('puts the search above the whole list, not between the chosen galleries and the rest', async () => {
+    vi.mocked(websiteService.listGalleries).mockReset();
+    vi.mocked(websiteService.listGalleries).mockImplementation(async (params = {}) => (params.ids
+      ? { galleries: [g(5, 'Chosen one')], hasMore: false }
+      : { galleries: [g(8, 'Another')], hasMore: false }));
+    const block: FeaturedGalleriesBlock = { id: 'f', type: 'featuredGalleries', variant: 'cards', background: 'default', heading: '', intro: '', galleries: [{ id: 5, text: '' }] };
+    render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={block} onChange={vi.fn()} /></QueryClientProvider>);
+    const chosen = await screen.findByLabelText('Chosen one');
+    const search = screen.getByRole('searchbox');
+    expect(search.compareDocumentPosition(chosen) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('offers no picture for a minimal hero, and says so', () => {
     const hero = { id: 'h', type: 'hero' as const, variant: 'minimal', background: 'default' as const, heading: 'Hi', subheading: '', buttonLabel: '', buttonTarget: null, image: null, video: null };
     const { unmount } = render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={hero} onChange={vi.fn()} /></QueryClientProvider>);
