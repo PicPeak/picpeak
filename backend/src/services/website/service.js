@@ -16,6 +16,7 @@ const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const { canAccessEvent } = require('../../middleware/ownership');
 const { userHasAllPermissions } = require('../../middleware/permissions');
 const { listFonts } = require('../fontsService');
+const { bookableServices } = require('../bookingService');
 const publicSite = require('../publicSiteService');
 const {
   normalizeDocument, collectReferences, legacyImport, newPageId, LIMIT_CODES, MAX_CUSTOM_CSS, LEGAL_SLUGS,
@@ -28,9 +29,6 @@ const { FONT_NAME_PATTERN, flag, safeUrl } = require('./validators');
 const { cacheGeneration, getCached, setCached, clearWebsiteCache } = require('./cache');
 
 const FLAG = 'websiteBuilder';
-
-// A boolean setting as stored: JSON true, or 1/0 where the settings writer
-// went through formatBoolean on SQLite.
 
 function parseDocument(row) {
   if (!row) return null;
@@ -185,8 +183,7 @@ async function brandColors() {
 async function editorState(draft, published) {
   const settings = await getAppSettings(['general_public_site_enabled']);
   return {
-    // As the editor saves it (normalised): an older stored shape, such as a
-    // text block's inline format, reaches the editor in the current one.
+    // As the editor saves it: normalised, its defaults filled in.
     document: normalizeDocument(parseDocument(draft) || {}).document,
     draft: rowSummary(draft),
     published: rowSummary(published),
@@ -492,19 +489,18 @@ async function loadPackages(ids) {
   return out;
 }
 
-async function bookingState() {
-  if (!(await isFeatureEnabled('calendarBooking'))) return { enabled: false };
-  const { bookableServices } = require('../bookingService');
-  const services = await bookableServices();
-  return { enabled: services.length > 0, url: '/book', serviceIds: new Set(services.map((s) => s.id)) };
-}
-
 /** What the booking block's form says: on or off, and the services it can preselect. */
 async function bookingOptions() {
   const flagOn = await isFeatureEnabled('calendarBooking');
-  const { bookableServices } = require('../bookingService');
   const services = flagOn ? await bookableServices() : [];
   return { flagOn, services: services.map((s) => ({ id: s.id, name: s.name })) };
+}
+
+// The same for a page: a booking block shows while something can be booked.
+async function bookingState() {
+  const { flagOn, services } = await bookingOptions();
+  if (!flagOn) return { enabled: false };
+  return { enabled: services.length > 0, url: '/book', serviceIds: new Set(services.map((s) => s.id)) };
 }
 
 /**
