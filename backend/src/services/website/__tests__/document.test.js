@@ -2,8 +2,9 @@
  * Website builder document (issue 2618): what an admin can store.
  */
 const {
-  normalizeDocument, normalizeSlug, isValidSlug, safeUrl, collectReferences,
+  normalizeDocument, normalizeSlug, isValidSlug, collectReferences,
 } = require('../document');
+const { safeUrl } = require('../validators');
 
 const page = (over = {}) => ({ id: 'p1', title: 'Home', slug: 'home', blocks: [], ...over });
 
@@ -124,6 +125,11 @@ describe('normalizeDocument', () => {
     expect(document.pages[0].blocks.map((b) => b.buttonTarget)).toEqual([
       { kind: 'url', url: '/portfolio' }, { kind: 'url', url: '#b-contact' }, null,
     ]);
+  });
+
+  test('a link over its length is refused like any other text, not cut', () => {
+    const { errors } = normalizeDocument({ pages: [page({ blocks: [{ id: 'i', type: 'instagram', profileUrl: `https://x.example/${'a'.repeat(600)}` }] })] });
+    expect(errors).toEqual([expect.objectContaining({ code: 'TEXT_TOO_LONG', field: 'url', max: 500 })]);
   });
 
   test('theme colours and fonts must be values, not CSS', () => {

@@ -34,6 +34,8 @@ const MAX_CUSTOM_CSS = MAX_CSS_SIZE + DEFAULT_PUBLIC_SITE_CSS.length + 2;
 // list is shared: nginx.conf and the frontend page editor keep copies that
 // __tests__/services/websiteReservedSlugs.test.js holds to this file.
 const { SOCIAL_NETWORKS, STEP_ICONS } = require('./icons');
+const { sanitizeRichText, isEmptyRichText, richText } = require('./richText');
+const { MAX_URL_LENGTH, cleanText, safeUrl } = require('./validators');
 const RESERVED_SLUGS = new Set(require('./reservedSlugs.json'));
 // Reserved for pages, but the website renders them in its design while it
 // is live (the CMS legal pages); the app's own page otherwise.
@@ -105,10 +107,7 @@ function report(problem) {
 }
 
 function str(value, max, field) {
-  if (typeof value !== 'string') return '';
-  // Control characters other than tab/newline have no place in page text.
-  // eslint-disable-next-line no-control-regex -- intentional: strips control chars from admin input
-  const cleaned = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim();
+  const cleaned = cleanText(value);
   if (cleaned.length > max) report({ code: 'TEXT_TOO_LONG', field, max });
   return cleaned.slice(0, max);
 }
@@ -138,34 +137,9 @@ function intInRange(value, min, max, fallback) {
   return Number.isInteger(n) && n >= min && n <= max ? n : fallback;
 }
 
-/**
- * A link a visitor may follow: http(s), mailto, tel, a same-site path or an
- * anchor. Anything else (javascript:, data:, protocol-relative `//host`,
- * backslash tricks) becomes '' so the renderer leaves the link out.
- */
-function safeUrl(value) {
-  const url = str(value, 500);
-  if (!url) return '';
-  // Phone numbers are written with spaces; the link takes them out.
-  if (/^tel:/i.test(url)) return /^tel:\+?[0-9 ()./-]{3,40}$/i.test(url) ? url.replace(/\s+/g, '') : '';
-  // eslint-disable-next-line no-control-regex -- whitespace or control chars inside a URL are never legitimate here
-  if (/[\s\u0000-\u001F\u007F\\]/.test(url)) return '';
-  if (url.startsWith('#')) return /^#[A-Za-z0-9_-]{0,80}$/.test(url) ? url : '';
-  if (url.startsWith('/')) return url.startsWith('//') ? '' : url;
-  const scheme = url.match(/^([a-z][a-z0-9+.-]*):/i);
-  if (!scheme) return '';
-  const name = scheme[1].toLowerCase();
-  if (name === 'http' || name === 'https') {
-    try {
-      const parsed = new URL(url);
-      return parsed.hostname ? url : '';
-    } catch {
-      return '';
-    }
-  }
-  if (name === 'mailto') return url;
-  return '';
-}
+// A link field: refused over its length like any other text, then kept only
+// if a visitor may follow it (validators.js safeUrl).
+const link = (value) => safeUrl(str(value, MAX_URL_LENGTH, 'url'));
 
 function newId() {
   return crypto.randomBytes(6).toString('hex');
@@ -233,7 +207,7 @@ function linkTarget(value) {
   case 'booking': return { kind: 'booking' };
   case 'legal': return LEGAL_SLUGS.includes(value.slug) ? { kind: 'legal', slug: value.slug } : null;
   case 'url': {
-    const url = safeUrl(value.url);
+    const url = link(value.url);
     return url ? { kind: 'url', url } : null;
   }
   default: return null;
@@ -253,7 +227,7 @@ function socialUrl(network, value) {
     const address = raw.replace(/^mailto:/i, '');
     return /^[^\s@<>"']{1,64}@[^\s@<>"']{1,190}\.[a-z]{2,}$/i.test(address) ? `mailto:${address}` : '';
   }
-  const url = safeUrl(raw);
+  const url = link(raw);
   return /^https?:\/\//i.test(url) ? url : '';
 }
 
@@ -265,8 +239,6 @@ function socialList(value, field) {
 }
 
 function rich(value, max, field) {
-  // Loaded here, not at the top: richText.js needs this module's safeUrl.
-  const { sanitizeRichText, isEmptyRichText } = require('./richText');
   const html = sanitizeRichText(capText(typeof value === 'string' ? value : '', max, field));
   // A cleared editor's <p></p> is no text: stored empty.
   return isEmptyRichText(html) ? '' : html;
@@ -289,7 +261,6 @@ const BLOCK_FIELDS = {
     video: videoRef(b.video),
   }),
   text: (b) => {
-    const { richText } = require('./richText');
     const html = b.format === 'html';
     return {
       heading: str(b.heading, 200, 'heading'),
@@ -307,7 +278,7 @@ const BLOCK_FIELDS = {
     heading: str(b.heading, 200, 'heading'),
     // Rich text, as the text block's; older text in the short inline format
     // becomes the HTML it rendered as.
-    body: b.format === 'html' ? rich(b.body, MAX_RICH_TEXT, 'body') : require('./richText').richText(str(b.body, 5000, 'body')),
+    body: b.format === 'html' ? rich(b.body, MAX_RICH_TEXT, 'body') : richText(str(b.body, 5000, 'body')),
     format: 'html',
     image: imageRef(b.image),
     buttonLabel: str(b.buttonLabel, 60, 'buttonLabel'),
@@ -366,7 +337,7 @@ const BLOCK_FIELDS = {
   instagram: (b) => ({
     heading: str(b.heading, 200, 'heading'),
     handle: str(b.handle, 60, 'handle').replace(/^@/, '').replace(/[^A-Za-z0-9._]/g, ''),
-    profileUrl: safeUrl(b.profileUrl),
+    profileUrl: link(b.profileUrl),
     images: imageList(b.images, 12),
   }),
   spacer: (b) => ({
@@ -404,7 +375,7 @@ const BLOCK_FIELDS = {
   logos: (b) => ({
     heading: str(b.heading, 200, 'heading'),
     grayscale: bool(b.grayscale),
-    items: objects(b.items, MAX_ITEMS, 'items').map((item) => ({ image: imageRef(item.image), url: safeUrl(item.url) })),
+    items: objects(b.items, MAX_ITEMS, 'items').map((item) => ({ image: imageRef(item.image), url: link(item.url) })),
   }),
   social: (b) => ({
     heading: str(b.heading, 200, 'heading'),
@@ -710,7 +681,6 @@ module.exports = {
   normalizeDocument,
   normalizeSlug,
   isValidSlug,
-  safeUrl,
   collectReferences,
   legacyImport,
   newPageId: newId,

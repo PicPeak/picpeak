@@ -6,7 +6,7 @@
 const sanitizeHtml = require('sanitize-html');
 const { escapeHtml: esc } = require('../../utils/formatters');
 const { NON_TEXT_TAGS } = require('../../utils/sanitizeHtmlOptions');
-const { safeUrl } = require('./document');
+const { safeUrl } = require('./validators');
 
 // Runs on already-escaped text, which contains no `<`, so the only tags in
 // the result are the two inserted here.

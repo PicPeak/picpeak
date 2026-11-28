@@ -25,6 +25,7 @@ const media = require('./media');
 const { livePhotos } = require('../../utils/photoVisibility');
 const { renderPage, renderSystemPage, renderedImages, pageHref, legalPageName } = require('./renderer');
 const { sanitizeCmsHtml } = require('./richText');
+const { safeUrl } = require('./validators');
 const { cacheGeneration, getCached, setCached, clearWebsiteCache } = require('./cache');
 
 const FLAG = 'websiteBuilder';
@@ -530,7 +531,6 @@ async function bookingOptions() {
  * every link to the page goes there, by this one rule.
  */
 function externalLegalUrl(row) {
-  const { safeUrl } = require('./document');
   return flag(row.use_external_url) && /^https?:\/\//i.test(row.external_url || '') ? safeUrl(row.external_url) : '';
 }
 
