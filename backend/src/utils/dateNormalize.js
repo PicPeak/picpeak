@@ -80,10 +80,24 @@ function toServerWallClock(value) {
 
 // photos.captured_at_wall (issue 2305) as 'YYYY-MM-DDTHH:MM:SS', the
 // recorded offset dropped: the list shows the camera's own clock. null
-// for NULL, '' (read, none) or anything else.
+// for NULL, '' (read, none) or anything else. That includes digits that are
+// no date-time (a camera can write month 00, or 30 February): a Date made
+// of them is invalid or rolls over to another day, so only a value that
+// reads back unchanged counts.
 function cameraWallClock(value) {
   const m = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.exec(typeof value === 'string' ? value : '');
-  return m ? m[0] : null;
+  if (!m) return null;
+  const date = new Date(`${m[0]}Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 19) === m[0] ? m[0] : null;
+}
+
+// A photo's capture time as the zone-less wall clock to show: the camera
+// clock as the EXIF wrote it when it was read (issue 2305), which wins
+// because the server-zone reading moves a time in that zone's spring-forward
+// gap and every time after a TZ change; else that reading of the stored
+// instant. null without either.
+function photoWallClock(photo) {
+  return cameraWallClock(photo.captured_at_wall) || toServerWallClock(photo.captured_at);
 }
 
 /**
@@ -100,4 +114,4 @@ function parseCalendarDate(value) {
   return new Date(value);
 }
 
-module.exports = { toIso, toTimestamp, toStoredTimestamp, toServerWallClock, cameraWallClock, parseCalendarDate };
+module.exports = { toIso, toTimestamp, toStoredTimestamp, toServerWallClock, photoWallClock, parseCalendarDate };

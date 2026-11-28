@@ -43,3 +43,28 @@ describe('toServerWallClock', () => {
     expect(run('UTC').utcIso).toBe('2026-12-24T22:59:59');
   });
 });
+
+// One rule for "the capture time to show" (issue 2617): the admin list, the
+// chapter times and the zip entry dates all read it through photoWallClock.
+describe('photoWallClock', () => {
+  const { photoWallClock, toServerWallClock } = require('../../src/utils/dateNormalize');
+  const instant = '2024-12-24T17:00:10.000Z';
+
+  it('is the camera clock as written, its offset dropped', () => {
+    expect(photoWallClock({ captured_at_wall: '2025-06-01T09:45:03+02:00', captured_at: instant })).toBe('2025-06-01T09:45:03');
+  });
+
+  it('is the stored instant in the server zone where no camera clock was read', () => {
+    expect(photoWallClock({ captured_at_wall: null, captured_at: instant })).toBe(toServerWallClock(instant));
+    expect(photoWallClock({ captured_at_wall: '', captured_at: instant })).toBe(toServerWallClock(instant));
+    expect(photoWallClock({ captured_at_wall: null, captured_at: null })).toBeNull();
+  });
+
+  it.each([
+    '2025-00-01T09:45:03', '2025-13-01T09:45:03', '2025-02-30T09:45:03', '2025-06-31T09:45:03',
+    '2025-06-01T24:00:00', '2025-06-01T09:60:00',
+  ])('takes digits that are no date-time (%s) for no camera clock', (wall) => {
+    expect(photoWallClock({ captured_at_wall: wall, captured_at: instant })).toBe(toServerWallClock(instant));
+    expect(photoWallClock({ captured_at_wall: wall, captured_at: null })).toBeNull();
+  });
+});

@@ -14,7 +14,7 @@
 const path = require('path');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
-const { cameraWallClock, toServerWallClock } = require('../utils/dateNormalize');
+const { photoWallClock, toServerWallClock } = require('../utils/dateNormalize');
 const {
   sanitizeForZipEntry,
   uniquifyZipNames,
@@ -112,27 +112,16 @@ function zipEntryPath(photo, entryName, hasMultipleTypes) {
 /**
  * The date a photo's zip entry carries, so an unpacked archive sorts by shot
  * time (issue 2617). A zip entry's time has no zone and unzip tools show it as
- * stored, so it is the wall clock the camera showed: captured_at_wall as the
- * EXIF wrote it, else captured_at in the server's zone (the zone exifr read
- * the EXIF in, as the admin list formats it), else the upload time there.
+ * stored, so it is the wall clock the camera showed, as the admin list shows
+ * it (photoWallClock), else the upload time in the server's zone.
  * archiver writes a Date's UTC fields, so that wall clock goes in as UTC.
- * undefined (archiver's own default) when the row has none of the three.
+ * undefined when the row has neither, which leaves the date to archiver: the
+ * moment an appended stream or buffer is added, the mtime of a file it reads
+ * from disk itself.
  */
 function zipEntryDate(photo) {
-  const candidates = [
-    cameraWallClock(photo.captured_at_wall),
-    toServerWallClock(photo.captured_at),
-    toServerWallClock(photo.uploaded_at),
-  ];
-  for (const wall of candidates) {
-    if (!wall) continue;
-    const date = new Date(`${wall}Z`);
-    // A malformed camera clock ('2025-00-01', '2025-02-30') is an Invalid
-    // Date, which archiver writes as a zero date, or rolls over to another
-    // day: only a value that reads back unchanged is taken.
-    if (!Number.isNaN(date.getTime()) && date.toISOString().slice(0, 19) === wall) return date;
-  }
-  return undefined;
+  const wall = photoWallClock(photo) || toServerWallClock(photo.uploaded_at);
+  return wall ? new Date(`${wall}Z`) : undefined;
 }
 
 module.exports = {
