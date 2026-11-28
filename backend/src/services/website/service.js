@@ -740,7 +740,7 @@ async function systemPage(document, slug, { notFound = false } = {}) {
   if (notFound) ctx.robots = 'noindex';
   const content = sanitizeCmsHtml((de ? row.content_de : row.content_en) || row.content_en || '');
   // The not-found page is a real 404 (nginx passes it through, nginx.conf).
-  return withEtag(renderSystemPage(ctx, { content, canonical: !notFound }), { system: true, ...(notFound ? { notFound: true, status: 404 } : {}) });
+  return withEtag(renderSystemPage(ctx, { content, notFound }), { system: true, ...(notFound ? { notFound: true, status: 404 } : {}) });
 }
 
 // One rendering of the not-found page for every unknown address.

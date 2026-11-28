@@ -66,6 +66,11 @@ export const CMSContentBlock: React.FC<CMSContentBlockProps> = ({ slug, fallback
     return <>{fallback ?? null}</>;
   }
 
+  const content = DOMPurify.sanitize(page.content, { ALLOWED_TAGS, ALLOWED_ATTR, ALLOW_DATA_ATTR: false, KEEP_CONTENT: true });
+  // The text of these pages starts with its heading (the seeded ones repeat
+  // the page's name there): that heading is the page's, not a second one.
+  const lead = /^\s*<h[1-6](?:\s[^>]*)?>([\s\S]*?)<\/h[1-6]>/.exec(content);
+
   // Logo: per-page override beats global branding logo.
   const rawLogo = page.logo_url || settings?.branding_logo_url || '/picpeak-logo-transparent.png';
   const logoSrc = rawLogo.startsWith('http') || rawLogo.startsWith('/picpeak-')
@@ -102,23 +107,17 @@ export const CMSContentBlock: React.FC<CMSContentBlockProps> = ({ slug, fallback
              * (and force-dark mode) render correctly without dark: variants
              * fighting the CSS variables.
              */}
-            <h1
-              className="text-2xl sm:text-3xl font-bold mb-6"
-              style={{ color: 'var(--color-text)' }}
-            >
-              {page.title}
-            </h1>
+            {/* One heading: the one the text starts with, else the page's name. */}
+            {lead ? (
+              <h1 className="text-2xl sm:text-3xl font-bold mb-6" style={{ color: 'var(--color-text)' }}
+                dangerouslySetInnerHTML={{ __html: lead[1] }} />
+            ) : (
+              <h1 className="text-2xl sm:text-3xl font-bold mb-6" style={{ color: 'var(--color-text)' }}>{page.title}</h1>
+            )}
             <div
               className="prose prose-neutral dark:prose-invert max-w-none text-theme"
               style={{ color: 'var(--color-text)' }}
-              dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(page.content, {
-                  ALLOWED_TAGS,
-                  ALLOWED_ATTR,
-                  ALLOW_DATA_ATTR: false,
-                  KEEP_CONTENT: true,
-                }),
-              }}
+              dangerouslySetInnerHTML={{ __html: lead ? content.slice(lead[0].length) : content }}
             />
             <div className="mt-8">
               <Link

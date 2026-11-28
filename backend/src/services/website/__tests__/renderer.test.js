@@ -240,6 +240,47 @@ test('logos line up with their heading, and stand several to a row on a phone', 
   expect(html).toMatch(/@media \(max-width:600px\)\{\.pp-logos__row\{display:grid;grid-template-columns:repeat\(auto-fill,minmax\(96px,1fr\)\)[^}]*\}\.pp-logo img\{max-width:100%/);
 });
 
+describe('legal and system pages: one heading, and a way home from the not-found page', () => {
+  const { renderSystemPage } = require('../renderer');
+  const system = (title, content, options = {}) => {
+    const { document } = normalizeDocument({ pages: [home([])] });
+    const html = renderSystemPage({
+      document, page: { id: 'system', slug: 'x', title, navLabel: '', blocks: [], seo: { title: '', description: '', image: null } },
+      preview: false, locale: 'en', branding: BRANDING,
+      theme: { background: '#ffffff', text: '#111111', accent: '#7c3aed', muted: '#666666', surface: '#fafafa', border: '#e5e5e5', buttonStyle: 'solid', radius: 'md' },
+      fonts: { body: null, heading: null }, booking: { enabled: false }, legalLinks: [], baseUrl: 'https://studio.example', robots: '', customCss: '',
+    }, { content, ...options });
+    return html.slice(html.indexOf('<main'), html.indexOf('</main>'));
+  };
+  const headings = (main) => [...main.matchAll(/<h([1-6])[^>]*>(.*?)<\/h\1>/g)].map((m) => `h${m[1]}:${m[2]}`);
+
+  test('the not-found page shows the heading its text starts with, not the page name above it', () => {
+    const main = system('Page not found', '<h2>This page took a different path</h2><p>Try the menu.</p>', { notFound: true });
+    expect(headings(main)).toEqual(['h1:This page took a different path']);
+    expect(main).toContain('<p>Try the menu.</p>');
+  });
+
+  test('the not-found page with a text of no heading shows its name', () => {
+    expect(headings(system('Page Not Found', '<p>Nothing lives here.</p>', { notFound: true }))).toEqual(['h1:Page Not Found']);
+  });
+
+  test('the not-found page leads back to the home page', () => {
+    const main = system('Page Not Found', '<p>Nothing lives here.</p>', { notFound: true });
+    expect(main).toContain('<a class="pp-btn" href="/">Back to the home page</a>');
+    // A legal page is read, not left.
+    expect(system('Legal Notice', '<p>Studio AG</p>')).not.toContain('pp-btn');
+  });
+
+  test('a page whose text starts by repeating its name shows the name once', () => {
+    expect(headings(system('Terms & Conditions', '<h2>Terms &amp; Conditions</h2><p>Text.</p>'))).toEqual(['h1:Terms &amp; Conditions']);
+    expect(headings(system('Privacy Policy', '<h2> privacy  policy </h2><p>Text.</p>'))).toEqual(['h1:Privacy Policy']);
+  });
+
+  test('a legal page keeps a first heading that says something else, under its name', () => {
+    expect(headings(system('Legal Notice', '<h2>Studio AG</h2><p>Bahnhofstrasse 1</p>'))).toEqual(['h1:Legal Notice', 'h2:Studio AG']);
+  });
+});
+
 test('the footer sits at the bottom of the window on a short page', () => {
   const html = render([home([{ type: 'text', heading: 'Short' }])]);
   // The page is a column at least as tall as the window, and the content

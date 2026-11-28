@@ -54,6 +54,7 @@ const STRINGS = {
     secondContactForm: 'Only one contact form per page is shown. Remove this one, or move it to another page.',
     reloadForm: 'This form was just updated. Please reload the page and send your message again.',
     follow: 'Follow',
+    backHome: 'Back to the home page',
     videoInPreview: 'Video plays on the published page',
   },
   de: {
@@ -81,6 +82,7 @@ const STRINGS = {
     secondContactForm: 'Pro Seite wird nur ein Kontaktformular gezeigt. Entfernen Sie dieses oder verschieben Sie es auf eine andere Seite.',
     reloadForm: 'Dieses Formular wurde soeben aktualisiert. Bitte laden Sie die Seite neu und senden Sie Ihre Nachricht erneut.',
     follow: 'Folgen',
+    backHome: 'Zur Startseite',
     videoInPreview: 'Das Video läuft auf der veröffentlichten Seite',
   },
 };
@@ -738,7 +740,7 @@ h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 .pp-spacer.pp-v-small{padding:1.5rem 0}.pp-spacer.pp-v-medium{padding:3rem 0}.pp-spacer.pp-v-large{padding:6rem 0}
 .pp-rule{border:0;border-top:1px solid var(--border);margin:0}
 .pp-customHtml{padding:0}
-.pp-system .pp-prose h1,.pp-system .pp-prose h4,.pp-system .pp-prose h5,.pp-system .pp-prose h6{font-family:var(--font-heading);line-height:1.2}
+.pp-system .pp-btn{margin-top:1.5rem}.pp-system .pp-prose h1,.pp-system .pp-prose h4,.pp-system .pp-prose h5,.pp-system .pp-prose h6{font-family:var(--font-heading);line-height:1.2}
 .pp-faq__list{display:grid;gap:.6rem}
 .pp-faq__item{border-bottom:1px solid var(--border);padding:.2rem 0}
 .pp-v-boxed .pp-faq__item{border:1px solid var(--border);border-radius:calc(var(--radius) / 2);background:var(--surface);padding:.2rem 1.1rem}
@@ -984,17 +986,33 @@ ${renderFooter(ctx)}`;
   return renderHead(ctx, body);
 }
 
+// The heading a CMS text starts with, and the text after it.
+function leadingHeading(content) {
+  const match = /^\s*<h[1-6](?:\s[^>]*)?>([\s\S]*?)<\/h[1-6]>/.exec(content);
+  return match ? { html: match[1], rest: content.slice(match[0].length) } : null;
+}
+
+const plainText = (html) => html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
 /**
  * A CMS page (legal, not-found) in the website's design: the context of
  * renderPage with a page of no blocks, and `content`, CMS HTML already kept
- * to its allowlist (sanitizeCmsHtml).
+ * to its allowlist (sanitizeCmsHtml). One h1: the page's name, or the
+ * heading its text starts with when that repeats the name, and on the
+ * not-found page whatever it says (the name there is only the browser
+ * title). The not-found page also leads back to the home page.
  */
-function renderSystemPage(input, { content, canonical = true }) {
-  const ctx = { ...input, resolved: [], noCanonical: !canonical };
+function renderSystemPage(input, { content, notFound = false }) {
+  const ctx = { ...input, resolved: [], noCanonical: notFound };
+  const title = esc(ctx.page.title);
+  const lead = leadingHeading(content);
+  const own = lead && (notFound || plainText(lead.html) === plainText(title)) ? lead : null;
+  const h1 = own && notFound ? own.html : title;
+  const home = notFound ? `<p>${button(strings(ctx.locale).backHome, '/')}</p>` : '';
   const body = `<a class="pp-skip" href="#main">Skip to content</a>
 ${renderHeader(ctx)}
 <main id="main">
-<section class="pp-block pp-system"><div class="pp-wrap pp-narrow"><h1 class="pp-h">${esc(ctx.page.title)}</h1><div class="pp-prose">${content}</div></div></section>
+<section class="pp-block pp-system"><div class="pp-wrap pp-narrow"><h1 class="pp-h">${h1}</h1><div class="pp-prose">${own ? own.rest : content}</div>${home}</div></section>
 </main>
 ${renderFooter(ctx)}`;
   return renderHead(ctx, body);
