@@ -65,16 +65,19 @@ async function readJpegExifSegment(filePath) {
 }
 
 /**
- * exifr.parse for a pick of EXIF tags. When the default read found none of
- * them in a JPEG, parses its EXIF segment found by readJpegExifSegment.
+ * exifr.parse, with a second look for a JPEG: when `found` says the default
+ * read did not give what the caller asked for, the file's EXIF segment
+ * (readJpegExifSegment) is parsed on its own and laid over the first result.
  * Throws what exifr throws.
  */
-async function parseExif(filePath, options) {
-  const found = await exifr.parse(filePath, options);
-  if (found) return found;
+async function parseExif(filePath, options, found = Boolean) {
+  const first = await exifr.parse(filePath, options);
+  if (found(first)) return first;
   const segment = await readJpegExifSegment(filePath);
+  if (!segment) return first;
   // Closed with an end marker: exifr does not reach a segment that ends the buffer.
-  return segment ? exifr.parse(Buffer.concat([JPEG_SOI, segment, JPEG_EOI]), options) : found;
+  const late = await exifr.parse(Buffer.concat([JPEG_SOI, segment, JPEG_EOI]), options);
+  return late ? { ...first, ...late } : first;
 }
 
 function cleanText(value) {

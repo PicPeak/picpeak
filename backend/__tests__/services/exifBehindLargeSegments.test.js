@@ -20,6 +20,7 @@ jest.mock('../../src/database/db', () => {
 
 const { extractCapture } = require('../../src/services/imageProcessor');
 const { extractPhotoExif } = require('../../src/services/photoExif');
+const { extractExifCredit } = require('../../src/services/photoCredit');
 const jpegBehindSegments = require('../helpers/jpegBehindSegments');
 
 describe('EXIF behind large metadata segments (issue 2617)', () => {
@@ -50,6 +51,15 @@ describe('EXIF behind large metadata segments (issue 2617)', () => {
   it('reads the camera details behind ~1 MB of leading segments', async () => {
     const file = await jpeg('details.jpg', 16);
     expect(await extractPhotoExif(file)).toEqual({ make: 'Canon', model: 'Canon EOS R5' });
+  });
+
+  it('reads the credit behind ~1 MB of leading segments', async () => {
+    // The credit reader also asks for XMP, so exifr reads on for a few
+    // chunks: two segments in front are no gap for it, sixteen are.
+    const credited = { exif: { IFD0: { Artist: 'Jane Example' } } };
+    expect(await extractExifCredit(await jpeg('credit-near.jpg', 2, credited))).toBe('Jane Example');
+    expect(await extractExifCredit(await jpeg('credit-far.jpg', 16, credited))).toBe('Jane Example');
+    expect(await extractExifCredit(await jpeg('credit-none.jpg', 16))).toBeNull();
   });
 
   it('steps over fill bytes in front of a marker', async () => {
@@ -116,6 +126,21 @@ describe('EXIF behind large metadata segments (issue 2617)', () => {
     it('reads one EXIF segment, not the blocks in front of it', async () => {
       const file = await jpeg('bounded.jpg', 16);
       expect(await readBoth(file)).toBeLessThanOrEqual(2 * (FIRST_PASS + 2 + 4 * 32 + 64 * 1024));
+    });
+
+    it('gives the credit reader one walk and one segment more, and only without a credit', async () => {
+      const readCredit = async (file) => {
+        read = 0;
+        await extractExifCredit(file);
+        return read;
+      };
+      // Found by the first pass: nothing further is read.
+      const credited = await jpeg('credit-first.jpg', 0, { exif: { IFD0: { Artist: 'Jane Example' } } });
+      expect(await readCredit(credited)).toBeLessThanOrEqual((await fs.stat(credited)).size);
+      expect(await readCredit(await png('credit.png', 0))).toBeLessThanOrEqual(FIRST_PASS + 2);
+      // exifr reads five chunks of its own when XMP is asked for.
+      expect(await readCredit(await jpeg('credit-late.jpg', 16)))
+        .toBeLessThanOrEqual(5 * FIRST_PASS + 2 + 4 * 32 + 64 * 1024);
     });
 
     it('skips large XMP blocks, which share APP1, by their identifier', async () => {

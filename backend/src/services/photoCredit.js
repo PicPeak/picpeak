@@ -23,11 +23,11 @@
  */
 
 const path = require('path');
-const exifr = require('exifr');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { sanitizeName } = require('../utils/personName');
 const { parseBooleanInput } = require('../utils/parsers');
+const { parseExif } = require('./photoExif');
 
 // 'account': the uploading admin account's credit name (issue 743), used when
 // the file carries no EXIF name. EXIF found later still replaces it.
@@ -100,7 +100,10 @@ function creditFromMetadata(meta) {
  */
 async function extractExifCredit(filePath) {
   try {
-    const meta = await exifr.parse(filePath, {
+    // Asking for XMP makes exifr read on for a few chunks, not to the end:
+    // a JPEG's EXIF segment further back is looked at when no credit came up
+    // (issue 2617).
+    const meta = await parseExif(filePath, {
       tiff: true,
       ifd0: true,
       exif: false,
@@ -112,7 +115,7 @@ async function extractExifCredit(filePath) {
       icc: false,
       jfif: false,
       ihdr: false,
-    });
+    }, (first) => creditFromMetadata(first) !== null);
     return creditFromMetadata(meta);
   } catch (error) {
     logger.debug(`Could not read EXIF credit from ${path.basename(String(filePath))}: ${error.message}`);
