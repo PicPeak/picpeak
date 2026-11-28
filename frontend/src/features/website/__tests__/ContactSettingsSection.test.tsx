@@ -20,6 +20,19 @@ vi.mock('../../../services/website.service', () => ({
 
 import { websiteService } from '../../../services/website.service';
 import { ContactSettingsSection } from '../ContactSettingsSection';
+import { useContactSettingsDraft } from '../contactSettingsDraft';
+
+// The builder page holds the draft and saves it through its bar; this
+// stands in for both.
+const Host: React.FC<{ readOnly: boolean }> = ({ readOnly }) => {
+  const settings = useContactSettingsDraft();
+  return (
+    <>
+      <ContactSettingsSection settings={settings} readOnly={readOnly} />
+      {settings.canChange && <button type="button" onClick={() => { void settings.save(); }}>Save contact form settings</button>}
+    </>
+  );
+};
 
 const SETTINGS = {
   contact: { recipients: [] as string[], defaultRecipient: 'support@studio.example', confirmation: false },
@@ -27,7 +40,7 @@ const SETTINGS = {
 };
 
 function open(readOnly = false) {
-  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><ContactSettingsSection readOnly={readOnly} /></MemoryRouter></QueryClientProvider>);
+  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><Host readOnly={readOnly} /></MemoryRouter></QueryClientProvider>);
 }
 
 describe('contact form settings', () => {

@@ -12,17 +12,20 @@ import { fontsService, FONTS_QUERY_KEY } from '../../services/fonts.service';
 import { settingsTabHref } from '../settings/settingsNav';
 import { ChoiceField, ColorField, SelectField, TextArea, labelClass } from './fields';
 import { ContactSettingsSection } from './ContactSettingsSection';
+import type { ContactSettingsDraft } from './contactSettingsDraft';
 import { FooterSection } from './FooterSection';
 import { MenuSection } from './MenuSection';
 import type { WebsiteDocument, WebsiteTheme } from './types';
 
 interface SitePanelProps {
   doc: WebsiteDocument;
+  /** The contact form settings' draft, held by the builder page. */
+  contactSettings: ContactSettingsDraft;
   update: (fn: (doc: WebsiteDocument) => WebsiteDocument, field?: string) => void;
   readOnly: boolean;
 }
 
-export const SitePanel: React.FC<SitePanelProps> = ({ doc, update, readOnly }) => {
+export const SitePanel: React.FC<SitePanelProps> = ({ doc, contactSettings, update, readOnly }) => {
   const { t } = useTranslation();
   const fonts = useQuery({ queryKey: FONTS_QUERY_KEY, queryFn: () => fontsService.list(), staleTime: 5 * 60 * 1000 });
   const setTheme = (patch: Partial<WebsiteTheme>, field?: string) => update((d) => ({ ...d, theme: { ...d.theme, ...patch } }), field);
@@ -76,7 +79,7 @@ export const SitePanel: React.FC<SitePanelProps> = ({ doc, update, readOnly }) =
 
       <MenuSection doc={doc} update={update} readOnly={readOnly} />
       <FooterSection doc={doc} update={update} readOnly={readOnly} />
-      <ContactSettingsSection readOnly={readOnly} />
+      <ContactSettingsSection settings={contactSettings} readOnly={readOnly} />
 
       <section>
         <TextArea

@@ -13650,7 +13650,7 @@
     "contact": {
       "saved": "Contact form settings saved",
       "title": "Contact form",
-      "intro": "For every contact form on the website. Saved right away, not with the draft.",
+      "intro": "For every contact form on the website. Saved with the bar below, and in effect at once, not with the draft.",
       "captcha": "Spam check",
       "captchaNone": "Off",
       "captchaHint": "The form always has a hidden trap field and a limit per sender. A spam check adds the provider’s widget to pages with a contact form, and only those pages load its script. Friendly Captcha needs no cookies.",
@@ -13672,8 +13672,11 @@
       "confirmationNeedsCaptcha": "Only with a spam check: without one, anyone could have it sent to any address.",
       "confirmationHint": "Their name and your fixed text, never their message; at most one a day to an address.",
       "editConfirmationMail": "Edit the confirmation mail",
-      "apiKeyUnreadable": "The saved API key can no longer be read (the server’s secret key changed). Enter the API key again: the contact form refuses messages until it is."
-    }
+      "apiKeyUnreadable": "The saved API key can no longer be read (the server’s secret key changed). Enter the API key again: the contact form refuses messages until it is.",
+      "unsaved": "not saved yet",
+      "unsavedBar": "Contact form settings are not saved yet. They apply as soon as they are saved."
+    },
+    "saveAll": "Save draft and contact settings"
   },
   "websiteNotice": {
     "title": "Your landing page moved",

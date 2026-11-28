@@ -23,6 +23,7 @@ import { apiErrorText } from '../../utils/apiErrorText';
 import { BLOCK_ICONS, BLOCK_TYPES, blockLabel, collectImageRefs, createBlock, moveItem, newId } from './blocks';
 import { BlockEditor } from './BlockEditor';
 import { WebsiteDocContext } from './LinkTargetField';
+import { useContactSettingsDraft } from './contactSettingsDraft';
 import { MediaUrlsContext } from './fields';
 import { PagesPanel, slugProblem } from './PagesPanel';
 import { PreviewFrame, mediaOriginDiffers, publicSiteUrl, type PreviewDevice } from './PreviewFrame';
@@ -102,6 +103,9 @@ export const WebsiteBuilderPage: React.FC = () => {
     onError: (err) => toast.error(apiErrorText(err)),
   });
   const { draft, server } = editor;
+  // The contact form settings' draft: here, not in the Design panel, so a
+  // panel switch never drops it; saved through the same bar.
+  const contactSettings = useContactSettingsDraft();
   // ?panel=pages opens on the Pages panel (Settings › CMS links its legal pages there).
   const [searchParams] = useSearchParams();
   const [panel, setPanel] = useState<Panel>(searchParams.get('panel') === 'pages' ? 'pages' : 'blocks');
@@ -217,13 +221,24 @@ export const WebsiteBuilderPage: React.FC = () => {
     toast.error(apiErrorText(err));
   };
 
+  // The bar saves what is unsaved: the website's draft, the contact form
+  // settings (in effect at once), or both, each on its own request.
   const save = () => {
     if (busy) return;
+    if (contactSettings.dirty) {
+      contactSettings.save()
+        .then(() => toast.success(t('website.contact.saved', 'Contact form settings saved')))
+        .catch((err) => toast.error(apiErrorText(err)));
+    }
+    if (!editor.isDirty) return;
     editor.save.mutate(undefined, {
       onSuccess: () => { setProblems([]); toast.success(t('website.saved', 'Draft saved')); },
       onError: onSaveError,
     });
   };
+  const saveLabel = !contactSettings.dirty
+    ? t('website.saveDraft', 'Save draft')
+    : (editor.isDirty ? t('website.saveAll', 'Save draft and contact settings') : t('website.contact.save', 'Save contact form settings'));
 
   const publish = async () => {
     if (busy) return;
@@ -439,7 +454,7 @@ export const WebsiteBuilderPage: React.FC = () => {
                 items={[
                   { id: 'pages', label: t('website.tabs.pages', 'Pages'), icon: <FileText className="w-4 h-4" />, dirty: problems.length > 0 || localProblem },
                   { id: 'blocks', label: t('website.tabs.blocks', 'Blocks'), icon: <Layers className="w-4 h-4" /> },
-                  { id: 'site', label: t('website.tabs.site', 'Design'), icon: <Palette className="w-4 h-4" /> },
+                  { id: 'site', label: t('website.tabs.site', 'Design'), icon: <Palette className="w-4 h-4" />, dirty: contactSettings.dirty },
                 ]}
               />
             </div>
@@ -449,7 +464,7 @@ export const WebsiteBuilderPage: React.FC = () => {
                 <PagesPanel doc={draft} pageId={page.id} onSelectPage={(id) => { setPageId(id); setBlockId(null); }}
                   update={editor.update} serverProblems={problems} readOnly={!canEdit} />
               )}
-              {panel === 'site' && <SitePanel doc={draft} update={editor.update} readOnly={!canEdit} />}
+              {panel === 'site' && <SitePanel doc={draft} contactSettings={contactSettings} update={editor.update} readOnly={!canEdit} />}
             </div>
           </aside>
 
@@ -515,14 +530,21 @@ export const WebsiteBuilderPage: React.FC = () => {
 
         {canEdit && (
           <SettingsSaveBar
-            isDirty={editor.isDirty}
+            // The website's draft or the contact form settings: either one
+            // arms the leave guard and the bar.
+            isDirty={editor.isDirty || contactSettings.dirty}
             // Publish saves first: neither a second save nor a discard may
             // run against the revision it is writing.
-            isSaving={busy}
+            isSaving={busy || contactSettings.isSaving}
             onSave={save}
-            onDiscard={() => { editor.discard(); setProblems([]); }}
+            onDiscard={() => { editor.discard(); contactSettings.discard(); setProblems([]); }}
             canSave={!localProblem}
-            saveLabel={t('website.saveDraft', 'Save draft')}
+            saveLabel={saveLabel}
+            extra={contactSettings.dirty ? (
+              <span className="text-xs text-warning-text">
+                {t('website.contact.unsavedBar', 'Contact form settings are not saved yet. They apply as soon as they are saved.')}
+              </span>
+            ) : undefined}
           />
         )}
       </div>

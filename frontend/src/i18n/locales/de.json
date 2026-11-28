@@ -13615,7 +13615,7 @@
     "contact": {
       "saved": "Einstellungen des Kontaktformulars gespeichert",
       "title": "Kontaktformular",
-      "intro": "Für alle Kontaktformulare der Website. Wird sofort gespeichert, nicht mit dem Entwurf.",
+      "intro": "Für alle Kontaktformulare der Website. Wird mit der Leiste unten gespeichert und gilt sofort, nicht mit dem Entwurf.",
       "captcha": "Spam-Prüfung",
       "captchaNone": "Aus",
       "captchaHint": "Das Formular hat immer ein verstecktes Fallenfeld und ein Limit pro Absender. Eine Spam-Prüfung fügt Seiten mit Kontaktformular das Widget des Anbieters hinzu, und nur diese Seiten laden sein Skript. Friendly Captcha braucht keine Cookies.",
@@ -13637,8 +13637,11 @@
       "confirmationNeedsCaptcha": "Nur mit Spam-Prüfung: ohne sie könnte jeder sie an beliebige Adressen senden lassen.",
       "confirmationHint": "Ihr Name und Ihr fester Text, nie die Nachricht; höchstens eine pro Tag an eine Adresse.",
       "editConfirmationMail": "Bestätigungs-Mail bearbeiten",
-      "apiKeyUnreadable": "Der gespeicherte API-Schlüssel kann nicht mehr gelesen werden (der geheime Schlüssel des Servers wurde geändert). Geben Sie den API-Schlüssel erneut ein: Bis dahin nimmt das Kontaktformular keine Nachrichten an."
-    }
+      "apiKeyUnreadable": "Der gespeicherte API-Schlüssel kann nicht mehr gelesen werden (der geheime Schlüssel des Servers wurde geändert). Geben Sie den API-Schlüssel erneut ein: Bis dahin nimmt das Kontaktformular keine Nachrichten an.",
+      "unsaved": "noch nicht gespeichert",
+      "unsavedBar": "Die Einstellungen des Kontaktformulars sind noch nicht gespeichert. Sie gelten, sobald sie gespeichert sind."
+    },
+    "saveAll": "Entwurf und Kontakteinstellungen speichern"
   },
   "websiteNotice": {
     "title": "Ihre Startseite ist umgezogen",

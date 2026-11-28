@@ -46,8 +46,9 @@ vi.mock('../../../components/admin/SectionPageHeader', () => ({
 }));
 vi.mock('../../../components/admin/SettingsSaveBar', () => ({
   // Like the real bar: both buttons off while clean or while saving.
-  SettingsSaveBar: ({ isDirty, isSaving, onSave, onDiscard, saveLabel }: { isDirty: boolean; isSaving?: boolean; onSave: () => void; onDiscard: () => void; saveLabel: string }) => (
+  SettingsSaveBar: ({ isDirty, isSaving, onSave, onDiscard, saveLabel, extra }: { isDirty: boolean; isSaving?: boolean; onSave: () => void; onDiscard: () => void; saveLabel: string; extra?: React.ReactNode }) => (
     <>
+      {extra}
       <button type="button" disabled={!isDirty || isSaving} onClick={onDiscard}>Discard</button>
       <button type="button" disabled={!isDirty || isSaving} onClick={onSave}>{saveLabel}</button>
     </>
@@ -60,6 +61,7 @@ vi.mock('../../../services/cms.service', () => ({
 vi.mock('../../../services/website.service', () => ({
   websiteService: {
     getState: vi.fn(), saveDraft: vi.fn(), publish: vi.fn(), preview: vi.fn(), resolveMedia: vi.fn(), setVisibility: vi.fn(),
+    getContactSettings: vi.fn(), saveContactSettings: vi.fn(),
     listGalleries: vi.fn().mockResolvedValue([]), listAssets: vi.fn().mockResolvedValue([]), listPackages: vi.fn().mockResolvedValue({ available: false, packages: [] }),
   },
   mediaKey: (r: { source: string; id: string | number }) => `${r.source}:${r.id}`,
@@ -119,6 +121,10 @@ describe('WebsiteBuilderPage', () => {
     vi.mocked(websiteService.getState).mockResolvedValue(structuredClone(STATE));
     vi.mocked(websiteService.preview).mockImplementation(async (doc) => `<html><body>${doc.pages[0].blocks.map((b) => ('heading' in b ? b.heading : '')).join('|')}</body></html>`);
     vi.mocked(websiteService.resolveMedia).mockResolvedValue({});
+    vi.mocked(websiteService.getContactSettings).mockResolvedValue({
+      contact: { recipients: [], defaultRecipient: '', confirmation: false },
+      captcha: { provider: 'none', friendly: { siteKey: '', endpoint: 'global', apiKeySet: false }, recaptchaReady: false },
+    });
     vi.mocked(usePermission).mockReturnValue(true);
   });
 
@@ -215,6 +221,31 @@ describe('WebsiteBuilderPage', () => {
     editorMounts.length = 0;
     fireEvent.click(screen.getByRole('button', { name: 'Duplicate block' }));
     expect(editorMounts).toEqual(['<p>C left</p>', '']);
+  });
+
+  it('keeps unsaved contact form settings across panels, counts them as unsaved and saves them with the bar', async () => {
+    const settings = {
+      contact: { recipients: [] as string[], defaultRecipient: 'support@studio.example', confirmation: false },
+      captcha: { provider: 'none' as const, friendly: { siteKey: '', endpoint: 'global' as const, apiKeySet: false }, recaptchaReady: false },
+    };
+    vi.mocked(websiteService.getContactSettings).mockResolvedValue(settings);
+    vi.mocked(websiteService.saveContactSettings).mockResolvedValue({ ...settings, contact: { ...settings.contact, recipients: ['owner@studio.example'] } });
+    renderPage();
+    await screen.findByText('Blocks on “Home”');
+    expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('tab', { name: /Design/ }));
+    fireEvent.change(await screen.findByLabelText('Send new messages to'), { target: { value: 'owner@studio.example' } });
+    // Another panel and back: the edit is still there.
+    fireEvent.click(screen.getByRole('tab', { name: /Blocks/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Design/ }));
+    expect(await screen.findByLabelText('Send new messages to')).toHaveValue('owner@studio.example');
+    // Unsaved: the bar (and with it the leave guard) knows, and saves it.
+    expect(screen.getByText('Contact form settings are not saved yet. They apply as soon as they are saved.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save contact form settings' }));
+    await waitFor(() => expect(websiteService.saveContactSettings).toHaveBeenCalledWith(expect.objectContaining({
+      contact: { recipients: ['owner@studio.example'], confirmation: false },
+    })));
+    expect(websiteService.saveDraft).not.toHaveBeenCalled();
   });
 
   it('adds a block after the selected one', async () => {

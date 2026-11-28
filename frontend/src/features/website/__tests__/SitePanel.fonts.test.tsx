@@ -17,9 +17,13 @@ vi.mock('../../../services/fonts.service', () => ({ fontsService: { list: vi.fn(
 
 import { SitePanel } from '../SitePanel';
 import type { WebsiteDocument } from '../types';
+import type { ContactSettingsDraft } from '../contactSettingsDraft';
+
+// Not loaded yet: the contact section shows nothing.
+const NO_CONTACT_SETTINGS = { server: undefined, draft: null, dirty: false, canChange: true, isSaving: false, set: () => {}, discard: () => {}, save: async () => undefined } as unknown as ContactSettingsDraft;
 
 it('links to the font upload in the branding settings', () => {
   const doc = { version: 1, pages: [], theme: { headingFont: null, bodyFont: null, buttonStyle: null, accent: null, background: null, text: null }, customCss: '', footer: { columns: [], legal: 'column', copyright: '', background: 'default' }, menu: { layout: 'left', style: 'plain', sticky: true, transparent: false, mobile: 'dropdown', background: null, text: null, items: [] } } as WebsiteDocument;
-  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><SitePanel doc={doc} update={() => {}} readOnly={false} /></MemoryRouter></QueryClientProvider>);
+  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><SitePanel doc={doc} contactSettings={NO_CONTACT_SETTINGS} update={() => {}} readOnly={false} /></MemoryRouter></QueryClientProvider>);
   expect(screen.getByRole('link', { name: /Manage fonts/ })).toHaveAttribute('href', '/admin/settings?tab=branding#fonts');
 });
