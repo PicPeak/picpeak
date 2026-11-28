@@ -57,7 +57,8 @@ export function useContactSettingsDraft() {
   const canChange = usePermission('settings.edit');
   const query = useQuery({ queryKey: CONTACT_SETTINGS_KEY, queryFn: websiteService.getContactSettings });
   const server = query.data;
-  const [state, setState] = useState<{ draft: ContactDraft; accepted: ContactDraft; revision: number } | null>(null);
+  // held: a refetch clashed with an edit; the revision stays the edit's own.
+  const [state, setState] = useState<{ draft: ContactDraft; accepted: ContactDraft; revision: number; held?: boolean } | null>(null);
   const [conflict, setConflict] = useState(false);
   // The server value the draft already took in (a save's answer is taken in
   // by the save itself, field by field).
@@ -72,7 +73,14 @@ export function useContactSettingsDraft() {
       // A read that started before a save and answered after it: older than
       // what the draft already took in, so not taken.
       if (server.revision < s.revision) return s;
-      return { draft: takeUntouched(s.draft, s.accepted, next), accepted: next, revision: server.revision };
+      // A setting this admin edited that someone else changed meanwhile: the
+      // draft keeps the revision the edit was made from, so its save is
+      // refused (409) instead of overwriting the colleague's value, and the
+      // conflict shows now. Otherwise the newer revision is taken in.
+      // Once held, it stays held until the latest is loaded or a save answers.
+      const clash = s.held || FIELDS.some((f) => s.draft[f] !== s.accepted[f] && next[f] !== s.accepted[f] && s.draft[f] !== next[f]);
+      if (clash) setConflict(true);
+      return { draft: takeUntouched(s.draft, s.accepted, next), accepted: next, revision: clash ? s.revision : server.revision, held: clash };
     });
   }, [server]);
 

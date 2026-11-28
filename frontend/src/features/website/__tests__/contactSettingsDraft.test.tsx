@@ -91,4 +91,33 @@ describe('contact settings draft', () => {
     expect(hook.result.current.draft?.recipients).toBe('new@studio.example');
     expect(hook.result.current.dirty).toBe(false);
   });
+
+  it('two admins change the same setting: the refetch does not let this one overwrite the other\'s without a conflict', async () => {
+    const { client, hook } = setup(settings({ recipients: ['a@studio.example'], revision: 1 }));
+    await waitFor(() => expect(hook.result.current.draft).not.toBeNull());
+    // This admin edits the recipients...
+    act(() => hook.result.current.set({ recipients: 'mine@studio.example' }));
+    // ...while a colleague saved other recipients (revision 2), which a refetch brings.
+    act(() => { client.setQueryData(CONTACT_SETTINGS_KEY, settings({ recipients: ['colleague@studio.example'], revision: 2 })); });
+    await waitFor(() => expect(hook.result.current.conflict).toBe(true));
+    expect(hook.result.current.draft?.recipients).toBe('mine@studio.example');
+    // A later refetch with no further change does not lift it.
+    act(() => { client.setQueryData(CONTACT_SETTINGS_KEY, settings({ recipients: ['colleague@studio.example'], revision: 3 })); });
+    // A save names the revision this edit was made from: the server refuses it (409).
+    vi.mocked(websiteService.saveContactSettings).mockRejectedValue({ response: { status: 409, data: { code: 'WEBSITE_CONTACT_CONFLICT' } } });
+    await act(async () => { await hook.result.current.save().catch(() => {}); });
+    expect(vi.mocked(websiteService.saveContactSettings).mock.calls.at(-1)?.[0].revision).toBe(1);
+  });
+
+  it('a colleague\'s change to another setting is taken in, with its revision', async () => {
+    const { client, hook } = setup(settings({ revision: 1 }));
+    await waitFor(() => expect(hook.result.current.draft).not.toBeNull());
+    act(() => hook.result.current.set({ recipients: 'mine@studio.example' }));
+    act(() => { client.setQueryData(CONTACT_SETTINGS_KEY, settings({ siteKey: 'FCMNEW0001', revision: 2 })); });
+    await waitFor(() => expect(hook.result.current.draft?.siteKey).toBe('FCMNEW0001'));
+    expect(hook.result.current.conflict).toBe(false);
+    vi.mocked(websiteService.saveContactSettings).mockResolvedValue(settings({ recipients: ['mine@studio.example'], siteKey: 'FCMNEW0001', revision: 3 }));
+    await act(async () => { await hook.result.current.save(); });
+    expect(vi.mocked(websiteService.saveContactSettings).mock.calls.at(-1)?.[0].revision).toBe(2);
+  });
 });
