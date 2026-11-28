@@ -228,4 +228,20 @@ describe('website page views sent to the configured analytics, when chosen', () 
     expect(received[0].headers['user-agent']).toBe(BROWSER);
     await setSetting('analytics_website_forward', false, 'analytics');
   });
+
+  test('the global "Enable Analytics" switch off: nothing is forwarded and nothing is counted', async () => {
+    await setSetting('analytics_website_forward', true, 'analytics');
+    await setSetting('general_enable_analytics', false);
+    received = [];
+    await db('website_page_views').del();
+    try {
+      await request(app).get('/about').set('User-Agent', BROWSER).set('X-Forwarded-For', '198.51.100.8');
+      await settle();
+      expect(received).toEqual([]);
+      expect(await db('website_page_views').count({ c: '*' }).first()).toMatchObject({ c: 0 });
+    } finally {
+      await setSetting('general_enable_analytics', true);
+      await setSetting('analytics_website_forward', false, 'analytics');
+    }
+  });
 });

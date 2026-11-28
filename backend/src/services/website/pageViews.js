@@ -1,12 +1,14 @@
 /**
  * The website's page views (issue 2618), counted server-side: per day, page,
  * referrer domain and device class, nothing else. No cookies, no script, no
- * address or user agent stored; crawlers and tools are not counted.
+ * address or user agent stored; crawlers and tools are not counted, and
+ * nothing is counted or forwarded while analytics is off (Settings › General).
  */
 const { db } = require('../../database/db');
 const logger = require('../../utils/logger');
 const { isBot, deviceClass } = require('../../utils/userAgentClass');
 const { getAppSetting } = require('../../utils/appSettings');
+const { parseBooleanInput } = require('../../utils/parsers');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const trackers = require('../trackers/forwardEvent');
 
@@ -48,6 +50,14 @@ async function forwardPageView({ slug, userAgent, ip, gpc, dnt }) {
  */
 async function recordPageView({ slug, userAgent, referer, host, ip, gpc, dnt }) {
   if (isBot(userAgent)) return;
+  // Settings › General › "Enable Analytics" is the one switch for all of it:
+  // off, the website neither counts nor forwards.
+  try {
+    if (!parseBooleanInput(await getAppSetting('general_enable_analytics', true), true)) return;
+  } catch (error) {
+    logger.debug('Website page view not counted', { error: error.message });
+    return;
+  }
   forwardPageView({ slug, userAgent, ip, gpc, dnt })
     .catch((error) => logger.debug('Website page view not forwarded', { error: error.message }));
   const row = {
