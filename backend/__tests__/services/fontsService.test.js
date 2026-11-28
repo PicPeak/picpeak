@@ -419,4 +419,34 @@ describe('uploaded fonts on an object store (S3, several replicas)', () => {
     expect((await request(app).get('/fonts/..%2Fsecrets/400.woff2')).status).toBe(404);
     expect((await request(app).get('/fonts/Missing/400.woff2')).status).toBe(404);
   });
+
+  test('fonts placed on this disk before the move to the object store stay listed and served beside the uploaded ones', async () => {
+    await makeFamily(userRoot, 'Old-Local', [400]);
+    await makeFamily(userRoot, 'Studio-Serif', ['300.woff2']);
+    await fontsService.saveUploadedFont({ family: 'Studio Serif', weight: 400, generic: 'serif', buffer: TTF });
+    await fontsService.saveUploadedFont({ family: 'Bucket Only', weight: 700, generic: 'serif', buffer: WOFF2 });
+    fontsService.clearFontsCache();
+    const fonts = await fontsService.listFonts();
+    expect(fonts.find((f) => f.family === 'Old Local')).toMatchObject({ weights: [400], source: 'uploaded' });
+    expect(fonts.find((f) => f.family === 'Bucket Only')).toMatchObject({ weights: [700], formats: { 700: 'woff2' } });
+    // One family on both: its weights from both, the store's file where both have one.
+    expect(fonts.find((f) => f.family === 'Studio Serif')).toMatchObject({ weights: [300, 400], formats: { 300: 'woff2', 400: 'ttf' }, generic: 'serif' });
+    expect(fonts.filter((f) => f.family === 'Studio Serif')).toHaveLength(1);
+
+    const express = require('express');
+    const request = require('supertest');
+    const secureStatic = require('../../src/middleware/secureStatic');
+    const { fontReadThrough, fontStaticOpts } = require('../../src/middleware/fontReadThrough');
+    const app = express();
+    app.use('/fonts', fontReadThrough());
+    app.use('/fonts', secureStatic(userRoot, fontStaticOpts));
+    expect((await request(app).get('/fonts/Old-Local/400.woff2')).status).toBe(200);
+    expect((await request(app).get('/fonts/Bucket-Only/700.woff2')).status).toBe(200);
+    // A family listed from this disk can be removed like any other.
+    expect(await fontsService.deleteUploadedFamily('Old Local')).toBe(true);
+    expect(fs.existsSync(path.join(userRoot, 'Old-Local'))).toBe(false);
+    expect(await fontsService.deleteUploadedFamily('Studio Serif')).toBe(true);
+    expect(fs.existsSync(path.join(userRoot, 'Studio-Serif'))).toBe(false);
+    expect([...store.objects.keys()].some((k) => k.startsWith('fonts/Studio-Serif/'))).toBe(false);
+  });
 });

@@ -226,6 +226,26 @@ async function scanRoot(rootAbs, source) {
   return result;
 }
 
+/** Families from two places, one per name; `preferred` wins a weight both have. */
+function mergeFamilies(other, preferred) {
+  const merged = new Map(other);
+  for (const [lc, family] of preferred) {
+    const base = merged.get(lc);
+    if (!base) {
+      merged.set(lc, family);
+      continue;
+    }
+    const formats = { ...base.formats, ...family.formats };
+    merged.set(lc, {
+      ...family,
+      weights: Object.keys(formats).map(Number).sort((a, b) => a - b),
+      formats,
+      generic: family.generic !== DEFAULT_GENERIC ? family.generic : base.generic,
+    });
+  }
+  return merged;
+}
+
 /**
  * List all available font families (bundled + user additions, merged).
  * Cached for FONTS_CACHE_TTL_MS.
@@ -239,9 +259,12 @@ async function listFonts() {
 
   const bundled = await scanRoot(getBundledFontsRoot(), 'bundled');
   // Uploads live where the storage adapter keeps files: on this disk, or in
-  // the object store every replica shares.
+  // the object store every replica shares. With the store, fonts placed on
+  // this disk before (or by hand) still count: merged in, the store's file
+  // first where both have a weight, as the /fonts mounts serve them.
   const storage = getStorage();
-  const userAdded = storage.kind() === 's3' ? await scanStore(storage) : await scanRoot(getUserFontsRoot(), 'uploaded');
+  const onDisk = await scanRoot(getUserFontsRoot(), 'uploaded');
+  const userAdded = storage.kind() === 's3' ? mergeFamilies(onDisk, await scanStore(storage)) : onDisk;
 
   // User additions override bundled families of the same name.
   const merged = new Map(bundled);
@@ -314,9 +337,13 @@ async function deleteUploadedFamily(family) {
   const storage = getStorage();
   const prefix = `${FONTS_PREFIX}/${name.replace(/ /g, '-')}/`;
   const entries = await storage.list(prefix);
-  if (!entries.length) return false;
   for (const entry of entries) await storage.delete(entry.key); // eslint-disable-line no-await-in-loop
-  if (storage.kind() !== 's3') await fs.rm(path.join(getUserFontsRoot(), name.replace(/ /g, '-')), { recursive: true, force: true });
+  // On this disk too: with the object store, fonts placed here before are
+  // listed beside the stored ones (listFonts) and removed the same way.
+  const folder = path.join(getUserFontsRoot(), name.replace(/ /g, '-'));
+  const onDisk = await fs.stat(folder).then((st) => st.isDirectory()).catch(() => false);
+  if (onDisk) await fs.rm(folder, { recursive: true, force: true });
+  if (!entries.length && !onDisk) return false;
   clearFontsCache();
   return true;
 }
