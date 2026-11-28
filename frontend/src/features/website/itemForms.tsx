@@ -1,6 +1,6 @@
 /**
- * The item lists of the FAQ, steps, call-to-action, logos and social links
- * blocks (issue 2618). Limits mirror backend document.js.
+ * The item lists of the FAQ, steps, call-to-action, logos, social links and
+ * testimonials blocks (issue 2618). Limits mirror backend document.js.
  */
 import React, { useId } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -9,14 +9,15 @@ import { Button } from '../../components/common';
 import { EMAIL_PATTERN, ImageField, LinkField, RichTextField, TextArea, TextField, labelClass } from './fields';
 import { LinkTargetField } from './LinkTargetField';
 import { newId } from './blocks';
-import type { CtaBlock, FaqBlock, LogosBlock, SocialBlock, SocialNetwork, StepIcon, StepsBlock } from './types';
+import type { CtaBlock, FaqBlock, LogosBlock, SocialBlock, SocialNetwork, StepIcon, StepsBlock, Testimonial } from './types';
 
-export const MAX_FAQ = 24;
-export const MIN_STEPS = 2;
-export const MAX_STEPS = 8;
-export const MAX_CTA_BUTTONS = 2;
-export const MAX_LOGOS = 24;
-export const MAX_SOCIAL = 8;
+const MAX_FAQ = 24;
+const MIN_STEPS = 2;
+const MAX_STEPS = 8;
+const MAX_CTA_BUTTONS = 2;
+const MAX_LOGOS = 24;
+const MAX_SOCIAL = 8;
+const MAX_TESTIMONIALS = 24;
 
 const NETWORKS: SocialNetwork[] = ['instagram', 'facebook', 'tiktok', 'youtube', 'pinterest', 'linkedin', 'website', 'email'];
 const NETWORK_NAMES: Record<SocialNetwork, string> = {
@@ -184,6 +185,31 @@ export const SocialLinksField: React.FC<{ value: SocialBlock['links']; onChange:
       ))}
       <AddButton label={t('website.fields.addSocial', 'Add link')} count={value.length} max={MAX_SOCIAL}
         onClick={() => onChange([...value, { network: unused, url: '' }])} />
+    </div>
+  );
+};
+
+export const TestimonialsField: React.FC<{ value: Testimonial[]; onChange: (value: Testimonial[], field?: string) => void }> = ({ value, onChange }) => {
+  const { t } = useTranslation();
+  const patch = (index: number, item: Partial<Testimonial>, field?: string) =>
+    onChange(patchAt(value, index, item), field ? `item${index}.${field}` : undefined);
+  return (
+    <div className="space-y-3">
+      {value.map((item, index) => (
+        // Keyed by the testimonial's id: removing one never hands its fields to the next.
+        <ItemCard key={item.id || index} title={t('website.fields.testimonial', 'Testimonial {{n}}', { n: index + 1 })} canRemove
+          removeLabel={t('website.fields.removeTestimonial', 'Remove testimonial {{n}}', { n: index + 1 })} onRemove={() => onChange(value.filter((_, i) => i !== index))}>
+          <TextArea label={t('website.fields.quote', 'Quote')} value={item.quote} rows={3} maxLength={1200} onChange={(quote) => patch(index, { quote }, 'quote')} />
+          {!item.quote.trim() && (
+            <p className="text-xs text-warning-text">{t('website.fields.testimonialIncomplete', 'Incomplete: without a quote this testimonial is not shown on the page.')}</p>
+          )}
+          <TextField label={t('website.fields.author', 'Name')} value={item.author} maxLength={120} onChange={(author) => patch(index, { author }, 'author')} />
+          <TextField label={t('website.fields.role', 'Detail (optional)')} value={item.role} maxLength={120} placeholder={t('website.fields.rolePlaceholder', 'Wedding, June 2026') as string} onChange={(role) => patch(index, { role }, 'role')} />
+          <ImageField label={t('website.fields.portrait', 'Photo (optional)')} value={item.image} onChange={(image) => patch(index, { image })} />
+        </ItemCard>
+      ))}
+      <AddButton label={t('website.fields.addTestimonial', 'Add testimonial')} count={value.length} max={MAX_TESTIMONIALS}
+        onClick={() => onChange([...value, { id: newId(), quote: '', author: '', role: '', image: null }])} />
     </div>
   );
 };
