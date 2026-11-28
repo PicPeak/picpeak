@@ -1189,6 +1189,19 @@ describe('the public site switch as the settings page writes it', () => {
   });
 });
 
+describe('the landing page\'s HTML and CSS after its editor moved into the builder', () => {
+  test('the general settings no longer write them; the stored page stays as it is', async () => {
+    await setSetting('general_public_site_html', '<h1>Stored page</h1>');
+    await setSetting('general_public_site_custom_css', '.stored{color:red}');
+    const res = await request(app).put('/api/admin/settings/general').set(auth(adminId))
+      .send({ general_public_site_html: '<h1>Overwritten</h1>', general_public_site_custom_css: '.overwritten{}' });
+    expect(res.status).toBe(200);
+    const stored = async (key) => decodeSettingValue(db, (await db('app_settings').where({ setting_key: key }).first()).setting_value);
+    expect(await stored('general_public_site_html')).toBe('<h1>Stored page</h1>');
+    expect(await stored('general_public_site_custom_css')).toBe('.stored{color:red}');
+  });
+});
+
 describe('save and publish under a concurrent save', () => {
   const doc = (heading) => ({ pages: [{ id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [{ id: 'h', type: 'hero', heading }] }] });
 
@@ -1271,26 +1284,30 @@ describe('save and publish under a concurrent save', () => {
 });
 
 describe('importing a large landing page', () => {
-  const writeSite = (settings) => request(app).put('/api/admin/settings/general').set(auth(adminId)).send(settings);
+  // The landing page as an install has it stored (its editor wrote it; there
+  // is none any more).
+  const storedSite = async (settings) => {
+    for (const [key, value] of Object.entries(settings)) await setSetting(key, value); // eslint-disable-line no-await-in-loop
+    require('../../src/services/publicSiteService').clearPublicSiteCache();
+    cache.clearWebsiteCache();
+  };
 
-  test('the largest stylesheet the settings page takes comes over whole', async () => {
+  test('the largest stylesheet the landing page could have comes over whole', async () => {
     const { MAX_CSS_SIZE } = require('../../src/utils/cssSanitizer');
     const css = `.x{color:red}${'/*pad*/'.repeat(Math.ceil(MAX_CSS_SIZE / 7))}`.slice(0, MAX_CSS_SIZE);
-    expect((await writeSite({ general_public_site_html: '<p>Edited landing page</p>', general_public_site_custom_css: css })).status).toBe(200);
-    const stored = (await db('app_settings').where({ setting_key: 'general_public_site_custom_css' }).first()).setting_value;
-    const storedCss = JSON.parse(stored);
+    await storedSite({ general_public_site_html: '<p>Edited landing page</p>', general_public_site_custom_css: css });
     const { document: raw, imported } = await service._internal.initialDocument();
     expect(imported).toBe(true);
     const { document, errors } = require('../../src/services/website/document').normalizeDocument(raw);
     expect(errors).toEqual([]);
-    expect(document.customCss.endsWith(storedCss.trim())).toBe(true);
+    expect(document.customCss.endsWith(css.trim())).toBe(true);
   });
 
   test('an imported stylesheet of the largest accepted size renders whole', async () => {
     const { MAX_CSS_SIZE } = require('../../src/utils/cssSanitizer');
     const last = '.last-rule{color:blue}';
     const css = `${'/*pad*/'.repeat(Math.ceil(MAX_CSS_SIZE / 7))}`.slice(0, MAX_CSS_SIZE - last.length) + last;
-    expect((await writeSite({ general_public_site_html: '<p>Edited landing page</p>', general_public_site_custom_css: css })).status).toBe(200);
+    await storedSite({ general_public_site_html: '<p>Edited landing page</p>', general_public_site_custom_css: css });
     const { document: raw } = await service._internal.initialDocument();
     const { document } = require('../../src/services/website/document').normalizeDocument(raw);
     const html = (await request(app).post('/api/admin/website/preview').set(auth(adminId)).send({ document, pageId: document.pages[0].id })).body.html;
@@ -1300,7 +1317,7 @@ describe('importing a large landing page', () => {
   test('a landing page too large for a custom HTML block is not cut: it is left out, and the editor says why', async () => {
     const { MAX_CUSTOM_HTML } = require('../../src/services/website/document');
     const html = `<p>${'x'.repeat(MAX_CUSTOM_HTML + 10)}</p>`;
-    expect((await writeSite({ general_public_site_html: html })).status).toBe(200);
+    await storedSite({ general_public_site_html: html });
     const { document, imported, refused } = await service._internal.initialDocument();
     expect(imported).toBe(false);
     expect(refused).toEqual({ length: html.length, max: MAX_CUSTOM_HTML });
@@ -1309,7 +1326,7 @@ describe('importing a large landing page', () => {
     expect(await service._internal.importRefusal({ published: null })).toEqual({ length: html.length, max: MAX_CUSTOM_HTML });
     // Once something is published the old page is gone from / anyway.
     expect(await service._internal.importRefusal({ published: { id: 1 } })).toBeNull();
-    await writeSite({ general_public_site_html: '<p>Edited landing page</p>' });
+    await storedSite({ general_public_site_html: '<p>Edited landing page</p>' });
   });
 });
 

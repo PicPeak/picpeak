@@ -23,7 +23,6 @@ const {
   clearPublicSiteCache,
   getRawPublicSiteSettings,
 } = require('../services/publicSiteService');
-const { sanitizeCss } = require('../utils/cssSanitizer');
 const { upsertAppSetting } = require('../utils/appSettings');
 const { clearShareLinkSettingsCache } = require('../services/shareLinkService');
 const { invalidateSiteUrlCache, isEnvPinned, envPinnedBase } = require('../utils/frontendUrl');
@@ -1852,6 +1851,11 @@ async function prepareGeneralSettings(settings, ctx) {
     .normaliseCustomerDocumentSettings(settings);
   if (documentSettingsError) return { error: documentSettingsError };
 
+  // The landing page's HTML and CSS have no editor of their own (the page
+  // moved into the website builder, issue 2618). The stored page is still
+  // served until the website replaces it, so the two are not written here.
+  delete settings.general_public_site_html;
+  delete settings.general_public_site_custom_css;
   ctx.publicSiteKeysTouched = Object.keys(settings).some((key) => key.startsWith('general_public_site_'));
 
   // Per-file size limits (MB) are validated on save like the count, so an
@@ -1962,28 +1966,13 @@ async function prepareGeneralSettings(settings, ctx) {
   }
 
   if (ctx.publicSiteKeysTouched) {
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_public_site_custom_css')) {
-      settings.general_public_site_custom_css = sanitizeCss(settings.general_public_site_custom_css || '');
-    }
-
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_public_site_html') && typeof settings.general_public_site_html === 'string') {
-      settings.general_public_site_html = settings.general_public_site_html.trim();
-    }
-
     if (Object.prototype.hasOwnProperty.call(settings, 'general_public_site_enabled')) {
       settings.general_public_site_enabled = formatBoolean(settings.general_public_site_enabled);
     }
 
-    const enableToggle = settings.general_public_site_enabled;
-    if (enableToggle === true) {
-      let htmlValue = settings.general_public_site_html;
-
-      if (htmlValue === undefined) {
-        const currentSettings = await getRawPublicSiteSettings();
-        htmlValue = currentSettings.general_public_site_html;
-      }
-
-      if (!htmlValue || !String(htmlValue).trim()) {
+    if (settings.general_public_site_enabled === true) {
+      const { general_public_site_html: html } = await getRawPublicSiteSettings();
+      if (!html || !String(html).trim()) {
         return {
           error: 'Public site HTML must be provided before enabling the public landing page.'
         };

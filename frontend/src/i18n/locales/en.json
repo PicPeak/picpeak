@@ -6406,7 +6406,9 @@
     "discardAndSwitch": "Discard and switch",
     "managedInWebsite": "These pages are managed under Website › Pages while the website is on, and shown in its design.",
     "editInWebsite": "Edit in Website",
-    "savedAtOnce": "Changes to legal and system pages apply as soon as they are saved. They are not part of the website draft."
+    "savedAtOnce": "Changes to legal and system pages apply as soon as they are saved. They are not part of the website draft.",
+    "landingMoved": "The landing page is edited under Website now. To build or change it, switch on “Website builder” in Settings › Features; a landing page you already have stays as it is until then.",
+    "openFeatures": "Open Features"
   },
   "eventTypes": {
     "title": "Event Types",

@@ -49,6 +49,13 @@ it('has no landing page editor any more', async () => {
   expect(screen.queryByText('settings.publicSite.title')).toBeNull();
 });
 
+it('while the website is off, says where the landing page is edited now and links to the switch for it', async () => {
+  flagOn.mockReturnValue(false);
+  renderPage();
+  expect(await screen.findByText(/landing page is edited under Website now/)).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Open Features' })).toHaveAttribute('href', '/admin/settings?tab=features');
+});
+
 it('edits every CMS page here while the website is off', async () => {
   flagOn.mockReturnValue(false);
   renderPage();

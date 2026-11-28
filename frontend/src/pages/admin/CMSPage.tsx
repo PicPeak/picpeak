@@ -10,12 +10,14 @@ import { CmsPageEditor } from '../../components/admin/cms/CmsPageEditor';
 import { useCmsPageTitle } from '../../components/admin/cms/cmsPageTitle';
 import { cmsService, type CMSPage as CMSPageRow } from '../../services/cms.service';
 import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
+import { settingsTabHref } from '../../features/settings/settingsNav';
 
 /**
- * Settings › CMS: the CMS pages (legal pages, error pages). The single-page
- * landing editor that used to sit here moved into the website builder
- * (issue 2618). While the website is on, its Pages panel edits all of them
- * (the same data, the same editor) and this tab links each one there.
+ * Settings › CMS: the CMS pages (legal pages, error pages). The landing page
+ * is edited in the website builder (issue 2618): while the builder is off
+ * this tab says so and links to its switch; while it is on, the builder's
+ * Pages panel edits the CMS pages too (the same data, the same editor) and
+ * this tab links each one there.
  */
 export const CMSPage: React.FC = () => {
   const { t } = useTranslation();
@@ -70,6 +72,13 @@ export const CMSPage: React.FC = () => {
             ))}
           </ul>
         </Card>
+      )}
+
+      {!websiteBuilderOn && (
+        <Notice tone="info" size="sm" className="mb-4"
+          action={<Link to={settingsTabHref('features')} className="text-sm font-medium text-accent hover:underline">{t('cms.openFeatures', 'Open Features')}</Link>}>
+          {t('cms.landingMoved', 'The landing page is edited under Website now. To build or change it, switch on “Website builder” in Settings › Features; a landing page you already have stays as it is until then.')}
+        </Notice>
       )}
 
       {!websiteBuilderOn && selectedPage && (

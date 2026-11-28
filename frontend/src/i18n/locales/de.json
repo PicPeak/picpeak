@@ -7089,7 +7089,9 @@
     "discardAndSwitch": "Verwerfen und wechseln",
     "managedInWebsite": "Solange die Website eingeschaltet ist, werden diese Seiten unter Website › Seiten verwaltet und in ihrem Design gezeigt.",
     "editInWebsite": "In der Website bearbeiten",
-    "savedAtOnce": "Änderungen an rechtlichen Seiten und Systemseiten gelten, sobald sie gespeichert sind. Sie gehören nicht zum Entwurf der Website."
+    "savedAtOnce": "Änderungen an rechtlichen Seiten und Systemseiten gelten, sobald sie gespeichert sind. Sie gehören nicht zum Entwurf der Website.",
+    "landingMoved": "Die Startseite wird jetzt unter Website bearbeitet. Um sie zu gestalten oder zu ändern, schalten Sie unter Einstellungen › Funktionen den „Website-Baukasten“ ein; eine bestehende Startseite bleibt bis dahin, wie sie ist.",
+    "openFeatures": "Funktionen öffnen"
   },
   "validation": {
     "eventNameRequired": "Galeriename ist erforderlich",
