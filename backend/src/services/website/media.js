@@ -248,8 +248,6 @@ async function loadCoverPhotos(events, { views: withViews = true } = {}) {
 
 module.exports = {
   MEDIA_WIDTHS,
-  signMedia,
-  verifyMedia,
   mediaBase,
   editorBase,
   photoPreviewUrl,

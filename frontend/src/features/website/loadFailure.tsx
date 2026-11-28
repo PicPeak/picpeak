@@ -5,7 +5,7 @@ import { Button, Notice } from '../../components/common';
 import { ErrorState } from '../../components/common/EmptyState';
 import { apiErrorText } from '../../utils/apiErrorText';
 
-export interface PaneQuery {
+interface PaneQuery {
   data?: unknown;
   error: unknown;
   isError: boolean;

@@ -151,7 +151,7 @@ export const LogosField: React.FC<{ value: LogosBlock['items']; onChange: (value
 };
 
 /** As the backend keeps it (document.js socialUrl): http(s), or an e-mail address. */
-export function socialUrlProblem(network: SocialNetwork, url: string): boolean {
+function socialUrlProblem(network: SocialNetwork, url: string): boolean {
   const value = url.trim();
   if (!value) return false;
   if (network === 'email') return !/^(mailto:)?[^\s@<>"']{1,64}@[^\s@<>"']{1,190}\.[a-z]{2,}$/i.test(value);

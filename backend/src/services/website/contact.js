@@ -216,4 +216,4 @@ async function sendMails(values, page, { captchaOn }) {
   }
 }
 
-module.exports = { validateSubmission, findForm, storeSubmission, sendMails, EMAIL_PATTERN, DAILY_CAP, MESSAGE_MAX, _internal: { formatBody, overDailyCap, reserveConfirmation } };
+module.exports = { validateSubmission, findForm, storeSubmission, sendMails, EMAIL_PATTERN, DAILY_CAP, MESSAGE_MAX, _internal: { reserveConfirmation } };

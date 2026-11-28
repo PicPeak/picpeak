@@ -23,4 +23,4 @@ function portableFontFile(rel, size) {
   return COMPANION.test(rel) && Number(size) <= MAX_COMPANION_BYTES;
 }
 
-module.exports = { portableFontPath, portableFontFile, MAX_COMPANION_BYTES };
+module.exports = { portableFontPath, portableFontFile };

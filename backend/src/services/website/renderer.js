@@ -1030,8 +1030,7 @@ module.exports = {
   renderSystemPage,
   renderedImages,
   richText,
-  inline,
   srcsetFor,
   pageHref,
-  _internal: { palette, fontFaces, resolveImage },
+  _internal: { fontFaces },
 };

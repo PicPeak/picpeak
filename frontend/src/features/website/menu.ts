@@ -11,7 +11,7 @@ export const MAX_MENU_ITEMS = 12;
 const isPageItem = (item: MenuItem, pageId: string) => item.target.kind === 'page' && item.target.pageId === pageId;
 const pointsAt = (item: MenuItem, pageId: string) => (item.target.kind === 'page' || item.target.kind === 'anchor') && item.target.pageId === pageId;
 
-export function pageItem(pageId: string): MenuItem {
+function pageItem(pageId: string): MenuItem {
   return { id: newId(), label: '', hidden: false, target: { kind: 'page', pageId } };
 }
 

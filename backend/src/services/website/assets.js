@@ -191,4 +191,4 @@ async function deleteAsset(publicId) {
   await removeKeys(parseRenditionKeys(row));
 }
 
-module.exports = { listAssets, createImageAsset, createVideoAsset, deleteAsset, publicAsset, IMAGE_TYPES };
+module.exports = { listAssets, createImageAsset, createVideoAsset, deleteAsset, publicAsset };

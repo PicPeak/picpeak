@@ -164,7 +164,7 @@ export interface WebsiteDocument {
   customCss: string;
 }
 
-export interface RevisionInfo {
+interface RevisionInfo {
   revision: number;
   updatedAt: string;
   publishedAt: string | null;

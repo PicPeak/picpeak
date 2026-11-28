@@ -699,18 +699,15 @@ function legacyImport({ enabled, html, css }) {
 }
 
 module.exports = {
-  DOCUMENT_VERSION,
   LIMIT_CODES,
   MAX_CUSTOM_HTML,
   MAX_CUSTOM_CSS,
-  BLOCK_TYPES,
   BLOCK_VARIANTS,
   RESERVED_SLUGS,
   LEGAL_SLUGS,
   ownedByApp,
   linkTarget,
   normalizeDocument,
-  normalizeBlock,
   normalizeSlug,
   isValidSlug,
   safeUrl,

@@ -18,7 +18,7 @@ import { websiteService, type CaptchaProvider, type ContactSettings, type Contac
 
 export const CONTACT_SETTINGS_KEY = ['website-contact-settings'];
 
-export interface ContactDraft {
+interface ContactDraft {
   provider: CaptchaProvider;
   siteKey: string;
   endpoint: 'global' | 'eu';

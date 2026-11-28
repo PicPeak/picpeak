@@ -3,7 +3,7 @@ import type {
   EditorState, ImageRef, WebsiteAsset, WebsiteDocument, WebsiteGallery, WebsitePackage, WebsitePhoto,
 } from '../features/website/types';
 
-export interface GalleryQuery {
+interface GalleryQuery {
   page?: number;
   q?: string;
   onWebsite?: boolean;
@@ -14,7 +14,7 @@ export interface GalleryQuery {
 const RESOLVE_BATCH = 500;
 
 /** Website builder admin API (issue 2618), /api/admin/website. */
-export interface WebsiteTraffic {
+interface WebsiteTraffic {
   chartData: Array<{ date: string; views: number }>;
   topPages: Array<{ page: string; title: string | null; views: number }>;
   referrers: Array<{ domain: string; views: number }>;

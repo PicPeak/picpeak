@@ -113,4 +113,4 @@ async function verifyAnswer(captcha, body, { ip } = {}) {
   }
 }
 
-module.exports = { websiteCsp, widgetHtml, verifyAnswer, RESPONSE_FIELD, FRIENDLY_VERIFY, _internal: { FRIENDLY_SDK } };
+module.exports = { websiteCsp, widgetHtml, verifyAnswer, RESPONSE_FIELD };

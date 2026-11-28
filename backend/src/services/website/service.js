@@ -786,7 +786,6 @@ async function setGalleryOnWebsite(eventId, enabled) {
 
 module.exports = {
   FLAG,
-  ensureDraft,
   getEditorState,
   saveDraft,
   publish,
@@ -805,5 +804,5 @@ module.exports = {
   buildContext,
   referencesAdminMay,
   packageOffer,
-  _internal: { initialDocument, importRefusal, robotsDirective, loadPackages },
+  _internal: { initialDocument, importRefusal, loadPackages },
 };

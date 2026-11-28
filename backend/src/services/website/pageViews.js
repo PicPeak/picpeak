@@ -156,6 +156,6 @@ async function pageViewStats(days) {
 }
 
 module.exports = {
-  recordPageView, referrerDomain, pageViewStats, NOT_FOUND_PAGE,
+  recordPageView, pageViewStats, NOT_FOUND_PAGE,
   _internal: { forgetPurge: () => { purgedOn = ''; } },
 };

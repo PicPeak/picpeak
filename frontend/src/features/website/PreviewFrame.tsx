@@ -44,7 +44,7 @@ export function publicSiteUrl(publicUrl?: string): string {
  * runs no scripts and its clicks are cancelled, so the base only moves where
  * resources load from.
  */
-export function withResourceBase(html: string): string {
+function withResourceBase(html: string): string {
   const base = new URL(buildResourceUrl('/'), window.location.href).href;
   const tag = `<base href="${base.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}">`;
   return /<head>/i.test(html) ? html.replace(/<head>/i, `<head>\n${tag}`) : `${tag}${html}`;
