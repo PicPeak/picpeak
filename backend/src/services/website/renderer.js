@@ -184,6 +184,16 @@ function heading(text, level = 2) {
   return text ? `<h${level} class="pp-h">${esc(text)}</h${level}>` : '';
 }
 
+// A block's heading: an h2, or the page's h1 when no hero carries it. The
+// first heading that is rendered takes it (renderPage sets ctx.needsH1), so
+// a block that is not shown never does.
+function blockHeading(block, ctx, text = block.heading) {
+  if (!text) return '';
+  const level = ctx.needsH1 ? 1 : 2;
+  ctx.needsH1 = false;
+  return heading(text, level);
+}
+
 /**
  * A custom background's colours as section variables: the text colour set
  * for the block, or the page's text colour when it reads on the background,
@@ -265,7 +275,7 @@ function renderText(block, ctx) {
   const body = block.variant === 'columns' && !isEmptyRichText(block.bodyRight)
     ? `<div class="pp-two-cols"><div class="pp-prose">${block.body}</div><div class="pp-prose">${block.bodyRight}</div></div>`
     : `<div class="pp-prose${block.variant === 'columns' ? ' pp-columns' : ''}">${block.body}</div>`;
-  return section(block, `<div class="pp-wrap pp-narrow${center}">${heading(block.heading)}${body}</div>`, ctx);
+  return section(block, `<div class="pp-wrap pp-narrow${center}">${blockHeading(block, ctx)}${body}</div>`, ctx);
 }
 
 function renderImageText(block, ctx) {
@@ -273,7 +283,7 @@ function renderImageText(block, ctx) {
   const figure = image
     ? `<div class="pp-frame" style="aspect-ratio:${aspect(image)}">${imgTag(image, { alt: block.image.alt, sizes: '(min-width: 900px) 50vw, 100vw' })}</div>`
     : '';
-  const text = `<div>${heading(block.heading)}<div class="pp-prose">${block.body}</div>${button(block.buttonLabel, targetHref(block.buttonTarget, ctx))}</div>`;
+  const text = `<div>${blockHeading(block, ctx)}<div class="pp-prose">${block.body}</div>${button(block.buttonLabel, targetHref(block.buttonTarget, ctx))}</div>`;
   const reverse = block.variant === 'image-right' ? ' pp-split--reverse' : '';
   return section(block, `<div class="pp-wrap pp-split${reverse}">${figure}${text}</div>`, ctx);
 }
@@ -285,7 +295,7 @@ function renderGallery(block, ctx) {
   const tiles = images.map(([ref, image]) => (block.variant === 'masonry'
     ? `<figure class="pp-tile">${imgTag(image, { alt: ref.alt, sizes })}</figure>`
     : `<figure class="pp-tile pp-tile--crop">${imgTag(image, { alt: ref.alt, sizes })}</figure>`)).join('');
-  return section(block, `<div class="pp-wrap">${heading(block.heading)}<div class="pp-grid pp-cols-${block.columns}${block.variant === 'masonry' ? ' pp-masonry' : ''}">${tiles}</div></div>`, ctx);
+  return section(block, `<div class="pp-wrap">${blockHeading(block, ctx)}<div class="pp-grid pp-cols-${block.columns}${block.variant === 'masonry' ? ' pp-masonry' : ''}">${tiles}</div></div>`, ctx);
 }
 
 // event_date is a calendar date. On PostgreSQL it arrives as a Date at local
@@ -319,7 +329,7 @@ function renderFeaturedGalleries(block, ctx) {
   }).join('');
   if (!cards && !ctx.preview) return '';
   const list = block.variant === 'list' ? ' pp-card-list' : '';
-  return section(block, `<div class="pp-wrap">${heading(block.heading)}${block.intro ? `<div class="pp-prose pp-intro">${richText(block.intro)}</div>` : ''}<div class="pp-cards${list}">${cards}</div></div>`, ctx);
+  return section(block, `<div class="pp-wrap">${blockHeading(block, ctx)}${block.intro ? `<div class="pp-prose pp-intro">${richText(block.intro)}</div>` : ''}<div class="pp-cards${list}">${cards}</div></div>`, ctx);
 }
 
 function renderTestimonials(block, ctx) {
@@ -330,7 +340,7 @@ function renderTestimonials(block, ctx) {
     return `<figure class="pp-quote"><blockquote>${richText(item.quote)}</blockquote><figcaption>${avatar}<span><strong>${esc(item.author)}</strong>${item.role ? `<span class="pp-muted">${esc(item.role)}</span>` : ''}</span></figcaption></figure>`;
   }).join('');
   if (!items && !ctx.preview) return '';
-  return section(block, `<div class="pp-wrap${block.variant === 'quote' ? ' pp-narrow' : ''}">${heading(block.heading)}<div class="pp-quotes">${items}</div></div>`, ctx);
+  return section(block, `<div class="pp-wrap${block.variant === 'quote' ? ' pp-narrow' : ''}">${blockHeading(block, ctx)}<div class="pp-quotes">${items}</div></div>`, ctx);
 }
 
 function formatMoney(minor, currency, locale) {
@@ -352,7 +362,7 @@ function renderPricing(block, ctx) {
     return `<div class="pp-plan"><h3 class="pp-h">${esc(pkg.name)}</h3>${price}${pkg.description ? `<p>${esc(pkg.description)}</p>` : ''}${items}${button(block.buttonLabel, targetHref(block.buttonTarget, ctx), { secondary: true })}</div>`;
   }).join('');
   if (!cards && !ctx.preview) return '';
-  return section(block, `<div class="pp-wrap">${heading(block.heading)}${block.intro ? `<div class="pp-prose pp-intro">${richText(block.intro)}</div>` : ''}<div class="pp-plans${block.variant === 'list' ? ' pp-plans--list' : ''}">${cards}</div></div>`, ctx);
+  return section(block, `<div class="pp-wrap">${blockHeading(block, ctx)}${block.intro ? `<div class="pp-prose pp-intro">${richText(block.intro)}</div>` : ''}<div class="pp-plans${block.variant === 'list' ? ' pp-plans--list' : ''}">${cards}</div></div>`, ctx);
 }
 
 function renderContact(block, ctx) {
@@ -380,7 +390,7 @@ ${ctx.preview ? `<p class="pp-muted">${esc(s.previewForm)}</p>` : ''}</form>`;
     // On every form: a page cached before the spam check came on posts
     // without its answer, and the visitor is asked to reload (publicWebsite.js).
     + `<p id="contact-reload-${esc(block.id)}" class="pp-note pp-note--err" role="alert">${esc(s.reloadForm)}</p>`;
-  const intro = `<div>${heading(block.heading)}${block.intro ? `<div class="pp-prose">${richText(block.intro)}</div>` : ''}</div>`;
+  const intro = `<div>${blockHeading(block, ctx)}${block.intro ? `<div class="pp-prose">${richText(block.intro)}</div>` : ''}</div>`;
   if (block.variant === 'split') {
     return section(block, `<div class="pp-wrap pp-split pp-split--top">${intro}<div>${notes}${form}</div></div>`, ctx);
   }
@@ -397,7 +407,7 @@ function renderBooking(block, ctx) {
     ? `${ctx.booking.url}?service=${block.serviceId}`
     : (enabled ? ctx.booking.url : '/book');
   const hint = enabled ? '' : `<p class="pp-preview-hint">${esc(s.bookingHidden)}</p>`;
-  const inner = `<div class="pp-wrap pp-narrow pp-center">${heading(block.heading)}${block.text ? `<div class="pp-prose">${richText(block.text)}</div>` : ''}${button(block.buttonLabel || s.book, url)}${hint}</div>`;
+  const inner = `<div class="pp-wrap pp-narrow pp-center">${blockHeading(block, ctx)}${block.text ? `<div class="pp-prose">${richText(block.text)}</div>` : ''}${button(block.buttonLabel || s.book, url)}${hint}</div>`;
   return section(block, inner, ctx, block.variant === 'banner' ? 'pp-band' : '');
 }
 
@@ -414,7 +424,7 @@ function renderInstagram(block, ctx) {
     ? `<a class="pp-link" href="${esc(block.profileUrl)}"${linkAttrs(block.profileUrl)}>${esc(linkText)} →</a>`
     : (handle && block.heading ? `<span class="pp-muted">${esc(handle)}</span>` : '');
   const tiles = images.map(([ref, image]) => `<figure class="pp-tile pp-tile--crop">${imgTag(image, { alt: ref.alt, sizes: block.variant === 'grid' ? '33vw' : '(min-width: 900px) 17vw, 40vw' })}</figure>`).join('');
-  return section(block, `<div class="pp-wrap"><div class="pp-insta-head">${heading(title)}${profile}</div><div class="${block.variant === 'grid' ? 'pp-grid pp-cols-3' : 'pp-strip'}">${tiles}</div></div>`, ctx);
+  return section(block, `<div class="pp-wrap"><div class="pp-insta-head">${blockHeading(block, ctx, title)}${profile}</div><div class="${block.variant === 'grid' ? 'pp-grid pp-cols-3' : 'pp-strip'}">${tiles}</div></div>`, ctx);
 }
 
 /**
@@ -453,7 +463,7 @@ function renderFaq(block, ctx) {
     `<details class="pp-faq__item"><summary>${esc(item.question)}</summary><div class="pp-prose">${item.answer}</div></details>`
   )).join('');
   if (!items && !ctx.preview) return '';
-  return section(block, `<div class="pp-wrap pp-narrow">${heading(block.heading)}<div class="pp-faq__list">${items}</div></div>`, ctx);
+  return section(block, `<div class="pp-wrap pp-narrow">${blockHeading(block, ctx)}<div class="pp-faq__list">${items}</div></div>`, ctx);
 }
 
 function renderSteps(block, ctx) {
@@ -463,7 +473,7 @@ function renderSteps(block, ctx) {
     const mark = (block.variant === 'icons' && icon(item.icon, 26)) || String(index + 1);
     return `<li class="pp-step"><span class="pp-step__mark" aria-hidden="true">${mark}</span>${heading(item.title, 3)}${item.text ? `<p>${inline(item.text)}</p>` : ''}</li>`;
   }).join('');
-  return section(block, `<div class="pp-wrap">${heading(block.heading)}<ol class="pp-steps__list" style="--steps:${items.length}">${steps}</ol></div>`, ctx);
+  return section(block, `<div class="pp-wrap">${blockHeading(block, ctx)}<ol class="pp-steps__list" style="--steps:${items.length}">${steps}</ol></div>`, ctx);
 }
 
 function renderCta(block, ctx) {
@@ -471,7 +481,7 @@ function renderCta(block, ctx) {
     .map((b, index) => button(b.label, targetHref(b.target, ctx), { secondary: index > 0 }))
     .filter(Boolean).join('');
   if (!block.heading && !block.text && !buttons && !ctx.preview) return '';
-  const text = `<div>${heading(block.heading)}${block.text ? `<div class="pp-prose">${block.text}</div>` : ''}</div>`;
+  const text = `<div>${blockHeading(block, ctx)}${block.text ? `<div class="pp-prose">${block.text}</div>` : ''}</div>`;
   const actions = buttons ? `<div class="pp-actions">${buttons}</div>` : '';
   return section(block, `<div class="pp-wrap pp-cta__in${block.variant === 'split' ? ' pp-cta__in--split' : ''}">${text}${actions}</div>`, ctx);
 }
@@ -485,7 +495,7 @@ function renderLogos(block, ctx) {
   }).join('');
   if (!items && !ctx.preview) return '';
   const cls = `pp-logos__row pp-logos__row--${block.variant}${block.grayscale ? ' pp-logos__row--gray' : ''}`;
-  return section(block, `<div class="pp-wrap">${heading(block.heading)}<div class="${cls}">${items}</div></div>`, ctx);
+  return section(block, `<div class="pp-wrap">${blockHeading(block, ctx)}<div class="${cls}">${items}</div></div>`, ctx);
 }
 
 /** Links to social profiles as icons (also the footer's social column). */
@@ -500,7 +510,7 @@ function socialLinks(links, { labels = false } = {}) {
 function renderSocial(block, ctx) {
   const links = socialLinks(block.links, { labels: block.variant === 'buttons' });
   if (!links && !ctx.preview) return '';
-  return section(block, `<div class="pp-wrap pp-center">${heading(block.heading)}<div class="pp-social__row pp-social__row--${block.variant}">${links}</div></div>`, ctx);
+  return section(block, `<div class="pp-wrap pp-center">${blockHeading(block, ctx)}<div class="pp-social__row pp-social__row--${block.variant}">${links}</div></div>`, ctx);
 }
 
 function renderDivider(block, ctx) {
@@ -609,7 +619,7 @@ body>main{flex:1 0 auto}
 img,video{display:block;max-width:100%}
 a{color:var(--link)}
 .pp-h{font-family:var(--font-heading);font-weight:600;line-height:1.15;letter-spacing:-.01em;margin:0 0 .6em;color:var(--text)}
-h2.pp-h{font-size:clamp(1.6rem,1.2rem + 1.6vw,2.4rem)}
+h1.pp-h:not(.pp-display),h2.pp-h{font-size:clamp(1.6rem,1.2rem + 1.6vw,2.4rem)}
 h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 .pp-display{font-size:clamp(2.2rem,1.4rem + 3.6vw,4.2rem)}
 .pp-lead{font-size:clamp(1.05rem,1rem + .4vw,1.3rem);max-width:40ch;margin:0 0 1.6em;color:var(--muted)}
@@ -959,6 +969,8 @@ ${body}
 function renderPage(input) {
   const ctx = { ...input, resolved: input.resolved || [] };
   ctx.firstHeroId = ctx.page.blocks[0] && ctx.page.blocks[0].type === 'hero' ? ctx.page.blocks[0].id : null;
+  // One h1 a page: a hero's headline, else the first block heading.
+  ctx.needsH1 = !ctx.page.blocks.some((block) => block.type === 'hero' && block.heading);
   const blocks = ctx.page.blocks.map((block) => RENDERERS[block.type](block, ctx)).join('\n');
   // The first image the page shows stands in for a missing OG image.
   ctx.firstImage = ctx.resolved.length ? ctx.resolved[0].image : null;

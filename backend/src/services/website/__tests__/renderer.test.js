@@ -194,6 +194,42 @@ test('the public page ships no script, the preview marks blocks and disables the
   expect(preview).toMatch(/<button class="pp-btn" type="submit" disabled>/);
 });
 
+describe('one h1 a page', () => {
+  const h1s = (html) => [...html.matchAll(/<h1[^>]*>(.*?)<\/h1>/g)].map((m) => m[1]);
+  const about = (blocks) => ({ id: 'about', slug: 'about', title: 'About', blocks });
+
+  test('a page without a hero gets its first block heading as h1, the others stay h2', () => {
+    const html = render([home([]), about([
+      { type: 'spacer' },
+      { type: 'text', heading: 'Who we are', body: 'x' },
+      { type: 'faq', heading: 'Questions', items: [{ question: 'Q', answer: '<p>A</p>' }] },
+    ])], { pageId: 'about' });
+    expect(h1s(html)).toEqual(['Who we are']);
+    expect(html).toContain('<h2 class="pp-h">Questions</h2>');
+  });
+
+  test('a hero\'s headline is the h1; block headings stay h2', () => {
+    const html = render([home([
+      { type: 'hero', heading: 'Welcome' },
+      { type: 'text', heading: 'Who we are', body: 'x' },
+    ])]);
+    expect(h1s(html)).toEqual(['Welcome']);
+    expect(html).toContain('<h2 class="pp-h">Who we are</h2>');
+  });
+
+  test('a block that is not shown does not take the h1', () => {
+    const html = render([home([]), about([
+      { type: 'booking', heading: 'Book a session' },
+      { type: 'text', heading: 'Who we are', body: 'x' },
+    ])], { pageId: 'about' });
+    expect(h1s(html)).toEqual(['Who we are']);
+  });
+
+  test('the promoted heading keeps the size of a block heading', () => {
+    expect(render([home([])])).toMatch(/h1\.pp-h:not\(\.pp-display\),h2\.pp-h\{font-size:/);
+  });
+});
+
 test('the footer sits at the bottom of the window on a short page', () => {
   const html = render([home([{ type: 'text', heading: 'Short' }])]);
   // The page is a column at least as tall as the window, and the content
