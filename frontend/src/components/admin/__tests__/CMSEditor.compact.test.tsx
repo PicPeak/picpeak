@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string, fb?: unknown) => (typeof fb === 'string' ? fb : k) }),
@@ -25,6 +25,14 @@ describe('CMSEditor compact', () => {
     }
     expect(screen.queryByText('Preview')).toBeNull();
     expect(screen.queryByTitle(/Fullscreen/)).toBeNull();
+  });
+
+  it('the link row fits a narrow panel: the field may shrink and the buttons wrap', async () => {
+    render(<CMSEditor compact content="<p>Hi</p>" onChange={() => {}} />);
+    fireEvent.click(await screen.findByTitle(/Add Link/));
+    const field = screen.getByPlaceholderText('Enter URL...');
+    expect(field.className).toMatch(/\bmin-w-0\b/);
+    expect(field.parentElement?.className).toMatch(/\bflex-wrap\b/);
   });
 
   it('keeps the full toolbar for CMS pages', async () => {

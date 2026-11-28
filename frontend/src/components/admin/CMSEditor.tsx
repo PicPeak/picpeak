@@ -515,14 +515,14 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               rendered below it, the URL field ended up at the toolbar's
               original document position, under the pinned toolbar. */}
           {showLinkDialog && (
-            <div className="p-3 bg-accent-dark/15 border-b border-accent-dark/30 flex items-center gap-2">
+            <div className="p-3 bg-accent-dark/15 border-b border-accent-dark/30 flex flex-wrap items-center gap-2">
               <input
                 type="url"
                 value={linkUrl}
                 onChange={(e) => setLinkUrl(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && !isImeComposing(e) && addLink()}
                 placeholder={t('cms.editor.linkUrlPlaceholder', 'Enter URL...')}
-                className="flex-1 px-3 py-1 border border-accent-dark/30 bg-shell text-heading rounded-md focus:ring-2 focus:ring-accent"
+                className="flex-1 min-w-0 basis-40 px-3 py-1 border border-accent-dark/30 bg-shell text-heading rounded-md focus:ring-2 focus:ring-accent"
                 autoFocus
               />
               <Button size="sm" onClick={addLink}>{t('cms.editor.addLink', 'Add Link')}</Button>
