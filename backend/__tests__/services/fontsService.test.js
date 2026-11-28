@@ -357,6 +357,18 @@ describe('uploaded fonts (issue 2618)', () => {
     expect(await fontsService.deleteUploadedFamily('Inter')).toBe(false);
   });
 
+  test('a replacement that cannot be stored leaves the font it was to replace', async () => {
+    await fontsService.saveUploadedFont({ family: 'Studio Serif', weight: 400, buffer: TTF });
+    const storage = require('../../src/services/storage').getStorage();
+    const put = jest.spyOn(storage, 'put').mockRejectedValueOnce(new Error('disk full'));
+    try {
+      await expect(fontsService.saveUploadedFont({ family: 'Studio Serif', weight: 400, buffer: WOFF2 })).rejects.toThrow('disk full');
+    } finally {
+      put.mockRestore();
+    }
+    expect(fs.readdirSync(path.join(userRoot, 'Studio-Serif'))).toContain('400.ttf');
+  });
+
   test('refuses what is not a font, a name that is not a plain family name, and odd weights', async () => {
     await expect(fontsService.saveUploadedFont({ family: 'Evil', weight: 400, buffer: Buffer.from('<script>') })).rejects.toMatchObject({ code: 'FONT_TYPE' });
     await expect(fontsService.saveUploadedFont({ family: '../etc', weight: 400, buffer: WOFF2 })).rejects.toMatchObject({ code: 'FONT_NAME' });

@@ -351,11 +351,13 @@ async function saveUploadedFont({ family, weight, generic, buffer }) {
   // Into the family's existing folder, whatever the letter case typed.
   const folderName = await familyFolder(name);
   const folder = `${FONTS_PREFIX}/${folderName}`;
+  // The new file first: an upload that cannot be stored must leave the font
+  // it was to replace in place.
+  await storage.put(`${folder}/${Number(weight)}.${format}`, buffer, { contentType: FONT_TYPES[format] });
   for (const other of FONT_FORMATS) {
     // eslint-disable-next-line no-await-in-loop -- three names at most
     if (other !== format) await storage.delete(`${folder}/${Number(weight)}.${other}`);
   }
-  await storage.put(`${folder}/${Number(weight)}.${format}`, buffer, { contentType: FONT_TYPES[format] });
   if (VALID_GENERICS.has(generic)) await storage.put(`${folder}/meta.json`, Buffer.from(JSON.stringify({ generic })), { contentType: 'application/json' });
   // This replica's copy of the object-store file goes at once (others go by
   // the new version in the address).
