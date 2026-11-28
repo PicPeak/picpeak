@@ -91,6 +91,12 @@ function strings(locale) {
   return STRINGS[locale] || STRINGS.en;
 }
 
+/** A legal page's name where its CMS page has no title of its own. */
+function legalPageName(locale, slug) {
+  const s = strings(locale);
+  return { impressum: s.imprint, datenschutz: s.privacy, agb: s.terms }[slug];
+}
+
 // ---------------------------------------------------------------------------
 // Text
 // ---------------------------------------------------------------------------
@@ -1032,5 +1038,6 @@ module.exports = {
   richText,
   srcsetFor,
   pageHref,
+  legalPageName,
   _internal: { fontFaces },
 };

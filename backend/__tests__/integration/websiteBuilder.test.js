@@ -1909,6 +1909,21 @@ describe('legal and system pages in the website design', () => {
     await db('cms_pages').whereIn('slug', ['agb', 'datenschutz']).update({ show_in_footer: true });
   });
 
+  test('a legal page is linked to an external address only if the page itself leads there (http or https)', async () => {
+    // The menu of the test before links both pages.
+    for (const address of ['/elsewhere', 'mailto:legal@studio.example']) {
+      await db('cms_pages').where({ slug: 'datenschutz' }).update({ external_url: address });
+      cache.clearWebsiteCache();
+      // The page shows its own text, so the link to it stays its own address.
+      expect((await service.resolvePublicPage('datenschutz')).status).toBe(200);
+      expect((await service.resolvePublicPage('about')).html).toContain('<a href="/datenschutz">Privacy Policy</a>');
+    }
+    await db('cms_pages').where({ slug: 'datenschutz' }).update({ external_url: 'https://legal.example/privacy' });
+    cache.clearWebsiteCache();
+    expect(await service.resolvePublicPage('datenschutz')).toEqual({ status: 302, location: 'https://legal.example/privacy' });
+    expect((await service.resolvePublicPage('about')).html).toContain('<a href="https://legal.example/privacy" rel="noopener noreferrer">Privacy Policy</a>');
+  });
+
   test('while the website is not live, legal and unknown addresses stay with the app', async () => {
     await setFeatureFlags(db, { websiteBuilder: false });
     cache.clearWebsiteCache();

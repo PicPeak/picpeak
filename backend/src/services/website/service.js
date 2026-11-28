@@ -23,7 +23,7 @@ const {
 } = require('./document');
 const media = require('./media');
 const { livePhotos } = require('../../utils/photoVisibility');
-const { renderPage, renderSystemPage, renderedImages, pageHref } = require('./renderer');
+const { renderPage, renderSystemPage, renderedImages, pageHref, legalPageName } = require('./renderer');
 const { sanitizeCmsHtml } = require('./richText');
 const { cacheGeneration, getCached, setCached, clearWebsiteCache } = require('./cache');
 
@@ -523,6 +523,16 @@ async function bookingOptions() {
 }
 
 /**
+ * The external address a legal CMS page leads to in place of its own text
+ * (http or https, as the CMS accepts), or ''. The page redirects there and
+ * every link to the page goes there, by this one rule.
+ */
+function externalLegalUrl(row) {
+  const { safeUrl } = require('./document');
+  return flag(row.use_external_url) && /^https?:\/\//i.test(row.external_url || '') ? safeUrl(row.external_url) : '';
+}
+
+/**
  * The legal pages: `pages` by slug, each with its name and address (its
  * external address when it has one), for a menu item or a link to it;
  * `footer`, the ones shown in the footer, in their order.
@@ -530,16 +540,13 @@ async function bookingOptions() {
 async function legalPages(locale) {
   const rows = await db('cms_pages').whereIn('slug', LEGAL_SLUGS);
   const bySlug = new Map(rows.map((r) => [r.slug, r]));
-  const { safeUrl } = require('./document');
-  const fallback = { impressum: 'Impressum', datenschutz: locale === 'de' ? 'Datenschutz' : 'Privacy Policy', agb: locale === 'de' ? 'AGB' : 'Terms & Conditions' };
   const pages = {};
   const footer = [];
   for (const slug of LEGAL_SLUGS) {
     const row = bySlug.get(slug);
     if (!row) continue;
-    const external = (row.use_external_url === true || row.use_external_url === 1) ? safeUrl(row.external_url) : '';
-    pages[slug] = { href: external || `/${slug}`, label: (locale === 'de' ? row.title_de : row.title_en) || fallback[slug] };
-    if (row.show_in_footer === true || row.show_in_footer === 1) footer.push(pages[slug]);
+    pages[slug] = { href: externalLegalUrl(row) || `/${slug}`, label: (locale === 'de' ? row.title_de : row.title_en) || legalPageName(locale, slug) };
+    if (flag(row.show_in_footer)) footer.push(pages[slug]);
   }
   return { pages, footer };
 }
@@ -731,8 +738,7 @@ function withEtag(html, extra = {}) {
 async function systemPage(document, slug, { notFound = false } = {}) {
   const row = await db('cms_pages').where({ slug }).first();
   if (!row) return null;
-  const { safeUrl } = require('./document');
-  const external = !notFound && flag(row.use_external_url) && /^https?:\/\//i.test(row.external_url || '') ? safeUrl(row.external_url) : '';
+  const external = notFound ? '' : externalLegalUrl(row);
   if (external) return { status: 302, location: external };
   const ctx = await buildContext(document, { id: `system-${slug}`, slug, title: '', navLabel: '', blocks: [], seo: { title: '', description: '', image: null } });
   const de = ctx.locale === 'de';
