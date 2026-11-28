@@ -702,6 +702,7 @@ h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 .pp-spacer.pp-v-small{padding:1.5rem 0}.pp-spacer.pp-v-medium{padding:3rem 0}.pp-spacer.pp-v-large{padding:6rem 0}
 .pp-rule{border:0;border-top:1px solid var(--border);margin:0}
 .pp-customHtml{padding:0}
+.pp-system{min-height:55vh}.pp-system .pp-prose h1,.pp-system .pp-prose h4,.pp-system .pp-prose h5,.pp-system .pp-prose h6{font-family:var(--font-heading);line-height:1.2}
 .pp-faq__list{display:grid;gap:.6rem}
 .pp-faq__item{border-bottom:1px solid var(--border);padding:.2rem 0}
 .pp-v-boxed .pp-faq__item{border:1px solid var(--border);border-radius:calc(var(--radius) / 2);background:var(--surface);padding:.2rem 1.1rem}
@@ -952,7 +953,7 @@ function renderSystemPage(input, { content, canonical = true }) {
   const body = `<a class="pp-skip" href="#main">Skip to content</a>
 ${renderHeader(ctx)}
 <main id="main">
-<section class="pp-section"><div class="pp-wrap pp-narrow"><h1>${esc(ctx.page.title)}</h1><div class="pp-prose pp-system">${content}</div></div></section>
+<section class="pp-block pp-system"><div class="pp-wrap pp-narrow"><h1 class="pp-h">${esc(ctx.page.title)}</h1><div class="pp-prose">${content}</div></div></section>
 </main>
 ${renderFooter(ctx)}`;
   return renderHead(ctx, body);

@@ -1871,7 +1871,7 @@ describe('legal and system pages in the website design', () => {
     expect(page.status).toBe(200);
     expect(page.system).toBe(true);
     expect(page.html).toContain('class="pp-header"');
-    expect(page.html).toContain('<h1>Legal Notice</h1>');
+    expect(page.html).toContain('<h1 class="pp-h">Legal Notice</h1>');
     expect(page.html).toContain('<h2>Studio AG</h2><p>Bahnhofstrasse 1</p>');
     expect(page.html).not.toMatch(/<script>|onerror/);
     expect(page.html).toContain('href="/about"');
