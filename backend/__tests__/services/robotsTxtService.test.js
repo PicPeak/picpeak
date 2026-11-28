@@ -43,7 +43,7 @@ describe('robots.txt', () => {
   it('never keeps a crawler away from the pages, with indexing on or off', async () => {
     for (const seo_allow_indexing of [true, false]) {
       const rules = forEveryone(await robots({ seo_allow_indexing }));
-      expect(rules).toContain('Disallow: /api');
+      expect(rules).toContain('Disallow: /api/');
       for (const blocked of ['Disallow: /', 'Disallow: /admin', 'Disallow: /customer', 'Disallow: /gallery']) {
         expect(rules).not.toContain(blocked);
       }
@@ -52,11 +52,22 @@ describe('robots.txt', () => {
 
   it('with indexing off blocks the media paths, which carry no noindex', async () => {
     expect(forEveryone(await robots({ seo_allow_indexing: false })))
-      .toEqual(['Disallow: /api', 'Disallow: /photos', 'Disallow: /thumbnails', 'Disallow: /uploads', 'Disallow: /og', 'Disallow: /site-media']);
+      .toEqual(['Disallow: /api/', 'Disallow: /photos/', 'Disallow: /thumbnails/', 'Disallow: /uploads/', 'Disallow: /og/', 'Disallow: /site-media/']);
   });
 
   it('with indexing on blocks the API only', async () => {
-    expect(forEveryone(await robots({ seo_allow_indexing: true }))).toEqual(['Disallow: /api']);
+    expect(forEveryone(await robots({ seo_allow_indexing: true }))).toEqual(['Disallow: /api/']);
+  });
+
+  it('blocks whole path segments, so a website page named like one stays crawlable', async () => {
+    // A Disallow is a prefix match: "/api" would also cover a page at /apiary.
+    for (const seo_allow_indexing of [true, false]) {
+      const blocked = forEveryone(await robots({ seo_allow_indexing })).map((rule) => rule.replace('Disallow: ', ''));
+      for (const page of ['/apiary', '/api-docs', '/photos-of-us', '/uploads-guide', '/og-image-tips', '/site-media-kit']) {
+        expect(blocked.filter((prefix) => page.startsWith(prefix))).toEqual([]);
+      }
+      expect(blocked.some((prefix) => '/api/public/settings'.startsWith(prefix))).toBe(true);
+    }
   });
 
   it('names the website sitemap while the website is live and indexable', async () => {

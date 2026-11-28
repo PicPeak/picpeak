@@ -1,7 +1,7 @@
 /**
  * Images (and hero videos) of the public website (issue 2618), mounted at
  * /site-media outside /api so crawlers that honour robots.txt's
- * `Disallow: /api` can still index a portfolio.
+ * `Disallow: /api/` can still index a portfolio.
  *
  *   GET /:token/:size   size = 640 | 1280 | 1920 | video
  *     token = <p|a><id>[-<version>].<sig>     public: while the website is
