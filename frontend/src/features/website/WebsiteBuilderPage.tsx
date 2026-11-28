@@ -129,12 +129,14 @@ export const WebsiteBuilderPage: React.FC = () => {
     placeholderData: (previous) => previous,
   });
 
-  // Ctrl/Cmd+Z outside a text field steps through the draft's history.
+  // Ctrl/Cmd+Z outside text editing steps through the draft's history. A
+  // field, a select or the rich text editor (contenteditable) has its own
+  // undo, and a key a handler already used is left alone.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return;
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.defaultPrevented || !(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return;
+      const target = e.target instanceof Element ? e.target : null;
+      if (target && target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
       e.preventDefault();
       if (e.shiftKey) editor.redo(); else editor.undo();
     };

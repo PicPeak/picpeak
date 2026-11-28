@@ -140,6 +140,29 @@ describe('WebsiteBuilderPage', () => {
     expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled();
   });
 
+  it('Ctrl+Z undoes the draft only outside text editing: not in the rich text editor, not when a field already took it', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByText('Hello there'));
+    fireEvent.change(screen.getByLabelText('Heading'), { target: { value: 'Welcome' } });
+    const heading = () => (screen.getByLabelText('Heading') as HTMLInputElement).value;
+    // The rich text editor is contenteditable; its own undo handles the key.
+    const editable = document.createElement('div');
+    editable.setAttribute('contenteditable', 'true');
+    const inner = document.createElement('p');
+    editable.appendChild(inner);
+    document.body.appendChild(editable);
+    fireEvent.keyDown(inner, { key: 'z', ctrlKey: true });
+    expect(heading()).toBe('Welcome');
+    // A handler that already used the key.
+    const taken = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true });
+    taken.preventDefault();
+    document.body.dispatchEvent(taken);
+    expect(heading()).toBe('Welcome');
+    fireEvent.keyDown(document.body, { key: 'z', ctrlKey: true });
+    expect(heading()).toBe('Hello there');
+    editable.remove();
+  });
+
   it('adds a block after the selected one', async () => {
     renderPage();
     await screen.findByText('Blocks on “Home”');
