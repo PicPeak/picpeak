@@ -231,9 +231,9 @@ function customBackgroundStyle(block, ctx) {
 
 function section(block, inner, ctx, extraClass = '') {
   const custom = block.background === 'custom' && block.backgroundColor;
-  let bg = block.background === 'default' ? '' : ` pp-${block.background}`;
-  if (custom) bg = ' pp-custom-bg';
-  // Hex colours only (document.js): safe inside the attribute.
+  // A custom background is all in the style attribute (hex colours only,
+  // document.js: safe inside it); the others are a class.
+  const bg = custom || block.background === 'default' ? '' : ` pp-${block.background}`;
   const style = custom ? ` style="${customBackgroundStyle(block, ctx)}"` : '';
   const previewAttr = ctx.preview ? ` data-block-id="${esc(block.id)}"` : '';
   return `<section id="b-${esc(block.id)}" class="pp-block pp-${esc(block.type)} pp-v-${esc(block.variant)}${bg}${extraClass ? ` ${extraClass}` : ''}"${style}${previewAttr}>${inner}</section>`;
@@ -277,7 +277,7 @@ function renderHero(block, ctx) {
     // The page's first hero picture is preloaded (renderHead).
     if (isFirst) ctx.heroPreload = { image, sizes };
   }
-  const text = `<div class="pp-hero__text">${block.heading ? `<h1 class="pp-h pp-display">${esc(block.heading)}</h1>` : ''}${block.subheading ? `<p class="pp-lead">${inline(block.subheading)}</p>` : ''}${button(block.buttonLabel, targetHref(block.buttonTarget, ctx))}</div>`;
+  const text = `<div>${block.heading ? `<h1 class="pp-h pp-display">${esc(block.heading)}</h1>` : ''}${block.subheading ? `<p class="pp-lead">${inline(block.subheading)}</p>` : ''}${button(block.buttonLabel, targetHref(block.buttonTarget, ctx))}</div>`;
   if (block.variant === 'split') {
     return section(block, `<div class="pp-wrap pp-split">${text}${media.length ? `<div class="pp-hero__frame">${media.join('')}</div>` : ''}</div>`, ctx);
   }
@@ -343,7 +343,7 @@ function renderFeaturedGalleries(block, ctx) {
     const href = `/gallery/${encodeURIComponent(event.slug)}`;
     const media = image
       ? `<div class="pp-frame pp-frame--card">${imgTag(image, { alt: event.event_name, sizes: '(min-width: 900px) 33vw, 100vw' })}</div>`
-      : '<div class="pp-frame pp-frame--card pp-frame--empty"></div>';
+      : '<div class="pp-frame pp-frame--card"></div>';
     const date = formatDate(event.event_date, ctx.locale);
     return `<a class="pp-card" href="${esc(href)}">${media}<div class="pp-card__body"><h3 class="pp-h">${esc(event.event_name)}</h3>${date ? `<p class="pp-muted">${esc(date)}</p>` : ''}${entry.text ? `<p>${esc(entry.text)}</p>` : ''}<span class="pp-link">${esc(s.viewGallery)} →</span></div></a>`;
   }).join('');
@@ -538,7 +538,7 @@ function renderDivider(block, ctx) {
 }
 
 function renderSpacer(block, ctx) {
-  return section(block, block.divider ? '<div class="pp-wrap"><hr class="pp-rule"></div>' : '', ctx);
+  return section(block, block.divider ? '<div class="pp-wrap"><hr class="pp-line"></div>' : '', ctx);
 }
 
 // The imported single-page site keeps the containers the old page wrapped
@@ -549,7 +549,7 @@ function renderCustomHtml(block, ctx) {
   const html = ctx.sanitizeCustomHtml(block.html);
   if (!html && !ctx.preview) return '';
   const inner = block.legacy ? `<div class="site-shell"><div class="site-main">${html}</div></div>` : html;
-  return section(block, `<div class="pp-custom">${inner}</div>`, ctx);
+  return section(block, inner, ctx);
 }
 
 const RENDERERS = {
@@ -753,10 +753,9 @@ h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 @media (min-width:900px){.pp-strip{grid-auto-columns:1fr;overflow:visible}}
 .pp-spacer{padding:0}
 .pp-divider.pp-space-none{padding:0}.pp-divider.pp-space-small{padding:1.5rem 0}.pp-divider.pp-space-medium{padding:3rem 0}.pp-divider.pp-space-large{padding:6rem 0}
-.pp-line{border:0;border-top:1px solid var(--border);margin:0}.pp-v-medium .pp-line{border-top-width:3px}
+.pp-line{border:0;border-top:1px solid var(--border);margin:0}.pp-divider.pp-v-medium .pp-line{border-top-width:3px}
 .pp-divider--short .pp-line{width:min(160px,40%);margin:0 auto}
 .pp-spacer.pp-v-small{padding:1.5rem 0}.pp-spacer.pp-v-medium{padding:3rem 0}.pp-spacer.pp-v-large{padding:6rem 0}
-.pp-rule{border:0;border-top:1px solid var(--border);margin:0}
 .pp-customHtml{padding:0}
 .pp-system .pp-btn{margin-top:1.5rem}.pp-system .pp-prose h1,.pp-system .pp-prose h4,.pp-system .pp-prose h5,.pp-system .pp-prose h6{font-family:var(--font-heading);line-height:1.2}
 .pp-faq__list{display:grid;gap:.6rem}
@@ -788,7 +787,7 @@ h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 .pp-social__row--icons .pp-social__link{border:1px solid var(--border)}
 .pp-social__row--buttons .pp-social__link{padding:.55rem 1.1rem;border:1px solid var(--border);font-weight:600}
 .pp-social__link:hover{color:var(--link);border-color:currentColor}
-.pp-footer{background:var(--surface);border-top:1px solid var(--border);padding:3.5rem 0 2rem;font-size:.95rem}
+.pp-footer{background:var(--surface);color:var(--text);border-top:1px solid var(--border);padding:3.5rem 0 2rem;font-size:.95rem}
 .pp-footer__in{display:grid;gap:2rem}
 @media (min-width:760px){.pp-footer__in{grid-template-columns:2fr 1fr 1fr}}
 .pp-footer a{color:var(--text);text-decoration:none}
@@ -796,7 +795,7 @@ h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 .pp-footer p{margin:.4rem 0 0;color:var(--muted)}
 .pp-copy{grid-column:1/-1;border-top:1px solid var(--border);padding-top:1.5rem;font-size:.85rem}
 @media (min-width:760px){.pp-footer__in--n1{grid-template-columns:1fr}.pp-footer__in--n2{grid-template-columns:2fr 1fr}.pp-footer__in--n4{grid-template-columns:2fr 1fr 1fr 1fr}.pp-footer__in--n5{grid-template-columns:2fr 1fr 1fr 1fr 1fr}}
-.pp-footer{color:var(--text)}.pp-footer__h{font:600 .8rem/1.3 var(--font-body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 .8rem}
+.pp-footer__h{font:600 .8rem/1.3 var(--font-body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 .8rem}
 .pp-footer__contact{font-style:normal}.pp-footer__contact p{margin:0 0 .4rem;color:var(--text)}
 .pp-footer__social{justify-content:flex-start}
 .pp-copy--legal{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.5rem 1.5rem}.pp-copy--legal ul{display:flex;flex-wrap:wrap;gap:.4rem 1.2rem}.pp-copy--legal li{margin:0}
@@ -929,7 +928,7 @@ function renderFooter(ctx) {
   // Three columns is the footer as it always was; other counts have a class.
   const count = columns.length === 3 ? '' : ` pp-footer__in--n${columns.length}`;
   const custom = footer.background === 'custom' && footer.backgroundColor;
-  const bg = custom ? ' pp-custom-bg' : (footer.background === 'dark' ? ' pp-dark' : '');
+  const bg = !custom && footer.background === 'dark' ? ' pp-dark' : '';
   const style = custom ? ` style="${customBackgroundStyle(footer, ctx)}"` : '';
   return `<footer class="pp-footer${bg}"${style}><div class="pp-wrap pp-footer__in${count}">${columns.join('')}${copy}</div></footer>`;
 }

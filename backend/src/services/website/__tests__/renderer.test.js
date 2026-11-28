@@ -289,6 +289,26 @@ test('a German page names its landmarks in German', () => {
   expect(html).not.toMatch(/Skip to content|aria-label="(Main|Pages)"/);
 });
 
+test('the stylesheet has no rule twice, and the page no class without one', () => {
+  const html = render([home([
+    { type: 'hero', heading: 'H' },
+    { type: 'spacer', divider: true },
+    { type: 'divider' },
+    { type: 'customHtml', html: '<p>Own</p>' },
+    { id: 't1', type: 'text', background: 'custom', backgroundColor: '#1e3a2f', heading: 'T' },
+    { type: 'featuredGalleries', galleries: [{ id: 1 }] },
+  ])], { ctx: { events: new Map([[1, { id: 1, slug: 'g', event_name: 'G' }]]) } });
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const body = html.slice(html.indexOf('<body'));
+  // One declaration block for the footer, and one class for a thin rule.
+  expect(css.match(/(^|[}\n])\.pp-footer\{/g)).toHaveLength(1);
+  expect(css).not.toContain('.pp-rule');
+  expect(body).toContain('<hr class="pp-line">');
+  for (const name of ['pp-rule', 'pp-custom', 'pp-custom-bg', 'pp-frame--empty', 'pp-hero__text']) {
+    expect(body).not.toMatch(new RegExp(`class="[^"]*\\b${name}\\b(?!-)[^"]*"`));
+  }
+});
+
 test('the footer sits at the bottom of the window on a short page', () => {
   const html = render([home([{ type: 'text', heading: 'Short' }])]);
   // The page is a column at least as tall as the window, and the content
@@ -375,7 +395,7 @@ describe('custom block background', () => {
 
   test('paints the colour and picks readable text for it, unless the text colour is set', () => {
     const dark = render([home([textBlock({ background: 'custom', backgroundColor: '#1e3a2f' })])]);
-    expect(dark).toMatch(/<section id="b-t1" class="[^"]*pp-custom-bg[^"]*" style="--bg:#1e3a2f;--text:#f5f5f5;/);
+    expect(dark).toMatch(/<section id="b-t1" class="[^"]*" style="--bg:#1e3a2f;--text:#f5f5f5;/);
     const light = render([home([textBlock({ background: 'custom', backgroundColor: '#fdf6e3' })])]);
     expect(light).toMatch(/style="--bg:#fdf6e3;--text:#111111;/);
     const chosen = render([home([textBlock({ background: 'custom', backgroundColor: '#1e3a2f', textColor: '#ffcc00' })])]);
