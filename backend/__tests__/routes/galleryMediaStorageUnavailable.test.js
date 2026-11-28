@@ -191,6 +191,29 @@ describe('gallery media routes while storage cannot be reached', () => {
     expect(res.headers.location).toBe(`/api/gallery/${SLUG}/photo/${photoId}`);
   });
 
+  it('keeps the edit revision (e=) the request named on every fallback to the original (issue 2619)', async () => {
+    // The original is cached under its URL; an unversioned one would keep the
+    // picture from before an edit.
+    storage.stat.mockResolvedValue(null);
+    storage.getToFile.mockRejectedValue(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey', $metadata: { httpStatusCode: 404 } }));
+    const preview = await get(`/preview/${photoId}?e=3`);
+    expect(preview.status).toBe(302);
+    expect(preview.headers.location).toBe(`/api/gallery/${SLUG}/photo/${photoId}?e=3`);
+
+    storage.stat.mockRejectedValue(timeoutError());
+    const hero = await get(`/hero/${photoId}?e=3`);
+    expect(hero.status).toBe(302);
+    expect(hero.headers.location).toBe(`/api/gallery/${SLUG}/photo/${photoId}?e=3`);
+
+    storage.stat.mockResolvedValue({ size: 1024, mtime: new Date('2026-08-01T00:00:00Z') });
+    storage.get.mockRejectedValue(Object.assign(new Error('Access Denied'), { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } }));
+    for (const route of ['/hero', '/preview']) {
+      const res = await get(`${route}/${photoId}?e=3`);
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe(`/api/gallery/${SLUG}/photo/${photoId}?e=3`);
+    }
+  });
+
   // The headers staged for the image must not ride along on the fallback
   // redirect (issue 2138): the browser would cache a transient failure as a
   // redirect to the original for the image's lifetime.

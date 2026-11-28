@@ -854,3 +854,25 @@ describe('a stored watermark copy while a first edit is pending', () => {
     }
   });
 });
+
+describe('the gallery photo route\'s cache lifetime for an edited photo', () => {
+  it('is kept only under the URL naming the applied revision, and not while a newer one is pending', async () => {
+    const params = JSON.stringify({ v: 1, exposure: 0.4 });
+    const id = unwrap(await db('photos').insert({
+      event_id: event.id, filename: 'cache-photo.jpg', path: 'edit-route/beach.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      size_bytes: originalBytes.length, processing_status: 'complete', uploaded_at: new Date().toISOString(), width: 800, height: 600,
+      edit_params: params, edit_rev: 1, edit_applied_rev: 1, edit_applied_params: params, edit_applied_width: 800, edit_applied_height: 600,
+    }).returning('id'));
+    try {
+      expect((await guest('get', `/photo/${id}?e=1`).expect(200)).headers['cache-control']).toBe('private, max-age=1800');
+      for (const stale of ['', '?e=2']) {
+        expect((await guest('get', `/photo/${id}${stale}`).expect(200)).headers['cache-control']).toBe('no-store');
+      }
+      // A newer save pending: nothing is kept under any URL until it lands.
+      await db('photos').where({ id }).update({ edit_params: JSON.stringify({ v: 1, exposure: 0.8 }), edit_rev: 2 });
+      expect((await guest('get', `/photo/${id}?e=1`).expect(200)).headers['cache-control']).toBe('no-store');
+    } finally {
+      await db('photos').where({ id }).delete();
+    }
+  });
+});

@@ -21,6 +21,10 @@ const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/ga
 // so the follow-up request is not decided by a cookie instead.
 const withPreview = (req, url) => {
   const join = (base, param) => `${base}${base.includes('?') ? '&' : '?'}${param}`;
+  // The edit revision the request named (issue 2619) goes along: the photo
+  // route keeps its answer only under the URL of the revision it shows, and
+  // an unversioned one would be kept with the picture from before an edit.
+  if (typeof req.query?.e === 'string' && /^\d{1,9}$/.test(req.query.e)) url = join(url, `e=${req.query.e}`);
   if (req.isAdminPreview) return join(url, 'admin_preview=1');
   if (req.embedToken) return join(url, `embed=${req.embedToken}`);
   return url;
@@ -352,8 +356,13 @@ router.get('/:slug/photo/:photoId',
       // applied revision, the one the listing describes (its size, the e= of
       // this URL) and drawings are made on; only a download delivers the
       // edit saved last.
+      // Kept by the browser only under the URL naming the revision shown, and
+      // not while a newer one is still being applied (editVersionStale).
+      let imageCache = 'private, max-age=1800';
       if (!video) {
-        photo = await photoEdits.deliveredPhoto(await photoEdits.renditionView(photo), { interactive: true, headOnly: req.method === 'HEAD' });
+        const editRow = await photoEdits.withEditColumns(photo);
+        if (photoEdits.editVersionStale(editRow, req.query.e)) imageCache = 'no-store';
+        photo = await photoEdits.deliveredPhoto(await photoEdits.renditionView(editRow), { interactive: true, headOnly: req.method === 'HEAD' });
       }
 
       // Resolve where to read the photo bytes from. For external/reference
@@ -594,7 +603,7 @@ router.get('/:slug/photo/:photoId',
         res.set({
           'Content-Type': view.contentType,
           'Content-Length': view.buffer.length,
-          'Cache-Control': 'private, max-age=1800',
+          'Cache-Control': imageCache,
           'ETag': etag,
           'X-Protection-Level': 'basic'
         });
@@ -615,7 +624,7 @@ router.get('/:slug/photo/:photoId',
                   'Content-Type': await sniffStoredImageType(storage, photo.watermark_path)
                     || resolvePhotoContentType(photo),
                   'Content-Length': wmStat.size,
-                  'Cache-Control': 'private, max-age=1800',
+                  'Cache-Control': imageCache,
                   'ETag': etag,
                   'X-Protection-Level': 'basic'
                 });
@@ -635,7 +644,7 @@ router.get('/:slug/photo/:photoId',
                 // applyWatermark encoded: JPEG for a HEIC/GIF/TIFF (issue 2178).
                 res.set({
                   'Content-Type': await sniffImageFileType(watermarkFilePath) || resolvePhotoContentType(photo),
-                  'Cache-Control': 'private, max-age=1800',
+                  'Cache-Control': imageCache,
                   'ETag': etag,
                   'X-Protection-Level': 'basic'
                 });
@@ -665,7 +674,7 @@ router.get('/:slug/photo/:photoId',
 
         res.set({
           'Content-Type': sniffImageType(watermarkedBuffer) || resolvePhotoContentType(photo),
-          'Cache-Control': 'private, max-age=1800',
+          'Cache-Control': imageCache,
           'ETag': etag,
           'X-Protection-Level': 'basic'
         });
@@ -673,7 +682,7 @@ router.get('/:slug/photo/:photoId',
         res.send(watermarkedBuffer);
       } else {
         res.set({
-          'Cache-Control': 'private, max-age=1800',
+          'Cache-Control': imageCache,
           'ETag': etag,
           'X-Protection-Level': 'basic'
         });
