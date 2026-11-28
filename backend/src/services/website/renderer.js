@@ -623,7 +623,7 @@ h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 .pp-menu li a{display:block;padding:.65rem .8rem;border-radius:8px}
 @media (max-width:760px){.pp-nav{display:none}.pp-menu{display:block}}
 .pp-header--static{position:relative}
-.pp-header.pp-header--over{position:absolute;left:0;right:0;background:transparent;backdrop-filter:none;border-bottom-color:transparent;--text:#fff}
+.pp-header.pp-header--over{position:absolute;left:0;right:0;background:linear-gradient(rgba(0,0,0,.45),transparent);backdrop-filter:none;border-bottom-color:transparent;--text:#fff}.pp-header--over .pp-nav a,.pp-header--over .pp-brand{text-shadow:0 1px 3px rgba(0,0,0,.4)}
 .pp-header--over .pp-menu summary{border-color:rgba(255,255,255,.5)}.pp-header--over .pp-menu ul{--text:var(--page-text)}
 @media (min-width:761px){.pp-header--center .pp-header__in{flex-direction:column;justify-content:center;gap:.6rem;padding:1rem 0}}
 .pp-nav--underline .pp-nav a{padding:.3rem 0;border-bottom:2px solid transparent}.pp-nav--underline .pp-nav a:hover,.pp-nav--underline .pp-nav a[aria-current]{border-bottom-color:currentColor}
