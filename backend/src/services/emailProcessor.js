@@ -974,8 +974,12 @@ async function processTemplate(template, variables, language = 'en') {
     }
 
     if (!translation) {
+      // Oldest first: without an order the engine decides (SQLite walks the
+      // (template_id, language) index), and a language added later could
+      // take over every recipient who has no row of their own.
       translation = await db('email_template_translations')
         .where({ template_id: template.id })
+        .orderBy('id')
         .first();
     }
 

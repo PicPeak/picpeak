@@ -76,8 +76,19 @@ function suite(label, connect) {
           subject_en: 'Please upload', body_html_en: '<p>Upload: {{upload_url}}</p>', body_text_en: 'Upload: {{upload_url}}',
           subject_de: 'Bitte hochladen', body_html_de: '', body_text_de: '',
         }),
+        loneRu: await insertTemplate(db, {
+          template_key: 'transfer_link_expired',
+          subject_en: 'Link expired', body_html_en: '<p>Expired</p>', body_text_en: 'Expired',
+          subject_de: 'Link abgelaufen', body_html_de: '<p>Abgelaufen</p>', body_text_de: 'Abgelaufen',
+        }),
+        ownPtOnly: await insertTemplate(db, {
+          template_key: 'quote_sent',
+          subject_en: 'Quote', body_html_en: '<p>Quote</p>', body_text_en: 'Quote',
+        }),
       };
       await db('email_template_translations').insert([
+        { template_id: ids.loneRu, language: 'ru', subject: 'Ссылка истекла', body_html: '<p>ru</p>', body_text: 'ru', created_at: now, updated_at: now },
+        { template_id: ids.ownPtOnly, language: 'pt', subject: 'Meu orçamento', body_html: '<p>meu</p>', body_text: 'meu', created_at: now, updated_at: now },
         { template_id: ids.legacyWithBlankPt, language: 'pt', subject: '', body_html: '', body_text: '', created_at: now, updated_at: now },
         { template_id: ids.plain, language: 'en', subject: 'Archive Complete', body_html: '<p>x</p>', body_text: 'x', created_at: now, updated_at: now },
         { template_id: ids.edited, language: 'en', subject: 'Expired', body_html: '<p>x</p>', body_text: 'x', created_at: now, updated_at: now },
@@ -123,12 +134,26 @@ function suite(label, connect) {
       });
     });
 
+    // English (and through it German and every other language) was served the
+    // lone Russian row; that is what the new English row has to hold.
+    it('pins the row other languages were served when a template has only a ru row', async () => {
+      expect(await translation(db, ids.loneRu, 'en')).toMatchObject({ subject: 'Ссылка истекла', body_html: '<p>ru</p>', body_text: 'ru' });
+      expect(await translation(db, ids.loneRu, 'de')).toBeUndefined();
+      expect((await translation(db, ids.loneRu, 'ru')).subject).toBe('Ссылка истекла');
+      expect((await translation(db, ids.loneRu, 'pt')).subject).toBe(PT_EMAIL_TEMPLATES.transfer_link_expired.subject);
+    });
+
+    it('leaves a template alone whose pt row an admin wrote', async () => {
+      const rows = await db('email_template_translations').where({ template_id: ids.ownPtOnly });
+      expect(rows.map((row) => [row.language, row.subject])).toEqual([['pt', 'Meu orçamento']]);
+    });
+
     it('is idempotent and skips templates the install does not have', async () => {
       const before = await db('email_template_translations').count({ n: '*' }).first();
       await migration.up(db);
       const after = await db('email_template_translations').count({ n: '*' }).first();
       expect(Number(after.n)).toBe(Number(before.n));
-      expect(Number(before.n)).toBe(15);
+      expect(Number(before.n)).toBe(19);
     });
 
     it('down() removes only the pt rows it wrote', async () => {
