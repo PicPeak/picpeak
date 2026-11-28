@@ -6405,7 +6405,8 @@
     "discardOnSwitch": "Discard your unsaved changes to this page?",
     "discardAndSwitch": "Discard and switch",
     "managedInWebsite": "These pages are managed under Website › Pages while the website is on, and shown in its design.",
-    "editInWebsite": "Edit in Website"
+    "editInWebsite": "Edit in Website",
+    "savedAtOnce": "Changes to legal and system pages apply as soon as they are saved. They are not part of the website draft."
   },
   "eventTypes": {
     "title": "Event Types",

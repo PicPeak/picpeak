@@ -20,7 +20,8 @@ vi.mock('../../CMSEditor', () => ({
 vi.mock('../../SettingsSaveBar', () => ({ SettingsSaveBar: () => <div>save bar</div> }));
 const guard = vi.fn();
 vi.mock('../../../../contexts/UnsavedChangesContext', () => ({ useUnsavedChanges: (dirty: boolean) => guard(dirty) }));
-vi.mock('../../../../services/cms.service', () => ({
+vi.mock('../../../../services/cms.service', async (original) => ({
+  ...(await original<typeof import('../../../../services/cms.service')>()),
   cmsService: {
     getPages: () => Promise.resolve([{ id: 1, slug: 'impressum', title_en: 'Imprint', title_de: 'Impressum', content_en: '<p>a</p>', content_de: '', logo_url: null, use_external_url: false, external_url: null, updated_at: '' }]),
     updatePage: vi.fn(), uploadPageLogo: vi.fn(), clearPageLogo: vi.fn(),

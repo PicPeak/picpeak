@@ -7088,7 +7088,8 @@
     "discardOnSwitch": "Ungespeicherte Änderungen an dieser Seite verwerfen?",
     "discardAndSwitch": "Verwerfen und wechseln",
     "managedInWebsite": "Solange die Website eingeschaltet ist, werden diese Seiten unter Website › Seiten verwaltet und in ihrem Design gezeigt.",
-    "editInWebsite": "In der Website bearbeiten"
+    "editInWebsite": "In der Website bearbeiten",
+    "savedAtOnce": "Änderungen an rechtlichen Seiten und Systemseiten gelten, sobald sie gespeichert sind. Sie gehören nicht zum Entwurf der Website."
   },
   "validation": {
     "eventNameRequired": "Galeriename ist erforderlich",

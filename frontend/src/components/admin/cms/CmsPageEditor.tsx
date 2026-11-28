@@ -9,10 +9,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { Image as ImageIcon, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button, Input } from '../../common';
+import { Button, Input, Notice } from '../../common';
 import { CMSEditor } from '../CMSEditor';
 import { SettingsSaveBar } from '../SettingsSaveBar';
-import { cmsService, type CMSPage } from '../../../services/cms.service';
+import { cmsService, LEGAL_PAGE_SLUGS, type CMSPage } from '../../../services/cms.service';
 import { useCmsPageTitle } from './cmsPageTitle';
 import { buildResourceUrl } from '../../../utils/url';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
@@ -141,12 +141,23 @@ export const CmsPageEditor: React.FC<CmsPageEditorProps> = ({ slug, saveMode = '
     </button>
   );
 
+  // In the website builder's dialog: the dialog names the page, and only the
+  // options that apply to the page are offered. A legal page has an external
+  // address and a place in the gallery footer; the website shows its
+  // not-found page under its own header, so that page has no logo either.
+  const inDialog = saveMode === 'inline';
+  const legalPage = LEGAL_PAGE_SLUGS.includes(slug);
+  const showLegalOptions = !inDialog || legalPage;
+  const showLogo = !inDialog || slug !== 'not-found';
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 gap-4">
-        <h2 className="text-lg font-semibold text-heading">
-          {t('cms.editPage', { page: pageTitle(slug, currentPage) })}
-        </h2>
+      <div className={`flex items-center mb-6 gap-4 ${inDialog ? 'justify-end' : 'justify-between'}`}>
+        {!inDialog && (
+          <h2 className="text-lg font-semibold text-heading">
+            {t('cms.editPage', { page: pageTitle(slug, currentPage) })}
+          </h2>
+        )}
         <div className="flex gap-2">
           {langTab('en', 'English')}
           {langTab('de', 'Deutsch')}
@@ -155,6 +166,7 @@ export const CmsPageEditor: React.FC<CmsPageEditorProps> = ({ slug, saveMode = '
 
       <div className="space-y-4">
         {/* External URL override */}
+        {showLegalOptions && (
         <div className="rounded-lg border border-line p-4 bg-neutral-50 dark:bg-neutral-800/40">
           <label className="flex items-start gap-3 cursor-pointer">
             <input
@@ -182,10 +194,12 @@ export const CmsPageEditor: React.FC<CmsPageEditorProps> = ({ slug, saveMode = '
             </div>
           )}
         </div>
+        )}
 
         {/* Footer visibility (#441). Lets admins hide a CMS page
             from the gallery footer when their jurisdiction
             doesn't require it. Defaults to true on existing rows. */}
+        {showLegalOptions && (
         <div className="rounded-lg border border-line p-4 bg-neutral-50 dark:bg-neutral-800/40">
           <label className="flex items-start gap-3 cursor-pointer">
             <input
@@ -202,6 +216,7 @@ export const CmsPageEditor: React.FC<CmsPageEditorProps> = ({ slug, saveMode = '
             </span>
           </label>
         </div>
+        )}
 
         {/* Title */}
         <div>
@@ -223,12 +238,13 @@ export const CmsPageEditor: React.FC<CmsPageEditorProps> = ({ slug, saveMode = '
           <CMSEditor
             content={editingLang === 'en' ? editForm.content_en || '' : editForm.content_de || ''}
             onChange={(content) => change(editingLang === 'de' ? { content_de: content } : { content_en: content })}
-            onSave={handleSave}
+            onSave={inDialog ? undefined : handleSave}
             isSaving={updateMutation.isPending}
           />
         </div>
 
         {/* Per-page logo override (#324) */}
+        {showLogo && (
         <div>
           <label className="block text-sm font-medium text-body mb-1">{t('cms.pageLogo', 'Page Logo')}</label>
           <p className="text-xs text-muted mb-3">
@@ -279,6 +295,7 @@ export const CmsPageEditor: React.FC<CmsPageEditorProps> = ({ slug, saveMode = '
             )}
           </div>
         </div>
+        )}
       </div>
 
       {currentPage?.updated_at && (
@@ -290,7 +307,11 @@ export const CmsPageEditor: React.FC<CmsPageEditorProps> = ({ slug, saveMode = '
       {saveMode === 'bar' ? (
         <SettingsSaveBar isDirty={hasUnsavedChanges} isSaving={updateMutation.isPending} onSave={handleSave} onDiscard={discard} />
       ) : (
-        <div className="mt-6 flex justify-end gap-2">
+        <>
+        <Notice tone="info" size="sm" className="mt-4">
+          {t('cms.savedAtOnce', 'Changes to legal and system pages apply as soon as they are saved. They are not part of the website draft.')}
+        </Notice>
+        <div className="mt-4 flex justify-end gap-2">
           <Button variant="secondary" onClick={discard} disabled={!hasUnsavedChanges || updateMutation.isPending}>
             {t('common.discard', 'Discard')}
           </Button>
@@ -298,6 +319,7 @@ export const CmsPageEditor: React.FC<CmsPageEditorProps> = ({ slug, saveMode = '
             {t('common.save', 'Save')}
           </Button>
         </div>
+        </>
       )}
     </div>
   );
