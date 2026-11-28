@@ -110,10 +110,6 @@ function legalPageName(locale, slug) {
 }
 
 // ---------------------------------------------------------------------------
-// Text
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // Images
 // ---------------------------------------------------------------------------
 
@@ -289,7 +285,7 @@ function renderHero(block, ctx) {
 }
 
 // The body is the sanitised HTML document.js stores. Two columns: one text
-// flowing over both (as before), or, once the right one is filled, each its own.
+// flowing over both, or, once the right one is filled, each its own.
 function renderText(block, ctx) {
   const center = block.variant === 'center' ? ' pp-center' : '';
   const body = block.variant === 'columns' && !isEmptyRichText(block.bodyRight)
@@ -925,7 +921,7 @@ function renderFooter(ctx) {
   const copy = footer.legal === 'bottom' && legal.length
     ? `<div class="pp-copy pp-copy--legal"><span>${esc(copyright)}</span><ul>${legal.join('')}</ul></div>`
     : `<p class="pp-copy">${esc(copyright)}</p>`;
-  // Three columns is the footer as it always was; other counts have a class.
+  // The base rule lays out three columns; other counts have a class.
   const count = columns.length === 3 ? '' : ` pp-footer__in--n${columns.length}`;
   const custom = footer.background === 'custom' && footer.backgroundColor;
   const bg = !custom && footer.background === 'dark' ? ' pp-dark' : '';

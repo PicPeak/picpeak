@@ -193,11 +193,9 @@ function guestPhotoQuery() {
 
 /**
  * Photos by id that may appear on the public site, keyed by id. A photo of a
- * gallery that is not eligible is simply absent, so the renderer leaves it out.
- */
-/**
- * `views: false` leaves out the guest view (no watermark settings read):
- * for callers that need which photos, not their URLs' versions.
+ * gallery that is not eligible is simply absent, so the renderer leaves it
+ * out. `views: false` leaves out the guest view (no watermark settings
+ * read): for callers that need which photos, not their URLs' versions.
  */
 async function loadEligiblePhotos(photoIds, { views: withViews = true } = {}) {
   const ids = (photoIds || []).filter((id) => Number.isInteger(id) && id > 0);

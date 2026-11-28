@@ -142,9 +142,8 @@ async function maintenanceMiddleware(req, res, next) {
   // slug-shaped single segment that is not one of the app's own paths (the
   // legal pages included: the website renders them, and the not-found page
   // for any other address). A page is the site root's sibling and is gated
-  // like it; while the builder is off
-  // the backend owns no such path, so it stays the shell (CMS and not-found
-  // pages), exactly as before.
+  // like it; while the builder is off the backend owns no such path, so it
+  // stays the shell (CMS and not-found pages).
   const BACKEND_RENDERED_PREFIXES = ['/api/', '/photos/', '/thumbnails/', '/fonts/', '/og/', '/s/', '/site-media/'];
   const CRAWLER_RENDERED_PREFIXES = ['/gallery/', '/transfer/', '/transfer-upload/'];
   const BACKEND_RENDERED_EXACT = [

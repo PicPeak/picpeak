@@ -643,7 +643,8 @@ const LIMIT_CODES = new Set(['TOO_MANY_PAGES', 'TOO_MANY_BLOCKS', 'TOO_MANY_ITEM
  * with the template's base CSS it was written against, the site's custom
  * CSS. A page longer than a custom-HTML block holds is not cut short:
  * `refused` says why, and the page stays live until something is published.
- * Pure: the service and migration 381 both use it.
+ * Pure. Migration 381 imports by its own snapshot of these rules
+ * (migrations/core/snapshots), so a later change here does not reach it.
  */
 function legacyImport({ enabled, html, css }) {
   const page = typeof html === 'string' ? html : '';

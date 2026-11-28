@@ -53,10 +53,9 @@ router.put('/draft', canEdit, [
   res.json(await websiteService.saveDraft(req.body.document, req.body.revision, req.admin));
 }));
 
-// The website at the site root, on or off (cms.edit; it used to be the CMS
-// tab's landing page switch).
-// Showing or hiding the website at the site root is a site-wide switch, as
-// the landing page's was: settings.edit as well, and logged.
+// The website at the site root, on or off. A site-wide switch (it also
+// switches a landing page still shown there): settings.edit on top of
+// cms.edit, and logged.
 router.put('/visibility', canEdit, requirePermission('settings.edit'), [
   body('enabled').isBoolean(),
 ], handleAsync(async (req, res) => {

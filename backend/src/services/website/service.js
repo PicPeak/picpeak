@@ -124,10 +124,10 @@ async function dismissLegacyLandingNotice(adminId) {
 }
 
 /**
- * Show the website at the site root, or not (the setting the CMS tab's
- * landing page switch used to write). On needs something to show: a
- * published website, or a landing page the install uses; the untouched
- * template is not it.
+ * Show the website at the site root, or not (general_public_site_enabled,
+ * which also switches the single-page landing page). On needs something to
+ * show: a published website, or a landing page the install uses; the
+ * untouched template is not it.
  */
 async function setSiteVisible(enabled) {
   if (enabled && !(await readRow('published')) && !(await legacySite()).used) {
@@ -338,14 +338,11 @@ async function saveDraft(rawDocument, expectedRevision, admin) {
 }
 
 /**
- * Copy the draft into the published row. One transaction: visitors see the
- * old site or the new one, never a mix. The draft is validated again, since
- * a cms page may have taken a slug since it was saved.
- */
-/**
- * Publish the draft revision the editor last saved. `expectedRevision` is
- * required: without it a publish could go out with whatever another editor
- * saved since.
+ * Publish the draft revision the editor last saved: copy it into the
+ * published row. One transaction: visitors see the old site or the new one,
+ * never a mix. `expectedRevision` is required: without it a publish could go
+ * out with whatever another editor saved since. The draft is validated
+ * again, since a CMS page may have taken a slug since it was saved.
  */
 async function publish(expectedRevision, adminId) {
   if (expectedRevision == null || !Number.isInteger(Number(expectedRevision))) {
@@ -675,8 +672,8 @@ async function isWebsiteActive() {
 
 /**
  * The public answer for a path: `slug` is '' for `/`. Returns null when the
- * builder does not own the path (inactive, unknown or hidden page), so the
- * caller falls through exactly as before.
+ * builder does not own the path (inactive, unknown or hidden page): the
+ * caller then hands the path to the app.
  */
 async function resolvePublicPage(slug) {
   const generation = cacheGeneration();

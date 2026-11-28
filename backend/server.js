@@ -499,10 +499,6 @@ function sendWebsitePage(req, res, page, slug) {
 // A path the app answers itself (document.js; the maintenance gate asks the same).
 const ownedByApp = (slug) => require('./src/services/website/document').ownedByApp(slug);
 
-// `/<slug>` of a published website page, a legal page, or, for any other
-// address, the not-found page, all while the website is live. Anything else
-// (the flag off, the site not live) falls through to the routes below
-// exactly as before.
 // A path the website does not answer (the builder off, the site not live)
 // goes on to the app. Behind nginx, whose website location marks its
 // requests (X-PicPeak-Spa-Fallback), the answer is an internal redirect to
@@ -527,6 +523,9 @@ function handOverNotFound(req, res, slug) {
   return res.status(200).end();
 }
 
+// `/<slug>` of a published website page, a legal page, or, for any other
+// address, the not-found page, all while the website is live. Anything else
+// (the flag off, the site not live) is not the website's to answer.
 async function handleWebsitePageRequest(req, res, next) {
   try {
     // Paths the app owns (/health, /admin, ...) never cost a lookup.
@@ -915,7 +914,7 @@ app.get('/robots.txt', async (req, res) => {
 });
 
 // sitemap.xml of the published website (issue 2618); 404 while the builder
-// is not live, as before.
+// is not live.
 // These run before the SPA block mounts compression() (and the API stays
 // uncompressed), so the website's HTML and sitemap take it themselves, as
 // the home page gets it there. /site-media serves already compressed images.
