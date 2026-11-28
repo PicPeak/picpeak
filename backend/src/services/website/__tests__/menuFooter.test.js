@@ -1,25 +1,25 @@
 /**
  * Website builder (issue 2618): the menu (header) and the footer have their
- * own settings. A document saved before them renders exactly as it did:
- * the menu comes from the page order and "show in the menu", the footer
- * from the branding, the pages and the legal links.
+ * own settings. A document without them gets the defaults: the menu its
+ * pages in page order, the footer the branding, the pages and the legal
+ * links.
  */
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'renderer-test-secret-0123456789abcdef';
 
 const { renderPage } = require('../renderer');
 const { normalizeDocument } = require('../document');
 
-// Rendered by the renderer before the menu and footer settings existed.
+// The default design of the header and the footer, as rendered once and kept.
 const BEFORE = {
   'header': '<header class="pp-header"><div class="pp-wrap pp-header__in"><a class="pp-brand" href="/"><img src="/uploads/logo.png" alt="" height="40"><span>Studio</span></a><nav class="pp-nav" aria-label="Main"><ul><li><a href="/">Home</a></li><li><a href="/about" aria-current="page">About us</a></li></ul></nav><details class="pp-menu"><summary>Menu</summary><nav aria-label="Main"><ul><li><a href="/">Home</a></li><li><a href="/about" aria-current="page">About us</a></li></ul></nav></details></div></header>',
   'footer': '<footer class="pp-footer"><div class="pp-wrap pp-footer__in"><div><strong>Studio</strong><p>Weddings</p><p>Zurich</p></div><nav aria-label="Pages"><ul><li><a href="/">Home</a></li><li><a href="/about">About us</a></li><li><a href="/faq">FAQ</a></li></ul></nav><ul><li><a href="/impressum">Impressum</a></li><li><a href="mailto:hi@studio.example">Contact</a></li></ul><p class="pp-copy">© 2026 Studio</p></div></footer>'
 };
 
-const LEGACY_PAGES = [
+const PAGES = [
   { id: 'home', slug: 'home', title: 'Home', isHome: true, blocks: [] },
   { id: 'about', slug: 'about', title: 'About', navLabel: 'About us', blocks: [{ id: 'form', type: 'contact' }] },
   { id: 'secret', slug: 'secret', title: 'Secret', hidden: true, blocks: [] },
-  { id: 'faq', slug: 'faq', title: 'FAQ', inNav: false, blocks: [] },
+  { id: 'faq', slug: 'faq', title: 'FAQ', blocks: [] },
 ];
 
 function render(raw, { pageId = 'about', ctx = {} } = {}) {
@@ -37,21 +37,18 @@ function render(raw, { pageId = 'about', ctx = {} } = {}) {
 }
 
 describe('the menu', () => {
-  test('a document from before the menu settings renders its header exactly as before', () => {
-    const { header, document } = render({ pages: LEGACY_PAGES });
+  test('a document without a menu gets its pages in page order; the default design renders the golden header', () => {
+    const { document } = render({ pages: PAGES });
+    const item = (pageId) => ({ id: pageId, label: '', hidden: false, target: { kind: 'page', pageId } });
+    expect(document.menu.items).toEqual(['home', 'about', 'secret', 'faq'].map(item));
+    // The menu is what its items say: here every page but the FAQ (a hidden
+    // page's item renders nothing).
+    const { header } = render({ pages: PAGES, menu: { items: ['home', 'about', 'secret'].map(item) } });
     expect(header).toBe(BEFORE.header);
-    expect(document.menu.items).toEqual([
-      { id: 'home', label: '', hidden: false, target: { kind: 'page', pageId: 'home' } },
-      { id: 'about', label: '', hidden: false, target: { kind: 'page', pageId: 'about' } },
-      { id: 'secret', label: '', hidden: false, target: { kind: 'page', pageId: 'secret' } },
-    ]);
-    expect(document.pages[0].inNav).toBeUndefined();
-    // Once saved, the menu is what it says, whatever the pages say.
-    expect(render(document).header).toBe(BEFORE.header);
   });
 
   test('its own order, labels, hidden items, and items that are not pages', () => {
-    const { header } = render({ pages: LEGACY_PAGES, menu: { items: [
+    const { header } = render({ pages: PAGES, menu: { items: [
       { id: 'm1', label: 'Contact', target: { kind: 'anchor', pageId: 'about', blockId: 'form' } },
       { id: 'm2', label: '', target: { kind: 'page', pageId: 'faq' } },
       { id: 'm3', label: 'Home', hidden: true, target: { kind: 'page', pageId: 'home' } },
@@ -69,18 +66,18 @@ describe('the menu', () => {
     const menu = { items: [{ id: 'm', label: '', target: { kind: 'legal', slug: 'datenschutz' } }, { id: 'n', label: '', target: { kind: 'legal', slug: 'agb' } }] };
     const legalPages = { datenschutz: { label: 'Privacy Policy', href: 'https://legal.example/privacy' }, agb: { label: 'Terms', href: '/agb' } };
     // Neither is in the footer's legal links (hidden there, or none at all).
-    const { header } = render({ pages: LEGACY_PAGES, menu }, { ctx: { legalLinks: [], legalPages } });
+    const { header } = render({ pages: PAGES, menu }, { ctx: { legalLinks: [], legalPages } });
     expect(header).toContain('<a href="https://legal.example/privacy" rel="noopener noreferrer">Privacy Policy</a>');
     expect(header).toContain('<a href="/agb">Terms</a>');
   });
 
   test('design: layout, style, sticky, colours and the phone menu', () => {
-    const { header } = render({ pages: LEGACY_PAGES, menu: {
+    const { header } = render({ pages: PAGES, menu: {
       layout: 'center', style: 'pill', sticky: false, mobile: 'panel', background: '#102030', text: '#FFFFFF', items: [{ id: 'm', target: { kind: 'page', pageId: 'home' } }],
     } });
     expect(header).toMatch(/^<header class="pp-header pp-header--center pp-header--static pp-nav--pill" style="--bg:#102030;--text:#ffffff">/);
     expect(header).toContain('<details class="pp-menu pp-menu--panel">');
-    const bad = render({ pages: LEGACY_PAGES, menu: { layout: 'diagonal', style: 'x', background: 'red;}body{x:y', items: [] } });
+    const bad = render({ pages: PAGES, menu: { layout: 'diagonal', style: 'x', background: 'red;}body{x:y', items: [] } });
     expect(bad.document.menu).toMatchObject({ layout: 'left', style: 'plain', sticky: true, transparent: false, mobile: 'dropdown', background: null, text: null });
   });
 
@@ -107,7 +104,7 @@ describe('the menu', () => {
 
   test('at most twelve items, labels capped', () => {
     const items = Array.from({ length: 14 }, (_, i) => ({ id: `m${i}`, label: 'x'.repeat(80), target: { kind: 'page', pageId: 'home' } }));
-    const { document, errors } = normalizeDocument({ pages: LEGACY_PAGES, menu: { items } });
+    const { document, errors } = normalizeDocument({ pages: PAGES, menu: { items } });
     expect(document.menu.items).toHaveLength(12);
     expect(document.menu.items[0].label).toHaveLength(60);
     expect(errors).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'TOO_MANY_ITEMS', field: 'menu' }), expect.objectContaining({ code: 'TEXT_TOO_LONG', field: 'menuLabel' })]));
@@ -115,8 +112,8 @@ describe('the menu', () => {
 });
 
 describe('the footer', () => {
-  test('a document from before the footer settings renders its footer exactly as before', () => {
-    const { footer, document } = render({ pages: LEGACY_PAGES });
+  test('a document without a footer gets the default one, which renders the golden footer', () => {
+    const { footer, document } = render({ pages: PAGES });
     expect(footer).toBe(BEFORE.footer);
     expect(document.footer).toMatchObject({ legal: 'column', copyright: '', background: 'default' });
     expect(document.footer.columns.map((c) => c.kind)).toEqual(['brand', 'pages']);
@@ -124,7 +121,7 @@ describe('the footer', () => {
   });
 
   test('columns of text, links, contact details and social icons', () => {
-    const { footer } = render({ pages: LEGACY_PAGES, footer: { legal: 'off', columns: [
+    const { footer } = render({ pages: PAGES, footer: { legal: 'off', columns: [
       { id: 'c1', kind: 'text', heading: 'Studio', text: '<p>Since <strong>2010</strong></p><script>x()</script>' },
       { id: 'c2', kind: 'links', heading: 'More', links: [
         { label: 'Contact', target: { kind: 'anchor', pageId: 'about', blockId: 'form' } },
@@ -144,20 +141,20 @@ describe('the footer', () => {
   });
 
   test('legal links at the bottom, a copyright line of its own, a dark background', () => {
-    const { footer } = render({ pages: LEGACY_PAGES, footer: { legal: 'bottom', copyright: '© {year} Studio <AG>, all rights reserved', background: 'dark', columns: [{ id: 'b', kind: 'brand' }] } });
+    const { footer } = render({ pages: PAGES, footer: { legal: 'bottom', copyright: '© {year} Studio <AG>, all rights reserved', background: 'dark', columns: [{ id: 'b', kind: 'brand' }] } });
     expect(footer).toMatch(/^<footer class="pp-footer pp-dark">/);
     expect(footer).toContain('<div class="pp-copy pp-copy--legal"><span>© 2026 Studio &lt;AG&gt;, all rights reserved</span><ul><li><a href="/impressum">Impressum</a></li><li><a href="mailto:hi@studio.example">Contact</a></li></ul></div>');
   });
 
   test('validated and capped like the blocks', () => {
-    const { document, errors } = normalizeDocument({ pages: LEGACY_PAGES, footer: {
+    const { document, errors } = normalizeDocument({ pages: PAGES, footer: {
       legal: 'sideways', background: 'custom', backgroundColor: 'url(x)',
       columns: [...Array.from({ length: 6 }, (_, i) => ({ id: `c${i}`, kind: 'brand' })), { kind: 'iframe' }],
     } });
     expect(document.footer.columns).toHaveLength(4);
     expect(document.footer).toMatchObject({ legal: 'column', background: 'default' });
     expect(errors).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'TOO_MANY_ITEMS', field: 'footer' })]));
-    const contact = normalizeDocument({ pages: LEGACY_PAGES, footer: { columns: [{ kind: 'contact', email: 'not an address', phone: 'javascript:1' }] } }).document.footer.columns[0];
+    const contact = normalizeDocument({ pages: PAGES, footer: { columns: [{ kind: 'contact', email: 'not an address', phone: 'javascript:1' }] } }).document.footer.columns[0];
     expect(contact).toMatchObject({ email: '', phone: '' });
   });
 });

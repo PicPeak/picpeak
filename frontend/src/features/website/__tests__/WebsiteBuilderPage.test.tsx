@@ -206,7 +206,7 @@ describe('WebsiteBuilderPage', () => {
 
   it('each text block gets its own rich text editor, so its undo never brings back another block\'s text', async () => {
     const state = structuredClone(STATE);
-    const text = (id: string, heading: string, body: string, variant = 'left') => ({ id, type: 'text' as const, variant, background: 'default' as const, heading, body, bodyRight: '', format: 'html' as const });
+    const text = (id: string, heading: string, body: string, variant = 'left') => ({ id, type: 'text' as const, variant, background: 'default' as const, heading, body, bodyRight: '' });
     state.document.pages[0].blocks = [text('ta', 'Block A', '<p>A</p>'), text('tb', 'Block B', '<p>B</p>'), text('tc', 'Block C', '<p>C left</p>', 'columns')];
     vi.mocked(websiteService.getState).mockResolvedValue(state);
     renderPage();

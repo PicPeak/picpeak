@@ -31,13 +31,12 @@ export interface HeroBlock extends BlockBase {
   video: { source: 'asset'; id: string } | null;
 }
 // `body` (and `bodyRight`, two columns): sanitised HTML from the rich text editor.
-export interface TextBlock extends BlockBase { type: 'text'; heading: string; body: string; bodyRight?: string; format?: 'html' }
+export interface TextBlock extends BlockBase { type: 'text'; heading: string; body: string; bodyRight?: string }
 export interface ImageTextBlock extends BlockBase {
   type: 'imageText';
   heading: string;
   // Sanitised HTML from the rich text editor, as the text block's.
   body: string;
-  format?: 'html';
   image: ImageRef | null;
   buttonLabel: string;
   buttonTarget: LinkTarget | null;

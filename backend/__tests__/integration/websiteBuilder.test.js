@@ -209,14 +209,16 @@ describe('admin API', () => {
     expect(new Set(state.brandColors).size).toBe(state.brandColors.length);
   });
 
-  test('the editor gets older text blocks as the rich text they render as', async () => {
+  test('the editor gets a stored document in its full shape, defaults filled in', async () => {
     await setFeatureFlags(db, { websiteBuilder: true });
     const kept = await db('website_documents').where({ state: 'draft' }).first();
-    const legacy = { pages: [{ id: 'home', slug: 'home', title: 'Home', isHome: true, blocks: [{ id: 't1', type: 'text', body: 'We take **photos**.' }] }] };
-    await db('website_documents').where({ state: 'draft' }).update({ document: JSON.stringify(legacy) });
+    const bare = { pages: [{ id: 'home', slug: 'home', title: 'Home', isHome: true, blocks: [{ id: 't1', type: 'text', body: '<p>We take <strong>photos</strong>.</p>' }] }] };
+    await db('website_documents').where({ state: 'draft' }).update({ document: JSON.stringify(bare) });
     try {
-      const block = (await request(app).get('/api/admin/website').set(auth(adminId))).body.document.pages[0].blocks[0];
-      expect(block).toMatchObject({ format: 'html', body: '<p>We take <strong>photos</strong>.</p>' });
+      const { document } = (await request(app).get('/api/admin/website').set(auth(adminId))).body;
+      expect(document.pages[0].blocks[0]).toMatchObject({ variant: 'left', background: 'default', body: '<p>We take <strong>photos</strong>.</p>', bodyRight: '' });
+      expect(document.menu.items).toEqual([{ id: 'home', label: '', hidden: false, target: { kind: 'page', pageId: 'home' } }]);
+      expect(document.footer.columns.map((column) => column.kind)).toEqual(['brand', 'pages']);
     } finally {
       await db('website_documents').where({ state: 'draft' }).update({ document: kept.document });
     }
@@ -2281,7 +2283,7 @@ describe('site-wide switches take the settings permission and are logged', () =>
 
 describe('switching a block variant keeps what the other variant uses', () => {
   const { normalizeDocument } = require('../../src/services/website/document');
-  const textBlock = (variant) => ({ id: 't1', type: 'text', variant, format: 'html', body: '<p>Left</p>', bodyRight: '<p>Right <script>x</script>column</p>' });
+  const textBlock = (variant) => ({ id: 't1', type: 'text', variant, body: '<p>Left</p>', bodyRight: '<p>Right <script>x</script>column</p>' });
   const page = (blocks) => ({ id: 'home', title: 'Home', slug: 'home', isHome: true, blocks });
 
   test('a text block saved in one column keeps its right column, sanitised, for switching back', () => {

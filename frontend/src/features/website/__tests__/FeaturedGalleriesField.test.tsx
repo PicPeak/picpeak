@@ -239,7 +239,7 @@ describe('chosen entries that are gone', () => {
 
   it('the text block is edited with the rich text editor; two columns get a left and a right one', async () => {
     const onChange = vi.fn();
-    const text = { id: 't', type: 'text' as const, variant: 'columns', background: 'default' as const, heading: '', body: '<p>Left text</p>', bodyRight: '', format: 'html' as const };
+    const text = { id: 't', type: 'text' as const, variant: 'columns', background: 'default' as const, heading: '', body: '<p>Left text</p>', bodyRight: '' };
     render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={text} onChange={onChange} /></QueryClientProvider>);
     expect(await screen.findByText('Left column')).toBeInTheDocument();
     expect(screen.getByText('Right column')).toBeInTheDocument();

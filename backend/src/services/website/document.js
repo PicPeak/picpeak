@@ -33,7 +33,7 @@ const MAX_CUSTOM_CSS = MAX_CSS_SIZE + DEFAULT_PUBLIC_SITE_CSS.length + 2;
 // list is shared: nginx.conf and the frontend page editor keep copies that
 // __tests__/services/websiteReservedSlugs.test.js holds to this file.
 const { SOCIAL_NETWORKS, STEP_ICONS } = require('./icons');
-const { sanitizeRichText, isEmptyRichText, richText } = require('./richText');
+const { sanitizeRichText, isEmptyRichText } = require('./richText');
 const {
   MAX_URL_LENGTH, ASSET_ID_PATTERN, SLUG_PATTERN, FONT_NAME_PATTERN, EMAIL_PATTERN, cleanText, flag, safeUrl,
 } = require('./validators');
@@ -85,6 +85,7 @@ const MENU_STYLES = ['plain', 'underline', 'pill'];
 const MENU_MOBILE = ['dropdown', 'panel'];
 const FOOTER_KINDS = ['brand', 'pages', 'links', 'text', 'contact', 'social'];
 const FOOTER_LEGAL = ['column', 'bottom', 'off'];
+const FOOTER_BACKGROUNDS = ['default', 'dark', 'custom'];
 const MAX_FOOTER_COLUMNS = 4;
 const MAX_FOOTER_LINKS = 12;
 const MAX_STEPS = 8;
@@ -138,8 +139,8 @@ function newId() {
 }
 
 // A list item's id (a question, a step, a testimonial): kept so the editor
-// can tell the items apart when one is removed; unique within its block, a
-// new one for an item without, as older documents have.
+// can tell the items apart when one is removed; unique within its block, and
+// given here to an item that comes without one.
 const ITEM_ID_PATTERN = /^[a-z0-9-]{1,24}$/;
 function withItemIds(items) {
   const seen = new Set();
@@ -206,12 +207,6 @@ function linkTarget(value) {
   }
 }
 
-// Where a block's button leads. A link stored as an address (`buttonUrl`)
-// keeps leading there, as an address target.
-function buttonTarget(block) {
-  return linkTarget(block.buttonTarget) || linkTarget({ kind: 'url', url: block.buttonUrl });
-}
-
 // A social profile: http(s) only; for e-mail an address, as mailto.
 function socialUrl(network, value) {
   const raw = str(value, 500, 'url');
@@ -248,33 +243,24 @@ const BLOCK_FIELDS = {
     heading: str(b.heading, 200, 'heading'),
     subheading: str(b.subheading, 600, 'subheading'),
     buttonLabel: str(b.buttonLabel, 60, 'buttonLabel'),
-    buttonTarget: buttonTarget(b),
+    buttonTarget: linkTarget(b.buttonTarget),
     image: imageRef(b.image),
     video: videoRef(b.video),
   }),
-  text: (b) => {
-    const html = b.format === 'html';
-    return {
-      heading: str(b.heading, 200, 'heading'),
-      // Older text in the short inline format becomes the HTML it always
-      // rendered as (safe by construction), so the page does not change.
-      body: html ? rich(b.body, MAX_RICH_TEXT, 'body') : richText(str(b.body, 10000, 'body')),
-      // Two columns: the right one, when the editor filled it separately.
-      // Kept in the other layouts too, so switching back brings it back;
-      // only the two-column layout shows it (renderer.js).
-      bodyRight: html ? rich(b.bodyRight, MAX_RICH_TEXT, 'bodyRight') : '',
-      format: 'html',
-    };
-  },
+  text: (b) => ({
+    heading: str(b.heading, 200, 'heading'),
+    body: rich(b.body, MAX_RICH_TEXT, 'body'),
+    // Two columns: the right one, when the editor filled it separately.
+    // Kept in the other layouts too, so switching back brings it back;
+    // only the two-column layout shows it (renderer.js).
+    bodyRight: rich(b.bodyRight, MAX_RICH_TEXT, 'bodyRight'),
+  }),
   imageText: (b) => ({
     heading: str(b.heading, 200, 'heading'),
-    // Rich text, as the text block's; older text in the short inline format
-    // becomes the HTML it rendered as.
-    body: b.format === 'html' ? rich(b.body, MAX_RICH_TEXT, 'body') : richText(str(b.body, 5000, 'body')),
-    format: 'html',
+    body: rich(b.body, MAX_RICH_TEXT, 'body'),
     image: imageRef(b.image),
     buttonLabel: str(b.buttonLabel, 60, 'buttonLabel'),
-    buttonTarget: buttonTarget(b),
+    buttonTarget: linkTarget(b.buttonTarget),
   }),
   gallery: (b) => ({
     heading: str(b.heading, 200, 'heading'),
@@ -309,7 +295,7 @@ const BLOCK_FIELDS = {
     packageIds: idList(b.packageIds, 12, 'packageIds'),
     showPrices: flag(b.showPrices, true),
     buttonLabel: str(b.buttonLabel, 60, 'buttonLabel'),
-    buttonTarget: buttonTarget(b),
+    buttonTarget: linkTarget(b.buttonTarget),
   }),
   contact: (b) => ({
     heading: str(b.heading, 200, 'heading'),
@@ -431,19 +417,17 @@ function normalizeTheme(raw) {
 }
 
 /**
- * The menu: its design and its items, in their own order. A document from
- * before the menu had settings has none; its menu is then the one it always
- * showed, the pages in page order that were "shown in the menu" (`inNav`),
- * each labelled by its page, so it renders unchanged.
+ * The menu: its design and its items, in their own order. A document
+ * without a menu gets its pages in page order, each labelled by its page.
  */
-function normalizeMenu(raw, pages, inNavById) {
+function normalizeMenu(raw, pages) {
   const menu = raw && typeof raw === 'object' ? raw : {};
   const items = Array.isArray(menu.items)
     ? objects(menu.items, MAX_MENU_ITEMS, 'menu').map((item) => {
       const target = linkTarget(item.target);
       return target ? { id: blockId(item.id), label: str(item.label, 60, 'menuLabel'), hidden: flag(item.hidden), target } : null;
     }).filter(Boolean)
-    : pages.filter((p) => inNavById.get(p.id)).map((p) => ({ id: p.id, label: '', hidden: false, target: { kind: 'page', pageId: p.id } }));
+    : pages.map((p) => ({ id: p.id, label: '', hidden: false, target: { kind: 'page', pageId: p.id } }));
   return {
     layout: pick(menu.layout, MENU_LAYOUTS, 'left'),
     style: pick(menu.style, MENU_STYLES, 'plain'),
@@ -459,9 +443,8 @@ function normalizeMenu(raw, pages, inNavById) {
 /**
  * The footer: columns (the branding's name and texts, the pages, a list of
  * links, a text, contact details, social links), where the legal links go,
- * the copyright line and the background. A document from before the footer
- * had settings gets the footer it always showed: the branding, the pages,
- * the legal links as a column, "© year name".
+ * the copyright line and the background. A document without a footer gets
+ * the branding, the pages, the legal links as a column and "© year name".
  */
 function normalizeFooterColumn(column) {
   const kind = pick(column.kind, FOOTER_KINDS, null);
@@ -490,8 +473,8 @@ function normalizeFooter(raw) {
   const columns = Array.isArray(footer.columns)
     ? objects(footer.columns, MAX_FOOTER_COLUMNS, 'footer').map(normalizeFooterColumn).filter(Boolean)
     : [{ id: 'brand', kind: 'brand', heading: '' }, { id: 'pages', kind: 'pages', heading: '' }];
-  // Page (as it always was), dark, or a colour of its own.
-  const background = normalizeBackground({ ...footer, background: footer.background === 'light' ? 'default' : footer.background });
+  // The page's background, dark, or a colour of its own.
+  const background = normalizeBackground({ ...footer, background: pick(footer.background, FOOTER_BACKGROUNDS, 'default') });
   return {
     columns,
     legal: pick(footer.legal, FOOTER_LEGAL, 'column'),
@@ -526,7 +509,6 @@ function normalizeInto(raw, reservedSlugs, errors) {
   const extraReserved = new Set(reservedSlugs.map((s) => String(s).toLowerCase()));
   const seenSlugs = new Set();
   const seenIds = new Set();
-  const inNavById = new Map();
 
   const pages = capPages(Array.isArray(input.pages) ? input.pages : []).map((page, index) => {
     const p = page && typeof page === 'object' ? page : {};
@@ -562,7 +544,6 @@ function normalizeInto(raw, reservedSlugs, errors) {
       .forEach((b) => errors.push({ code: 'TOO_MANY_CONTACT_FORMS', pageId: id, blockId: b.id }));
     where = { pageId: id };
     const seo = p.seo && typeof p.seo === 'object' ? p.seo : {};
-    inNavById.set(id, flag(p.inNav, true));
     return {
       id,
       slug,
@@ -590,7 +571,7 @@ function normalizeInto(raw, reservedSlugs, errors) {
   const document = {
     version: DOCUMENT_VERSION,
     pages,
-    menu: normalizeMenu(input.menu, pages, inNavById),
+    menu: normalizeMenu(input.menu, pages),
     footer: normalizeFooter(input.footer),
     theme: normalizeTheme(input.theme),
     customCss: typeof input.customCss === 'string' ? capText(input.customCss, MAX_CUSTOM_CSS, 'customCss') : '',

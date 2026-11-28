@@ -74,7 +74,7 @@ function starterDocument() {
         // The block ids here are fixed so the hero's button finds the
         // contact form.
         { id: 'hero', type: 'hero', variant: 'minimal', heading: 'Photography for the moments that matter', subheading: 'Weddings, portraits and events, told honestly and beautifully.', buttonLabel: 'Get in touch', buttonTarget: { kind: 'anchor', pageId: home, blockId: 'contact' } },
-        { id: 'about', type: 'text', variant: 'center', heading: 'About', body: 'Tell your visitors who you are and how you work.' },
+        { id: 'about', type: 'text', variant: 'center', heading: 'About', body: '<p>Tell your visitors who you are and how you work.</p>' },
         { id: 'contact', type: 'contact', variant: 'simple', heading: 'Let’s talk', intro: 'Tell me about your plans.' },
       ],
     }],

@@ -116,15 +116,20 @@ describe('normalizeDocument', () => {
     expect(document.pages[0].blocks.every((b) => !('buttonUrl' in b))).toBe(true);
   });
 
-  test('a button link stored as an address keeps leading there', () => {
-    const { document } = normalizeDocument({ pages: [page({ blocks: [
+  test('a document holds its current shape only: fields of earlier drafts of the format are not read', () => {
+    const { document } = normalizeDocument({ pages: [page({ inNav: false, blocks: [
       { type: 'hero', buttonLabel: 'Go', buttonUrl: '/portfolio' },
-      { type: 'pricing', buttonLabel: 'Ask', buttonUrl: '#b-contact' },
-      { type: 'imageText', buttonLabel: 'Bad', buttonUrl: 'javascript:alert(1)' },
-    ] })] });
-    expect(document.pages[0].blocks.map((b) => b.buttonTarget)).toEqual([
-      { kind: 'url', url: '/portfolio' }, { kind: 'url', url: '#b-contact' }, null,
-    ]);
+      { type: 'text', format: 'html', body: '<p>Text</p>' },
+    ] })], footer: { background: 'light' } });
+    const [hero, text] = document.pages[0].blocks;
+    expect(hero.buttonTarget).toBeNull();
+    expect('buttonUrl' in hero).toBe(false);
+    expect('format' in text).toBe(false);
+    expect('inNav' in document.pages[0]).toBe(false);
+    // A page is in the menu by the menu's items, and a document without a
+    // menu gets every page.
+    expect(document.menu.items.map((item) => item.id)).toEqual(['p1']);
+    expect(document.footer.background).toBe('default');
   });
 
   test('a link over its length is refused like any other text, not cut', () => {
@@ -228,7 +233,7 @@ test('booleans sent as strings mean what they say', () => {
   const { document } = normalizeDocument({
     pages: [
       page({ isHome: 'true' }),
-      page({ id: 'p2', slug: 'b', hidden: 'true', inNav: 'false', blocks: [
+      page({ id: 'p2', slug: 'b', hidden: 'true', blocks: [
         { type: 'pricing', showPrices: 'false' },
         { type: 'contact', showPhone: 'false', showDate: '1' },
         { type: 'spacer', divider: '0' },
@@ -236,8 +241,6 @@ test('booleans sent as strings mean what they say', () => {
     ],
   });
   expect(document.pages[1]).toMatchObject({ hidden: true, isHome: false });
-  // "Show in the menu" off: the menu made from the pages leaves it out.
-  expect(document.menu.items.map((item) => item.id)).toEqual(['p1']);
   const [pricing, contact, spacer] = document.pages[1].blocks;
   expect(pricing.showPrices).toBe(false);
   expect(contact).toMatchObject({ showPhone: false, showDate: true });

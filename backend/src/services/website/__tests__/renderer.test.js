@@ -174,8 +174,8 @@ test('navigation and footer come from the visible pages; hidden pages are left o
     home([]),
     { id: 'about', slug: 'about', title: 'About', blocks: [] },
     { id: 'secret', slug: 'secret', title: 'Secret', hidden: true, blocks: [] },
-    { id: 'faq', slug: 'faq', title: 'FAQ', inNav: false, blocks: [] },
-  ], { pageId: 'about' });
+    { id: 'faq', slug: 'faq', title: 'FAQ', blocks: [] },
+  ], { pageId: 'about', doc: { menu: { items: ['home', 'about', 'secret'].map((pageId) => ({ id: pageId, target: { kind: 'page', pageId } })) } } });
   expect(html).toContain('<a href="/about" aria-current="page">About</a>');
   expect(html).not.toContain('/secret');
   expect(html).toContain('href="/faq"'); // footer lists it
@@ -423,15 +423,8 @@ describe('divider block', () => {
 describe('rich text in the image and text block', () => {
   const block = (over) => normalizeDocument({ pages: [home([{ type: 'imageText', id: 'i1', ...over }])] }).document.pages[0].blocks[0];
 
-  test('older plain text becomes the HTML it rendered as, so the page stays the same', () => {
-    const body = 'First **bold** line\nsecond [link](https://example.com) line\n\nA *new* paragraph with <script>x</script>';
-    const before = require('../renderer').richText(body);
-    expect(block({ body })).toMatchObject({ format: 'html', body: before });
-    expect(render([home([{ type: 'imageText', id: 'i1', body }])])).toContain(`<div class="pp-prose">${before}</div>`);
-  });
-
   test('HTML from the editor is kept to the rich text allowlist and rendered as it is', () => {
-    const stored = block({ format: 'html', body: '<h2>Title</h2><p>A <strong>b</strong> <a href="javascript:alert(1)">bad</a></p><ul><li>x</li></ul><script>alert(1)</script>' });
+    const stored = block({ body: '<h2>Title</h2><p>A <strong>b</strong> <a href="javascript:alert(1)">bad</a></p><ul><li>x</li></ul><script>alert(1)</script>' });
     expect(stored.body).toContain('<h2>Title</h2>');
     expect(stored.body).toContain('<ul><li>x</li></ul>');
     expect(stored.body).not.toMatch(/script|javascript:/);
@@ -442,18 +435,8 @@ describe('rich text in the image and text block', () => {
 describe('rich text in the text block', () => {
   const textBlock = (over) => normalizeDocument({ pages: [home([{ type: 'text', id: 't1', ...over }])] }).document.pages[0].blocks[0];
 
-  test('older plain text becomes the HTML it always rendered as, so the page stays the same', () => {
-    const body = 'First **bold** line\nsecond [link](https://example.com) line\n\nA *new* paragraph with <script>x</script>';
-    const before = require('../renderer').richText(body);
-    const block = textBlock({ body });
-    expect(block).toMatchObject({ format: 'html' });
-    expect(block.body).toBe(before);
-    expect(render([home([{ type: 'text', id: 't1', body }])])).toContain(`<div class="pp-prose">${before}</div>`);
-  });
-
   test('HTML from the editor keeps its formatting and loses everything else', () => {
     const block = textBlock({
-      format: 'html',
       body: '<h2 style="text-align: center">Title</h2><h1>Big</h1><p>A <strong>b</strong> <em>i</em> <u>u</u> <a href="javascript:alert(1)">bad</a> <a href="https://ok.example">ok</a></p>'
         + '<ul><li>x</li></ul><ol><li>y</li></ol><blockquote><p>q</p></blockquote><p onclick="x()" style="color:red">p</p><img src=x onerror=alert(1)><script>alert(1)</script><iframe src="//x"></iframe>',
     });
@@ -466,22 +449,22 @@ describe('rich text in the text block', () => {
     expect(block.body).toContain('<ul><li>x</li></ul><ol><li>y</li></ol><blockquote><p>q</p></blockquote>');
   });
 
-  test('two columns: one text flows over both as before; with a right column each fills its own', () => {
-    const flowing = render([home([{ type: 'text', id: 't1', variant: 'columns', body: 'Only one' }])]);
+  test('two columns: one text flows over both; with a right column each fills its own', () => {
+    const flowing = render([home([{ type: 'text', id: 't1', variant: 'columns', body: '<p>Only one</p>' }])]);
     expect(flowing).toContain('<div class="pp-prose pp-columns"><p>Only one</p></div>');
-    const split = render([home([{ type: 'text', id: 't1', variant: 'columns', format: 'html', body: '<p>Left</p>', bodyRight: '<p>Right</p>' }])]);
+    const split = render([home([{ type: 'text', id: 't1', variant: 'columns', body: '<p>Left</p>', bodyRight: '<p>Right</p>' }])]);
     expect(split).toContain('<div class="pp-two-cols"><div class="pp-prose"><p>Left</p></div><div class="pp-prose"><p>Right</p></div></div>');
     // The right column is kept in every layout, so switching back restores
     // it; only the columns layout shows it.
-    expect(textBlock({ variant: 'left', format: 'html', body: '<p>L</p>', bodyRight: '<p>R</p>' }).bodyRight).toBe('<p>R</p>');
-    const single = render([home([{ type: 'text', id: 't1', variant: 'left', format: 'html', body: '<p>L</p>', bodyRight: '<p>R</p>' }])]);
+    expect(textBlock({ variant: 'left', body: '<p>L</p>', bodyRight: '<p>R</p>' }).bodyRight).toBe('<p>R</p>');
+    const single = render([home([{ type: 'text', id: 't1', variant: 'left', body: '<p>L</p>', bodyRight: '<p>R</p>' }])]);
     expect(single).toContain('<p>L</p>');
     expect(single).not.toContain('<p>R</p>');
   });
 });
 
 describe('uploaded fonts', () => {
-  test('a woff or ttf weight is linked in its own format; woff2 stays as before', () => {
+  test('a woff or ttf weight is linked in its own format, a woff2 weight as woff2', () => {
     const { fontFaces } = require('../renderer')._internal;
     const css = fontFaces({
       body: { family: 'Studio Sans', weights: [400, 600], formats: { 400: 'ttf', 600: 'woff' } },

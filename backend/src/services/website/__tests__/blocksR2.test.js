@@ -214,9 +214,9 @@ describe('rich text that holds nothing counts as empty', () => {
   });
 
   test('a cleared right column is stored empty and the text is one column again', () => {
-    const { document } = normalize([{ type: 'text', variant: 'columns', format: 'html', body: '<p>Left</p>', bodyRight: '<p><br></p>' }]);
+    const { document } = normalize([{ type: 'text', variant: 'columns', body: '<p>Left</p>', bodyRight: '<p><br></p>' }]);
     expect(document.pages[0].blocks[0].bodyRight).toBe('');
-    const html = render([{ type: 'text', variant: 'columns', format: 'html', body: '<p>Left</p>', bodyRight: '<p>&nbsp;</p>' }]);
+    const html = render([{ type: 'text', variant: 'columns', body: '<p>Left</p>', bodyRight: '<p>&nbsp;</p>' }]);
     expect(html).not.toContain('<div class="pp-two-cols">');
     expect(html).toContain('<div class="pp-prose pp-columns"><p>Left</p></div>');
   });
@@ -226,7 +226,7 @@ describe('rich text that holds nothing counts as empty', () => {
       pages: [{ id: 'home', slug: 'home', title: 'Home', isHome: true, blocks: [
         { type: 'faq', items: [{ question: 'Q', answer: '<p> </p>' }] },
         { type: 'cta', heading: 'H', text: '<p><br></p>' },
-        { type: 'text', format: 'html', body: '<p></p>' },
+        { type: 'text', body: '<p></p>' },
       ] }],
       footer: { columns: [{ kind: 'text', text: '<p>&nbsp;</p>' }] },
     });
