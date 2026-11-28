@@ -198,6 +198,25 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   // spins, and the overlay stays up so a touch user sees it.
   const downloadPending = usePhotoDownloadPending(photo.id);
   const [overlayVisible, setOverlayVisible] = useState(false);
+  // The lane, reached by keyboard: a control inside the tile has keyboard
+  // focus. Held in state rather than left to `:has(:focus-visible)` in the
+  // stylesheet: while focus passes from one control to the next nothing is
+  // focused, the lane would hide its buttons for that instant, and the
+  // browser refuses to focus a button that is not rendered. A click or tap
+  // focuses the tile-sized button too, but not `:focus-visible`, so it does
+  // not keep a tile revealed.
+  const [keyboardInside, setKeyboardInside] = useState(false);
+  const laneActionsRef = useRef<HTMLDivElement | null>(null);
+  const handleLaneFocus = (e: React.FocusEvent<HTMLDivElement>) => {
+    if ((e.target as Element).matches(':focus-visible')) setKeyboardInside(true);
+  };
+  const handleLaneBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setKeyboardInside(false);
+    // Focus on a control that had dropped to a second row scrolls that row
+    // into the lane; back to the first once the keyboard has left.
+    if (laneActionsRef.current) laneActionsRef.current.scrollTop = 0;
+  };
   // #1275 — the input in use right now, not what the device is capable of.
   // On a hybrid the two disagree, and acting on the device's primary pointer
   // handles one of its two inputs as if it were the other.
@@ -385,7 +404,14 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
       : `${base} group-hover:opacity-100 group-hover:pointer-events-auto`;
   };
 
-  const overlayClassName = `${overlayBaseClassName} ${revealed(overlayVisible || (downloadPending && !isSelectionMode))}`;
+  // In the lane the overlay is a shade with no control in it: it shows with
+  // the lane's actions and never takes a click meant for the tile's button.
+  const overlayShown = overlayVisible || (downloadPending && !isSelectionMode);
+  const overlayClassName = lane
+    ? `${overlayBaseClassName} pointer-events-none ${overlayShown || keyboardInside
+      ? 'opacity-100'
+      : isTouchDevice ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'}`
+    : `${overlayBaseClassName} ${revealed(overlayShown)}`;
 
   const checkboxVisibilityClass = revealed(
     isSelected || isSelectionMode || overlayVisible,
@@ -404,13 +430,9 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   // revealed (hover, a tap, a control inside reached by keyboard), so at rest
   // the marks have the row. Hidden as `display: none` rather than faded: a
   // faded control would keep its width and push the marks out for good.
-  // `:focus-visible`, as above: a click or tap leaves its focus on the
-  // tile-sized button, and `:focus-within` would keep that tile revealed.
-  const laneShown = (visible: boolean) => (visible
+  const laneShown = (visible: boolean) => (visible || keyboardInside
     ? 'inline-flex'
-    : isTouchDevice
-      ? 'hidden group-has-[:focus-visible]:inline-flex'
-      : 'hidden group-hover:inline-flex group-has-[:focus-visible]:inline-flex');
+    : isTouchDevice ? 'hidden' : 'hidden group-hover:inline-flex');
   const laneActionShown = laneShown(overlayVisible || downloadPending);
   const actionButtonClass = lane
     ? `${laneActionShown} ${LANE_CONTROL_BOX} ${LANE_CONTROL_SKIN} ${LANE_CONTROL_REST}`
@@ -631,6 +653,8 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
       data-tour="photo"
       style={lazy ? { ...style, opacity: !inView && fadeInWhenVisible ? 0 : 1 } : style}
       onClick={handlePhotoClick}
+      onFocus={lane ? handleLaneFocus : undefined}
+      onBlur={lane ? handleLaneBlur : undefined}
       // A photo tile: the lightbox grows out of the one it was opened from.
       {...{ [GRID_TILE_ATTR]: '' }}
       {...containerProps}
@@ -818,7 +842,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
                   must not blink away with every reveal), then like, then
                   download, both of which the lightbox offers too. Always laid
                   out, so the dots show at rest. */}
-              <div data-lane-actions className="flex min-w-0 flex-wrap content-start items-center justify-end gap-1 h-8 overflow-hidden pointer-events-auto">
+              <div ref={laneActionsRef} data-lane-actions className="flex min-w-0 flex-wrap content-start items-center justify-end gap-1 h-8 overflow-hidden pointer-events-auto">
                 <span aria-hidden="true" className="w-0 h-8" />
                 <ColorLabelBadge
                   colorLabel={photo.my_color_label}

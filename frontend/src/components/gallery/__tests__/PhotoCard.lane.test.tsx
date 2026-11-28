@@ -231,13 +231,75 @@ describe('PhotoCard lane mode', () => {
     expect(screen.getByRole('button', { name: 'View video IMG_0001.jpg' })).toBeInTheDocument();
   });
 
-  it('reveals the actions on hover or keyboard focus, not on the focus a click leaves behind', () => {
+  describe('reveal', () => {
+    // jsdom has no input modality: say whether a focus came from the keyboard.
+    const focusVisible = (value: boolean) => vi.spyOn(Element.prototype, 'matches')
+      .mockImplementation(function matches(this: Element, selector: string) {
+        return selector === ':focus-visible' ? value : Element.prototype.closest.call(this, selector) === this;
+      });
+    const like = () => within(actions()).getByRole('button', { name: 'Like photo' });
+    const open = () => screen.getByRole('button', { name: 'View IMG_0001.jpg' });
+
+    it('shows the actions on hover, by a class alone', () => {
+      renderCard();
+      expect(like()).toHaveClass('hidden', 'group-hover:inline-flex');
+    });
+
+    it('shows them when the keyboard reaches the tile, and keeps them while focus moves between its controls', () => {
+      const spy = focusVisible(true);
+      try {
+        renderCard();
+        fireEvent.focus(open());
+        expect(like()).toHaveClass('inline-flex');
+        expect(like()).not.toHaveClass('hidden');
+        // On to the next control: for an instant nothing is focused. A
+        // reveal tied to `:focus-visible` or `:focus-within` in the
+        // stylesheet hides the buttons right then, and the browser refuses
+        // to focus the one Tab was headed for.
+        fireEvent.blur(open(), { relatedTarget: like() });
+        expect(like()).not.toHaveClass('hidden');
+        expect(lane().innerHTML).not.toMatch(/focus-within|has-\[:focus-visible\]/);
+        // Out of the tile: hidden again.
+        fireEvent.blur(like(), { relatedTarget: document.body });
+        expect(like()).toHaveClass('hidden');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('stays hidden on the focus a click or tap leaves on the tile-sized button', () => {
+      const spy = focusVisible(false);
+      try {
+        renderCard();
+        fireEvent.focus(open());
+        expect(like()).toHaveClass('hidden');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('shows the first row again once the keyboard has left a control on a row that had dropped', () => {
+      const spy = focusVisible(true);
+      try {
+        renderCard();
+        fireEvent.focus(open());
+        // Focus on a wrapped-away control scrolls its row into the lane.
+        actions().scrollTop = 36;
+        fireEvent.blur(like(), { relatedTarget: document.body });
+        expect(actions().scrollTop).toBe(0);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
+  it('never lets the shade take a click meant for the tile\'s button', () => {
     renderCard();
-    const like = within(actions()).getByRole('button', { name: 'Like photo' });
-    // A click or tap focuses the tile-sized button: `:focus-within` would
-    // keep the actions of the last tile clicked on screen.
-    expect(like).toHaveClass('hidden', 'group-hover:inline-flex', 'group-has-[:focus-visible]:inline-flex');
-    expect(lane().innerHTML).not.toContain('focus-within');
+    // It holds no control here, unlike the corner overlay it is in the other layouts.
+    const shade = document.querySelector('.shade') as HTMLElement;
+    expect(shade).toHaveClass('pointer-events-none');
+    expect(shade.className).not.toContain('pointer-events-auto');
+    expect(shade).toHaveClass('opacity-0', 'group-hover:opacity-100');
   });
 
   it('leaves the other layouts\' card as it was', () => {
