@@ -4,7 +4,7 @@
  */
 import React from 'react';
 import { expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -38,7 +38,8 @@ const open = (url: string) => render(
 
 it('opens with the service the link names', async () => {
   open('/book?service=2');
-  expect(await screen.findByRole('radio', { name: /Weddings/ })).toBeChecked();
+  // The choice is made in an effect after the services load: wait for it.
+  await waitFor(() => expect(screen.getByRole('radio', { name: /Weddings/ })).toBeChecked());
   expect(screen.getByRole('radio', { name: /Portraits/ })).not.toBeChecked();
 });
 
