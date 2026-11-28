@@ -493,7 +493,7 @@ function sendWebsitePage(req, res, page, slug) {
     return;
   }
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.status(200).send(page.html);
+  res.status(page.status || 200).send(page.html);
 }
 
 // A path the app answers itself (document.js; the maintenance gate asks the same).
@@ -503,16 +503,29 @@ const ownedByApp = (slug) => require('./src/services/website/document').ownedByA
 // address, the not-found page, all while the website is live. Anything else
 // (the flag off, the site not live) falls through to the routes below
 // exactly as before.
+// A path the website does not answer (the builder off, the site not live)
+// goes on to the app. Behind nginx, whose website location marks its
+// requests (X-PicPeak-Spa-Fallback), the answer is an internal redirect to
+// the SPA shell: nginx no longer turns a 404 into the shell, so the website's
+// own not-found page can be a real 404. Without nginx, the routes below.
+function notOurs(req, res, next) {
+  if (req.get('X-PicPeak-Spa-Fallback') === '1') {
+    res.setHeader('X-Accel-Redirect', '/__spa');
+    return res.status(200).end();
+  }
+  return next();
+}
+
 async function handleWebsitePageRequest(req, res, next) {
   try {
     // Paths the app owns (/health, /admin, ...) never cost a lookup.
-    if (ownedByApp(req.params[0])) return next();
+    if (ownedByApp(req.params[0])) return notOurs(req, res, next);
     const page = await require('./src/services/website/service').resolvePublicPage(req.params[0]);
-    if (!page) return next();
+    if (!page) return notOurs(req, res, next);
     return sendWebsitePage(req, res, page, req.params[0]);
   } catch (error) {
     logger.error('Failed to render website page', { error: error.message });
-    return next();
+    return notOurs(req, res, next);
   }
 }
 

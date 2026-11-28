@@ -738,7 +738,8 @@ async function systemPage(document, slug, { notFound = false } = {}) {
   ctx.page.title = (de ? row.title_de : row.title_en) || row.title_en || row.title_de || slug;
   if (notFound) ctx.robots = 'noindex';
   const content = sanitizeCmsHtml((de ? row.content_de : row.content_en) || row.content_en || '');
-  return withEtag(renderSystemPage(ctx, { content, canonical: !notFound }), { system: true, ...(notFound ? { notFound: true } : {}) });
+  // The not-found page is a real 404 (nginx passes it through, nginx.conf).
+  return withEtag(renderSystemPage(ctx, { content, canonical: !notFound }), { system: true, ...(notFound ? { notFound: true, status: 404 } : {}) });
 }
 
 // One rendering of the not-found page for every unknown address.

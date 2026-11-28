@@ -120,8 +120,28 @@ test('paths the app owns still reach the SPA; legal pages and unknown slugs take
   expect(legal.text).toContain('class="pp-header"');
   expect(legal.headers['content-security-policy']).toContain('script-src \'none\'');
   const missing = await request(app).get('/no-such-page');
+  // A real 404, in the website's design.
+  expect(missing.status).toBe(404);
   expect(missing.text).toContain('Page Not Found text');
   expect(missing.headers['x-robots-tag']).toBe('noindex');
+});
+
+test('behind nginx, a path the website does not answer is handed back for the SPA shell', async () => {
+  // nginx marks the requests of its website location (frontend/nginx.conf).
+  const viaNginx = (path) => request(app).get(path).set('X-PicPeak-Spa-Fallback', '1');
+  await setFeatureFlags(db, { websiteBuilder: false });
+  require('../src/services/website/cache').clearWebsiteCache();
+  const off = await viaNginx('/about');
+  expect(off.status).toBe(200);
+  expect(off.headers['x-accel-redirect']).toBe('/__spa');
+  expect(off.text).toBe('');
+  // Without nginx (the backend serves the app itself): the SPA, as before.
+  expect((await request(app).get('/about')).text).toContain('<div id="root">SPA</div>');
+  await setFeatureFlags(db, { websiteBuilder: true });
+  require('../src/services/website/cache').clearWebsiteCache();
+  // The website's own pages and its not-found page are answered directly.
+  expect((await viaNginx('/about')).headers['x-accel-redirect']).toBeUndefined();
+  expect((await viaNginx('/no-such-page')).status).toBe(404);
 });
 
 test('the public site switch still turns the website off', async () => {

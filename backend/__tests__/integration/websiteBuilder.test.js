@@ -1886,7 +1886,7 @@ describe('legal and system pages in the website design', () => {
 
   test('an address with no page shows the not-found page, noindex, in the website design', async () => {
     const page = await service.resolvePublicPage('no-such-page');
-    expect(page).toMatchObject({ status: 200, notFound: true, noindex: true, system: true });
+    expect(page).toMatchObject({ status: 404, notFound: true, noindex: true, system: true });
     expect(page.html).toContain('Nothing lives here.');
     expect(page.html).toContain('class="pp-footer"');
     expect(page.html).toContain('content="noindex');

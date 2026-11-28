@@ -81,3 +81,15 @@ test('a website page whose address starts like a static path still reaches the w
   // (A bare /uploads or /fonts, which nothing requests, gets nginx's 301 to
   // the slash form of a proxied prefix location; checked in a stub run.)
 });
+
+test('the website location passes a website 404 through and hands every other answer to the SPA shell', () => {
+  const website = block('location ~ "^/(?!(?:');
+  // nginx answers 502/503/504 with the shell; a 404 is the website's own page.
+  expect(website).toMatch(/error_page 502 503 504 = \/index\.html;/);
+  expect(website).not.toMatch(/error_page[^;]*\b404\b/);
+  // The backend hands a path it does not answer back with X-Accel-Redirect.
+  expect(website).toContain('proxy_set_header X-PicPeak-Spa-Fallback "1";');
+  const spa = block('location = /__spa {');
+  expect(spa).toContain('internal;');
+  expect(spa).toContain('try_files /index.html =404;');
+});
