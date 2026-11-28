@@ -55,6 +55,8 @@ export function useWebsiteEditor() {
   draftRef.current = draft;
   const baseRef = useRef<Base | null>(null);
   baseRef.current = base;
+  const serverRef = useRef<EditorState | undefined>(undefined);
+  serverRef.current = server;
 
   const replaceDraft = useCallback((next: WebsiteDocument | null) => {
     draftRef.current = next;
@@ -167,10 +169,20 @@ export function useWebsiteEditor() {
   });
 
   const discard = useCallback(() => {
-    if (baseRef.current) replaceDraft(baseRef.current.document);
+    const from = baseRef.current;
+    const latest = serverRef.current;
+    // A newer draft fetched while this one had edits was left waiting (see
+    // the effect above). It is what there is to return to now: the old base
+    // would send the next save against a revision that is gone.
+    if (from && latest && latest.draft.revision > from.revision) {
+      rebase(latest);
+      setConflict(false);
+      return;
+    }
+    if (from) replaceDraft(from.document);
     setHistory({ past: [], future: [] });
     lastEdit.current = null;
-  }, [replaceDraft]);
+  }, [rebase, replaceDraft]);
 
   /**
    * After a conflict: drop the local draft and load what is stored now. Only

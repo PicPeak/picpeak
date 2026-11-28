@@ -99,6 +99,38 @@ describe('useWebsiteEditor', () => {
     expect(result.current.canUndo).toBe(false);
   });
 
+  it('discard continues from a newer draft that was fetched while this one had edits', async () => {
+    vi.mocked(websiteService.saveDraft).mockResolvedValue(state('Next', 3));
+    const { result } = setup();
+    await waitFor(() => expect(result.current.draft).not.toBeNull());
+    act(() => result.current.update(rename('Mine')));
+    // A colleague saved meanwhile; the dirty draft left revision 2 waiting.
+    act(() => { client.setQueryData(['website-editor'], state('Theirs', 2)); });
+    await waitFor(() => expect(result.current.server?.draft.revision).toBe(2));
+    expect(result.current.draft?.pages[0].title).toBe('Mine');
+    act(() => result.current.discard());
+    expect(result.current.draft?.pages[0].title).toBe('Theirs');
+    expect(result.current.isDirty).toBe(false);
+    act(() => result.current.update(rename('Next')));
+    await act(async () => { await result.current.save.mutateAsync(); });
+    expect(websiteService.saveDraft).toHaveBeenLastCalledWith(expect.anything(), 2);
+  });
+
+  it('discard after a refused save leaves no conflict when the newer draft is already here', async () => {
+    vi.mocked(websiteService.saveDraft).mockRejectedValue({ response: { status: 409, data: { code: 'WEBSITE_REVISION_CONFLICT' } } });
+    const { result } = setup();
+    await waitFor(() => expect(result.current.draft).not.toBeNull());
+    act(() => result.current.update(rename('Mine')));
+    act(() => { client.setQueryData(['website-editor'], state('Theirs', 2)); });
+    await waitFor(() => expect(result.current.server?.draft.revision).toBe(2));
+    await act(async () => { await result.current.save.mutateAsync().catch(() => {}); });
+    expect(result.current.conflict).toBe(true);
+    act(() => result.current.discard());
+    expect(result.current.draft?.pages[0].title).toBe('Theirs');
+    expect(result.current.conflict).toBe(false);
+    expect(result.current.canUndo).toBe(false);
+  });
+
   it('keeps a dirty draft on a refetch and saves it against the revision it was based on', async () => {
     vi.mocked(websiteService.saveDraft).mockRejectedValue({ response: { status: 409, data: { code: 'WEBSITE_REVISION_CONFLICT' } } });
     const { result } = setup();
