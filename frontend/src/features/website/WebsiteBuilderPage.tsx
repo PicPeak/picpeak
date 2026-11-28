@@ -302,7 +302,11 @@ export const WebsiteBuilderPage: React.FC = () => {
       )}
       <fieldset disabled={!canEdit}>
         <WebsiteDocContext.Provider value={draft}>
+          {/* Keyed by page and block: each block gets fresh fields, and the rich
+              text editor a fresh undo history (Ctrl+Z in one block never
+              brings back another's text). */}
           <BlockEditor
+            key={`${page.id}:${block.id}`}
             block={block}
             brandColors={server.brandColors}
             onChange={(next, field) => setPageBlocks((blocks) => blocks.map((b) => (b.id === next.id ? next : b)), field ? `${next.id}.${field}` : undefined)}

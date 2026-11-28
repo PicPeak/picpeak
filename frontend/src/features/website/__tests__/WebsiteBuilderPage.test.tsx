@@ -21,6 +21,17 @@ vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+// The rich text editor keeps its own undo history: each mount is a fresh one.
+const editorMounts: string[] = [];
+vi.mock('../../../components/admin/CMSEditor', async () => {
+  const ReactActual = await vi.importActual<typeof import('react')>('react');
+  return {
+    CMSEditor: ({ content, onChange }: { content: string; onChange: (v: string) => void }) => {
+      ReactActual.useEffect(() => { editorMounts.push(content); }, []);
+      return <textarea aria-label="rich" value={content} onChange={(e) => onChange(e.target.value)} />;
+    },
+  };
+});
 // A split-origin install: resources live on the API's origin.
 vi.mock('../../../utils/url', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../utils/url')>()),
@@ -181,6 +192,29 @@ describe('WebsiteBuilderPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'All blocks' }));
     fireEvent.click(await screen.findByText('Second form'));
     expect(screen.getByText(/Only one contact form per page is shown/)).toBeInTheDocument();
+  });
+
+  it('each text block gets its own rich text editor, so its undo never brings back another block\'s text', async () => {
+    const state = structuredClone(STATE);
+    const text = (id: string, heading: string, body: string, variant = 'left') => ({ id, type: 'text' as const, variant, background: 'default' as const, heading, body, bodyRight: '', format: 'html' as const });
+    state.document.pages[0].blocks = [text('ta', 'Block A', '<p>A</p>'), text('tb', 'Block B', '<p>B</p>'), text('tc', 'Block C', '<p>C left</p>', 'columns')];
+    vi.mocked(websiteService.getState).mockResolvedValue(state);
+    renderPage();
+    editorMounts.length = 0;
+    fireEvent.click(await screen.findByText('Block A'));
+    expect(editorMounts).toEqual(['<p>A</p>']);
+    fireEvent.click(screen.getByRole('button', { name: 'All blocks' }));
+    fireEvent.click(await screen.findByText('Block B'));
+    expect(editorMounts).toEqual(['<p>A</p>', '<p>B</p>']);
+    fireEvent.click(screen.getByRole('button', { name: 'All blocks' }));
+    fireEvent.click(await screen.findByText('Block C'));
+    // Two columns, two editors of their own.
+    expect(editorMounts.slice(2)).toEqual(['<p>C left</p>', '']);
+    // Another block chosen without going back to the list (here its copy;
+    // the preview's click does the same): a fresh editor, not block C's.
+    editorMounts.length = 0;
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate block' }));
+    expect(editorMounts).toEqual(['<p>C left</p>', '']);
   });
 
   it('adds a block after the selected one', async () => {

@@ -127,7 +127,7 @@ export const FooterSection: React.FC<FooterSectionProps> = ({ doc, update, readO
               <p className="text-xs text-muted">{t('website.footer.pagesHint', 'Every published page, in page order.')}</p>
             )}
             {current.kind === 'text' && (
-              <RichTextField label={t('website.fields.body', 'Text')} value={current.text} onChange={(text) => patchColumn(current.id, { text }, 'text')} />
+              <RichTextField key={current.id} label={t('website.fields.body', 'Text')} value={current.text} onChange={(text) => patchColumn(current.id, { text }, 'text')} />
             )}
             {current.kind === 'links' && (
               <LinksEditor links={current.links} onChange={(links) => patchColumn(current.id, { links })} />

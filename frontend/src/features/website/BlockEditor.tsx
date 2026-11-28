@@ -75,13 +75,13 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange, brand
         <TextField label={t('website.fields.heading', 'Heading')} value={block.heading} maxLength={200} onChange={(heading) => set(block, { heading }, 'heading')} />
         {block.variant === 'columns' ? (
           <>
-            <RichTextField label={t('website.fields.leftColumn', 'Left column')} value={block.body} onChange={(body) => set(block, { body }, 'body')} />
-            <RichTextField label={t('website.fields.rightColumn', 'Right column')} value={block.bodyRight || ''}
+            <RichTextField key="body" label={t('website.fields.leftColumn', 'Left column')} value={block.body} onChange={(body) => set(block, { body }, 'body')} />
+            <RichTextField key="bodyRight" label={t('website.fields.rightColumn', 'Right column')} value={block.bodyRight || ''}
               helperText={t('website.fields.rightColumnHint', 'Leave it empty and the left text flows over both columns.')}
               onChange={(bodyRight) => set(block, { bodyRight }, 'bodyRight')} />
           </>
         ) : (
-          <RichTextField label={t('website.fields.body', 'Text')} value={block.body} onChange={(body) => set(block, { body }, 'body')} />
+          <RichTextField key="body" label={t('website.fields.body', 'Text')} value={block.body} onChange={(body) => set(block, { body }, 'body')} />
         )}
       </>
     );
