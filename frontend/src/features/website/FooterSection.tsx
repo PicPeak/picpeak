@@ -82,7 +82,6 @@ export const FooterSection: React.FC<FooterSectionProps> = ({ doc, update, readO
     contact: t('website.footer.kindContact', 'Contact details'),
     social: t('website.footer.kindSocial', 'Social links'),
   };
-  const current = footer.columns.find((c) => c.id === editing);
 
   return (
     <WebsiteDocContext.Provider value={doc}>
@@ -114,40 +113,39 @@ export const FooterSection: React.FC<FooterSectionProps> = ({ doc, update, readO
               )}
             </div>
           )}
+          renderDetails={(current) => (current.id !== editing ? null : (
+            <>
+              <TextField label={t('website.footer.heading', 'Column heading (optional)')} value={current.heading} maxLength={80}
+                onChange={(heading) => patchColumn(current.id, { heading }, 'heading')} />
+              {current.kind === 'brand' && (
+                <p className="text-xs text-muted">{t('website.footer.brandHint', 'Your company name, tagline and footer text from the branding settings.')}</p>
+              )}
+              {current.kind === 'pages' && (
+                <p className="text-xs text-muted">{t('website.footer.pagesHint', 'Every published page, in page order.')}</p>
+              )}
+              {current.kind === 'text' && (
+                <RichTextField key={current.id} label={t('website.fields.body', 'Text')} value={current.text} onChange={(text) => patchColumn(current.id, { text }, 'text')} />
+              )}
+              {current.kind === 'links' && (
+                <LinksEditor links={current.links} onChange={(links) => patchColumn(current.id, { links })} />
+              )}
+              {current.kind === 'contact' && (
+                <>
+                  <TextField label={t('website.footer.email', 'E-mail')} value={current.email} maxLength={254} onChange={(email) => patchColumn(current.id, { email }, 'email')} />
+                  <TextField label={t('website.footer.phone', 'Phone')} value={current.phone} maxLength={40} onChange={(phone) => patchColumn(current.id, { phone }, 'phone')} />
+                  <TextArea label={t('website.footer.address', 'Address')} value={current.address} rows={3} maxLength={300} onChange={(address) => patchColumn(current.id, { address }, 'address')} />
+                </>
+              )}
+              {current.kind === 'social' && (
+                <SocialLinksField value={current.social} onChange={(social) => patchColumn(current.id, { social })} />
+              )}
+              <Button size="sm" variant="ghost" leftIcon={<Trash2 className="w-4 h-4" />}
+                onClick={() => { setFooter({ columns: footer.columns.filter((c) => c.id !== current.id) }); setEditing(null); }}>
+                {t('website.footer.removeColumn', 'Remove column')}
+              </Button>
+            </>
+          ))}
         />
-
-        {current && !readOnly && (
-          <div className="rounded-lg border border-line p-3 space-y-3">
-            <TextField label={t('website.footer.heading', 'Column heading (optional)')} value={current.heading} maxLength={80}
-              onChange={(heading) => patchColumn(current.id, { heading }, 'heading')} />
-            {current.kind === 'brand' && (
-              <p className="text-xs text-muted">{t('website.footer.brandHint', 'Your company name, tagline and footer text from the branding settings.')}</p>
-            )}
-            {current.kind === 'pages' && (
-              <p className="text-xs text-muted">{t('website.footer.pagesHint', 'Every published page, in page order.')}</p>
-            )}
-            {current.kind === 'text' && (
-              <RichTextField key={current.id} label={t('website.fields.body', 'Text')} value={current.text} onChange={(text) => patchColumn(current.id, { text }, 'text')} />
-            )}
-            {current.kind === 'links' && (
-              <LinksEditor links={current.links} onChange={(links) => patchColumn(current.id, { links })} />
-            )}
-            {current.kind === 'contact' && (
-              <>
-                <TextField label={t('website.footer.email', 'E-mail')} value={current.email} maxLength={254} onChange={(email) => patchColumn(current.id, { email }, 'email')} />
-                <TextField label={t('website.footer.phone', 'Phone')} value={current.phone} maxLength={40} onChange={(phone) => patchColumn(current.id, { phone }, 'phone')} />
-                <TextArea label={t('website.footer.address', 'Address')} value={current.address} rows={3} maxLength={300} onChange={(address) => patchColumn(current.id, { address }, 'address')} />
-              </>
-            )}
-            {current.kind === 'social' && (
-              <SocialLinksField value={current.social} onChange={(social) => patchColumn(current.id, { social })} />
-            )}
-            <Button size="sm" variant="ghost" leftIcon={<Trash2 className="w-4 h-4" />}
-              onClick={() => { setFooter({ columns: footer.columns.filter((c) => c.id !== current.id) }); setEditing(null); }}>
-              {t('website.footer.removeColumn', 'Remove column')}
-            </Button>
-          </div>
-        )}
 
         {!readOnly && (
           <div className="flex items-end gap-2">

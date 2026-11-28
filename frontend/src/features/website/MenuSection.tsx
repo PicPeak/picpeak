@@ -46,7 +46,6 @@ export const MenuSection: React.FC<MenuSectionProps> = ({ doc, update, readOnly 
     setMenu({ items: [...menu.items, item] });
     setEditing(item.id);
   };
-  const current = menu.items.find((item) => item.id === editing);
 
   return (
     <WebsiteDocContext.Provider value={doc}>
@@ -81,22 +80,21 @@ export const MenuSection: React.FC<MenuSectionProps> = ({ doc, update, readOnly 
               </div>
             );
           }}
+          renderDetails={(current) => (current.id !== editing ? null : (
+            <>
+              <TextField label={t('website.menu.label', 'Label')} value={current.label} maxLength={60}
+                placeholder={shownLabel({ ...current, label: '' }, doc, t)}
+                helperText={current.target.kind === 'page' ? t('website.menu.labelHint', 'Empty: the page’s menu label or title.') : undefined}
+                onChange={(label) => patchItem(current.id, { label }, 'label')} />
+              <Switch checked={!current.hidden} onChange={(shown) => patchItem(current.id, { hidden: !shown })} label={t('website.menu.shown', 'Shown in the menu')} />
+              <LinkTargetField value={current.target} onChange={(target) => { if (target) patchItem(current.id, { target }); }} />
+              <Button size="sm" variant="ghost" leftIcon={<Trash2 className="w-4 h-4" />}
+                onClick={() => { setMenu({ items: menu.items.filter((item) => item.id !== current.id) }); setEditing(null); }}>
+                {t('website.menu.remove', 'Remove from the menu')}
+              </Button>
+            </>
+          ))}
         />
-
-        {current && !readOnly && (
-          <div className="rounded-lg border border-line p-3 space-y-3">
-            <TextField label={t('website.menu.label', 'Label')} value={current.label} maxLength={60}
-              placeholder={shownLabel({ ...current, label: '' }, doc, t)}
-              helperText={current.target.kind === 'page' ? t('website.menu.labelHint', 'Empty: the page’s menu label or title.') : undefined}
-              onChange={(label) => patchItem(current.id, { label }, 'label')} />
-            <Switch checked={!current.hidden} onChange={(shown) => patchItem(current.id, { hidden: !shown })} label={t('website.menu.shown', 'Shown in the menu')} />
-            <LinkTargetField value={current.target} onChange={(target) => { if (target) patchItem(current.id, { target }); }} />
-            <Button size="sm" variant="ghost" leftIcon={<Trash2 className="w-4 h-4" />}
-              onClick={() => { setMenu({ items: menu.items.filter((item) => item.id !== current.id) }); setEditing(null); }}>
-              {t('website.menu.remove', 'Remove from the menu')}
-            </Button>
-          </div>
-        )}
 
         {!readOnly && (
           <Button size="sm" variant="secondary" leftIcon={<Plus className="w-4 h-4" />} disabled={menu.items.length >= MAX_MENU_ITEMS} onClick={addItem}>

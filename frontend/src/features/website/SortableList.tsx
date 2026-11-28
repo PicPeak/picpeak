@@ -4,7 +4,7 @@
  * sensor), or the up/down buttons. Same pattern as the contract template
  * clause list.
  */
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent, type Modifier,
@@ -22,13 +22,30 @@ interface RowProps {
   label: string;
   onMove: (from: number, to: number) => void;
   children: React.ReactNode;
+  /** The row's own form, shown under it while it is edited. */
+  details?: React.ReactNode;
   selected?: boolean;
   readOnly?: boolean;
 }
 
+/**
+ * A row's form, opened right under the row: brought into view, its first
+ * field focused, so it is found also in a list longer than the panel.
+ */
+const RowDetails: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const box = ref.current;
+    if (!box) return;
+    box.scrollIntoView?.({ block: 'nearest' });
+    box.querySelector<HTMLElement>('input, select, textarea, [contenteditable="true"]')?.focus({ preventScroll: true });
+  }, []);
+  return <div ref={ref} className="border-t border-line p-3 space-y-3">{children}</div>;
+};
+
 const iconButton = 'inline-flex items-center justify-center w-7 h-7 rounded-md text-faint hover:text-body hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent';
 
-const Row: React.FC<RowProps> = ({ id, index, count, label, onMove, children, selected, readOnly }) => {
+const Row: React.FC<RowProps> = ({ id, index, count, label, onMove, children, details, selected, readOnly }) => {
   const { t } = useTranslation();
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: readOnly });
   if (readOnly) {
@@ -40,8 +57,9 @@ const Row: React.FC<RowProps> = ({ id, index, count, label, onMove, children, se
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`flex items-center gap-1 rounded-lg border bg-panel pl-1 pr-1.5 py-1 ${selected ? 'border-accent' : 'border-line'} ${isDragging ? 'shadow-lg relative z-10' : ''}`}
+      className={`rounded-lg border bg-panel ${selected ? 'border-accent' : 'border-line'} ${isDragging ? 'shadow-lg relative z-10' : ''}`}
     >
+      <div className="flex items-center gap-1 pl-1 pr-1.5 py-1">
       <button
         type="button"
         ref={setActivatorNodeRef}
@@ -61,6 +79,8 @@ const Row: React.FC<RowProps> = ({ id, index, count, label, onMove, children, se
         aria-label={t('website.list.moveDown', 'Move “{{name}}” down', { name: label }) as string}>
         <ArrowDown className="w-4 h-4" aria-hidden="true" />
       </button>
+      </div>
+      {details && <RowDetails>{details}</RowDetails>}
     </li>
   );
 };
@@ -86,11 +106,13 @@ interface SortableListProps<T> {
   onMove: (from: number, to: number) => void;
   renderItem: (item: T, index: number) => React.ReactNode;
   selectedId?: string | null;
+  /** The form of an item being edited, shown under its row (null: none). */
+  renderDetails?: (item: T, index: number) => React.ReactNode;
   /** Shown in order, without the handle and the move buttons. */
   readOnly?: boolean;
 }
 
-export function SortableList<T>({ items, getId, getLabel, onMove, renderItem, selectedId, readOnly = false }: SortableListProps<T>) {
+export function SortableList<T>({ items, getId, getLabel, onMove, renderItem, selectedId, renderDetails, readOnly = false }: SortableListProps<T>) {
   const { t } = useTranslation();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -117,7 +139,8 @@ export function SortableList<T>({ items, getId, getLabel, onMove, renderItem, se
       <SortableContext items={ids} strategy={verticalListSortingStrategy}>
         <ol className="space-y-1.5">
           {items.map((item, index) => (
-            <Row key={getId(item)} id={getId(item)} index={index} count={items.length} label={getLabel(item)} onMove={onMove} selected={selectedId === getId(item)} readOnly={readOnly}>
+            <Row key={getId(item)} id={getId(item)} index={index} count={items.length} label={getLabel(item)} onMove={onMove} selected={selectedId === getId(item)} readOnly={readOnly}
+              details={readOnly ? null : renderDetails?.(item, index)}>
               {renderItem(item, index)}
             </Row>
           ))}

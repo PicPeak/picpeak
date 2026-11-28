@@ -57,6 +57,16 @@ describe('menu section', () => {
     expect(menu().items[2]).toMatchObject({ label: '', hidden: false, target: { kind: 'url', url: '' } });
   });
 
+  it('opens an item\'s form under its own row, with the first field focused', () => {
+    open();
+    fireEvent.click(screen.getAllByRole('button', { name: /Edit menu item/ })[1]);
+    const label = screen.getByLabelText('Label');
+    const rows = screen.getAllByRole('listitem');
+    expect(rows[1].contains(label)).toBe(true);
+    expect(rows[0].contains(label)).toBe(false);
+    expect(document.activeElement).toBe(label);
+  });
+
   it('sets the design', () => {
     const { menu } = open();
     fireEvent.click(screen.getByRole('button', { name: 'Logo centred' }));

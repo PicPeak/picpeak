@@ -40,6 +40,16 @@ describe('footer section', () => {
     expect(footer().columns[2]).toMatchObject({ kind: 'contact', heading: '', email: '', phone: '', address: '' });
   });
 
+  it('opens a column\'s form under its own row, with the first field focused', () => {
+    open();
+    fireEvent.click(screen.getAllByRole('button', { name: /Edit column/ })[1]);
+    const heading = screen.getByLabelText('Column heading (optional)');
+    const rows = screen.getAllByRole('listitem');
+    expect(rows[1].contains(heading)).toBe(true);
+    expect(rows[0].contains(heading)).toBe(false);
+    expect(document.activeElement).toBe(heading);
+  });
+
   it('moves the legal links to the copyright row and writes its own copyright line', () => {
     const footer = open();
     fireEvent.click(screen.getByRole('button', { name: 'Next to the copyright' }));
