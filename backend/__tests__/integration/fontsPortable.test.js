@@ -21,6 +21,12 @@ beforeAll(async () => {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, '400.woff2'), Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(60)]));
   fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify({ generic: 'serif' }));
+  // What a font download brings along: its licence and notes.
+  fs.writeFileSync(path.join(dir, 'OFL.txt'), 'SIL Open Font License 1.1');
+  fs.writeFileSync(path.join(dir, 'README.md'), '# Studio Serif');
+  // And what does not belong in a served folder.
+  fs.writeFileSync(path.join(dir, 'preview.html'), '<script>x()</script>');
+  fs.writeFileSync(path.join(dir, 'huge-notes.txt'), 'x'.repeat(300 * 1024));
 });
 afterAll(async () => { if (cleanup) await cleanup(); });
 
@@ -31,7 +37,15 @@ test('an export carries the uploaded fonts', async () => {
   const zip = new StreamZip.async({ file });
   try {
     const names = Object.keys(await zip.entries());
-    expect(names).toEqual(expect.arrayContaining(['files/fonts/Studio-Serif/400.woff2', 'files/fonts/Studio-Serif/meta.json']));
+    expect(names).toEqual(expect.arrayContaining(['files/fonts/Studio-Serif/400.woff2', 'files/fonts/Studio-Serif/meta.json',
+      'files/fonts/Studio-Serif/OFL.txt', 'files/fonts/Studio-Serif/README.md']));
+    expect(names).not.toContain('files/fonts/Studio-Serif/preview.html');
+    expect(names).not.toContain('files/fonts/Studio-Serif/huge-notes.txt');
+    // One rule on both sides: the import takes every file the export writes.
+    const { importFilePathProblem } = require('../../src/services/picpeakImportService');
+    for (const name of names.filter((n) => n.startsWith('files/fonts/'))) {
+      expect([name, importFilePathProblem(name.slice('files/'.length))]).toEqual([name, null]);
+    }
   } finally {
     await zip.close();
   }
@@ -42,7 +56,10 @@ test('the import takes font files and a family\'s meta.json into fonts/, nothing
   expect(importFilePathProblem('fonts/Studio-Serif/400.woff2')).toBeNull();
   expect(importFilePathProblem('fonts/Studio-Serif/700.ttf')).toBeNull();
   expect(importFilePathProblem('fonts/Studio-Serif/meta.json')).toBeNull();
-  for (const bad of ['fonts/Studio-Serif/payload.html', 'fonts/Studio-Serif/x.js', 'fonts/x.woff2', 'fonts/A/B/400.woff2', 'fonts/Studio-Serif/notes.txt']) {
+  for (const licence of ['fonts/Studio-Serif/OFL.txt', 'fonts/Studio-Serif/LICENSE', 'fonts/Studio-Serif/LICENCE.md', 'fonts/Studio-Serif/README', 'fonts/Studio-Serif/FONTLOG.txt']) {
+    expect([licence, importFilePathProblem(licence)]).toEqual([licence, null]);
+  }
+  for (const bad of ['fonts/Studio-Serif/payload.html', 'fonts/Studio-Serif/x.js', 'fonts/x.woff2', 'fonts/A/B/400.woff2', 'fonts/Studio-Serif/notes.pdf', 'fonts/Studio-Serif/.hidden.txt']) {
     expect([bad, importFilePathProblem(bad)]).toEqual([bad, expect.any(String)]);
   }
 });

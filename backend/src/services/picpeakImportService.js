@@ -85,8 +85,9 @@ const IMPORT_FILE_ROOTS = ['.print-sales', 'album-products', 'business-docs', 'u
 // contracts, business documents, event media — is handed out by authorised
 // routes as an attachment under its stored name, never as a page.
 const IMPORT_PUBLICLY_SERVED_PREFIXES = ['uploads/logos', 'uploads/favicons'];
-// fonts/<Family-Name>/<weight>.<woff2|woff|ttf> or its meta.json, nothing else.
-const IMPORT_FONT_FILE = /^fonts\/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\/(?:\d{1,4}\.(?:woff2|woff|ttf)|meta\.json)$/;
+// fonts/: a family's font files, meta.json and licence texts, nothing else;
+// the export takes exactly what this accepts (utils/portableFontFiles).
+const { portableFontPath } = require('../utils/portableFontFiles');
 // Active web content must never land in a served subtree through an archive.
 // SVG is deliberately not here: it is a supported logo format and
 // secureStatic serves it under a script-blocking CSP. Outside the served
@@ -103,7 +104,7 @@ function importFilePathProblem(rel) {
   if (parts.some((p) => !p || p === '.' || p === '..')) return 'malformed path';
   const root = IMPORT_FILE_ROOTS.find((r) => rel === r || rel.startsWith(`${r}/`));
   if (!root || rel === root) return `not under an exported storage folder (${IMPORT_FILE_ROOTS.join(', ')})`;
-  if (root === 'fonts' && !IMPORT_FONT_FILE.test(rel)) return 'not a font file';
+  if (root === 'fonts' && !portableFontPath(rel)) return 'not a font file';
   // Compared case-insensitively: a case-insensitive filesystem would land
   // `uploads/Logos/x.html` in the served directory all the same.
   const lower = rel.toLowerCase();
