@@ -554,7 +554,12 @@ router.get('/', adminAuth, requirePermission('settings.view'), async (req, res) 
 
 // Fonts (issue 2618): the families the galleries and the website offer,
 // and uploads of new ones (WOFF2, WOFF or TTF, known by their first bytes).
-const fontUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1 } }).single('file');
+// No bracket-indexed field names (fieldArrayIndexLimit, as adminCMS): a huge
+// index would have the field parser walk a sparse array synchronously.
+const fontUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 3, fieldArrayIndexLimit: 0 },
+}).single('file');
 router.get('/fonts', adminAuth, requirePermission('settings.view'), async (req, res) => {
   try {
     res.json({ fonts: await require('../services/fontsService').listFonts() });

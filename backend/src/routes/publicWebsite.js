@@ -25,8 +25,11 @@ const router = express.Router();
 // Fields only: six text inputs, two hidden ones and the captcha's answer. Multer counts bytes; the
 // longest field (the message, MESSAGE_MAX characters) may take four bytes a
 // character in UTF-8. Characters are checked in validateSubmission.
+// No bracket-indexed field names (fieldArrayIndexLimit, as the upload
+// routes): a huge index would have the field parser walk a sparse array
+// synchronously, before any other check.
 const formFields = multer({
-  limits: { fields: 12, fieldSize: 4 * contact.MESSAGE_MAX, files: 0, parts: 12, fieldNameSize: 40 },
+  limits: { fields: 12, fieldSize: 4 * contact.MESSAGE_MAX, files: 0, parts: 12, fieldNameSize: 40, fieldArrayIndexLimit: 0 },
 }).none();
 
 function back(res, page, blockId, outcome) {
@@ -49,9 +52,16 @@ const senderLimit = (windowMs, max) => rateLimit({
 const hourly = senderLimit(60 * 60 * 1000, 5);
 const daily = senderLimit(24 * 60 * 60 * 1000, 20);
 
-router.post('/contact', daily, hourly, (req, res, next) => {
+// The site must be live before its form is even parsed.
+const whileLive = (req, res, next) => websiteService.isWebsiteActive()
+  .then((active) => (active ? next() : res.status(404).type('text/plain').send('Not found')))
+  .catch(next);
+
+router.post('/contact', daily, hourly, whileLive, (req, res, next) => {
   formFields(req, res, (err) => {
     if (!err) return next();
+    // Bracket-indexed field names: never from the form, a plain 400.
+    if (err.code === 'LIMIT_FIELD_ARRAY_INDEX') return res.status(400).type('text/plain').send('Invalid form');
     // Over the parser's limits: the visitor gets the form's own error note
     // when the fields before the overflow name it, else a plain 400.
     return contact.findForm(String(req.body?.page || ''), String(req.body?.block || ''))
@@ -60,7 +70,6 @@ router.post('/contact', daily, hourly, (req, res, next) => {
   });
 }, async (req, res) => {
   try {
-    if (!(await websiteService.isWebsiteActive())) return res.status(404).type('text/plain').send('Not found');
     // Another site must not post into the studio's inbox through a
     // visitor's browser; a same-origin form passes (Sec-Fetch-Site).
     if (!mutationOriginAllowed(req)) return res.status(403).type('text/plain').send('Cross-site request rejected');

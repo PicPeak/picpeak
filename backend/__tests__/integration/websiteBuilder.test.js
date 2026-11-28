@@ -2139,3 +2139,32 @@ describe('one contact form per page, through the API', () => {
     expect(await contact.findForm('home', 'c2')).toBeNull();
   });
 });
+
+describe('multipart field names that would make the parser walk a huge sparse array', () => {
+  // A huge array index, then a named key on the same field: the field
+  // parser would turn the sparse array into an object entry by entry,
+  // synchronously. 30 million entries already take seconds; the parsers
+  // refuse any bracket index instead.
+  const attack = (req) => req.field('x[30000000]', 'a').field('x[y]', 'b');
+
+  // Each request is one the route would otherwise accept: only the field
+  // names make it a 400.
+  const png = () => require('sharp')({ create: { width: 8, height: 8, channels: 3, background: '#888888' } }).png().toBuffer();
+  const contact = { page: 'home', block: 'c1', name: 'Ada', email: 'ada@example.com', message: 'Hi' };
+  test.each([
+    ['the public contact form', async () => {
+      const req = request(app).post('/api/public/website/contact').set('X-Forwarded-For', '198.51.100.250').set('Sec-Fetch-Site', 'same-origin');
+      Object.entries(contact).forEach(([k, v]) => req.field(k, v));
+      return attack(req);
+    }],
+    ['a website upload', async () => attack(request(app).post('/api/admin/website/assets').set(auth(adminId))).attach('file', await png(), 'x.png')],
+    ['a font upload', async () => attack(request(app).post('/api/admin/settings/fonts').set(auth(adminId))
+      .field('family', 'Attack Serif').field('weight', '400').field('generic', 'serif'))
+      .attach('file', Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(200)]), 'x.woff2')],
+  ])('%s refuses it at once with a 400', async (_name, send) => {
+    const started = Date.now();
+    const res = await send();
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(res.status).toBe(400);
+  });
+});
