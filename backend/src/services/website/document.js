@@ -562,6 +562,10 @@ function normalizeInto(raw, reservedSlugs, errors) {
         blockIds.add(block.id);
         return block;
       });
+    // One contact form a page: reCAPTCHA renders only the first widget on
+    // its own, and the page runs no script of ours to start a second.
+    blocks.filter((b) => b.type === 'contact').slice(1)
+      .forEach((b) => errors.push({ code: 'TOO_MANY_CONTACT_FORMS', pageId: id, blockId: b.id }));
     where = { pageId: id };
     const seo = p.seo && typeof p.seo === 'object' ? p.seo : {};
     inNavById.set(id, bool(p.inNav, true));

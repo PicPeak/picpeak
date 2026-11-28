@@ -2118,3 +2118,24 @@ describe('mails of the contact form', () => {
     expect((await settings({ contact: { recipients: ['x@evil.example'] } }, viewerId)).status).toBe(403);
   });
 });
+
+describe('one contact form per page, through the API', () => {
+  test('a draft with a second contact form on a page is refused with a 400 that says so', async () => {
+    const state = (await request(app).get('/api/admin/website').set(auth(adminId))).body;
+    const document = { pages: [{ id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [{ id: 'c1', type: 'contact' }, { id: 'c2', type: 'contact' }] }] };
+    const res = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document, revision: state.draft.revision });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('WEBSITE_ONE_CONTACT_FORM');
+    expect(res.body.details).toEqual([expect.objectContaining({ code: 'TOO_MANY_CONTACT_FORMS', pageId: 'home', blockId: 'c2' })]);
+  });
+
+  test('a site stored with two takes messages only through the form it shows', async () => {
+    const now = new Date().toISOString();
+    const document = { pages: [{ id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [{ id: 'c1', type: 'contact' }, { id: 'c2', type: 'contact' }] }] };
+    await db('website_documents').where({ state: 'published' }).update({ document: JSON.stringify(document), published_at: now });
+    cache.clearWebsiteCache();
+    const contact = require('../../src/services/website/contact');
+    expect(await contact.findForm('home', 'c1')).toMatchObject({ block: { id: 'c1' } });
+    expect(await contact.findForm('home', 'c2')).toBeNull();
+  });
+});

@@ -61,8 +61,9 @@ async function findForm(pageId, blockId) {
   const document = await publishedDocument();
   if (!document) return null;
   const page = document.pages.find((p) => p.id === pageId && !p.hidden);
-  const block = page && page.blocks.find((b) => b.id === blockId && b.type === 'contact');
-  return block ? { page, block } : null;
+  // The page's first contact form: the only one it shows.
+  const block = page && page.blocks.find((b) => b.type === 'contact');
+  return block && block.id === blockId ? { page, block } : null;
 }
 
 async function overDailyCap() {

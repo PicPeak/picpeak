@@ -51,6 +51,7 @@ const STRINGS = {
     previewForm: 'The form is disabled in the preview.',
     bookingHidden: 'Hidden on the website: client booking is off or nothing can be booked yet.',
     captchaFailed: 'The spam check did not go through. Please complete it and send the message again.',
+    secondContactForm: 'Only one contact form per page is shown. Remove this one, or move it to another page.',
     follow: 'Follow',
     videoInPreview: 'Video plays on the published page',
   },
@@ -76,6 +77,7 @@ const STRINGS = {
     previewForm: 'Das Formular ist in der Vorschau deaktiviert.',
     bookingHidden: 'Auf der Website ausgeblendet: Die Online-Buchung ist aus oder es ist noch nichts buchbar.',
     captchaFailed: 'Die Spam-Prüfung hat nicht geklappt. Bitte schliessen Sie sie ab und senden Sie die Nachricht erneut.',
+    secondContactForm: 'Pro Seite wird nur ein Kontaktformular gezeigt. Entfernen Sie dieses oder verschieben Sie es auf eine andere Seite.',
     follow: 'Folgen',
     videoInPreview: 'Das Video läuft auf der veröffentlichten Seite',
   },
@@ -342,6 +344,10 @@ function renderPricing(block, ctx) {
 
 function renderContact(block, ctx) {
   const s = strings(ctx.locale);
+  // One form a page (document.js); a page stored with more shows the first.
+  if (ctx.page.blocks.find((b) => b.type === 'contact') !== block) {
+    return ctx.preview ? section(block, `<div class="pp-wrap pp-narrow"><p class="pp-preview-hint">${esc(s.secondContactForm)}</p></div>`, ctx) : '';
+  }
   const fid = (name) => `c-${esc(block.id)}-${name}`;
   const field = (name, label, input) => `<label class="pp-field" for="${fid(name)}"><span>${esc(label)}</span>${input}</label>`;
   const disabled = ctx.preview ? ' disabled' : '';

@@ -225,4 +225,4 @@ export interface WebsitePackage {
   unavailable?: 'archived_items' | 'empty' | 'archived' | null;
 }
 
-export interface ValidationProblem { code: string; pageId?: string; slug?: string }
+export interface ValidationProblem { code: string; pageId?: string; slug?: string; blockId?: string }

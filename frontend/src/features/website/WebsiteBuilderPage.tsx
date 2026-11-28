@@ -200,6 +200,14 @@ export const WebsiteBuilderPage: React.FC = () => {
       return;
     }
     const details = data?.details as ValidationProblem[] | undefined;
+    if (data?.code === 'WEBSITE_ONE_CONTACT_FORM' && Array.isArray(details) && details[0]?.pageId) {
+      // Straight to the second form, where the notice says what to do.
+      setPageId(details[0].pageId);
+      setPanel('blocks');
+      setBlockId(details[0].blockId || null);
+      toast.error(apiErrorText(err));
+      return;
+    }
     if (Array.isArray(details)) {
       setProblems(details);
       setPanel('pages');
@@ -249,6 +257,11 @@ export const WebsiteBuilderPage: React.FC = () => {
       ? <Badge tone="warning" dot>{t('website.status.changes', 'Unpublished changes')}</Badge>
       : <Badge tone="success" dot>{t('website.status.live', 'Published')}</Badge>;
 
+  // One contact form a page (the server refuses a second): a page stored
+  // with more shows only the first.
+  const firstContactId = page.blocks.find((b) => b.type === 'contact')?.id;
+  const isExtraContact = block?.type === 'contact' && block.id !== firstContactId;
+
   const blocksPanel = block ? (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -258,7 +271,7 @@ export const WebsiteBuilderPage: React.FC = () => {
         <span className="flex-1 min-w-0 text-sm font-semibold text-heading truncate">{blockLabel(t, block.type)}</span>
         {canEdit && (
           <>
-            <Button size="icon-sm" variant="ghost" onClick={() => duplicateBlock(block)} disabled={page.blocks.length >= MAX_BLOCKS}
+            <Button size="icon-sm" variant="ghost" onClick={() => duplicateBlock(block)} disabled={page.blocks.length >= MAX_BLOCKS || block.type === 'contact'}
               aria-label={t('website.blocks.duplicate', 'Duplicate block') as string}
               title={page.blocks.length >= MAX_BLOCKS ? t('website.blocks.full', 'A page holds at most 60 blocks.') as string : undefined}>
               <Copy className="w-4 h-4" />
@@ -282,6 +295,11 @@ export const WebsiteBuilderPage: React.FC = () => {
           <Copy className="w-4 h-4" />
         </Button>
       </div>
+      {isExtraContact && (
+        <Notice tone="warning" size="sm">
+          {t('website.blocks.extraContact', 'Only one contact form per page is shown, and the draft cannot be saved with two. Remove this one, or move it to another page.')}
+        </Notice>
+      )}
       <fieldset disabled={!canEdit}>
         <WebsiteDocContext.Provider value={draft}>
           <BlockEditor
@@ -474,13 +492,16 @@ export const WebsiteBuilderPage: React.FC = () => {
           <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {BLOCK_TYPES.map((type) => {
               const Icon = BLOCK_ICONS[type];
+              const taken = type === 'contact' && !!firstContactId;
               return (
                 <li key={type}>
-                  <button type="button" onClick={() => addBlock(type)}
-                    className="w-full h-full text-left rounded-xl border border-line p-3 hover:border-accent hover:bg-hover-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+                  <button type="button" onClick={() => addBlock(type)} disabled={taken}
+                    className="w-full h-full text-left rounded-xl border border-line p-3 hover:border-accent hover:bg-hover-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:hover:border-line disabled:hover:bg-transparent disabled:cursor-not-allowed">
                     <Icon className="w-5 h-5 text-soft mb-2" aria-hidden="true" />
                     <span className="block text-sm font-medium text-heading">{blockLabel(t, type)}</span>
-                    <span className="block text-xs text-muted mt-0.5">{t(`website.blocks.${type}.description`)}</span>
+                    <span className="block text-xs text-muted mt-0.5">
+                      {taken ? t('website.blocks.contactTaken', 'This page already has a contact form.') : t(`website.blocks.${type}.description`)}
+                    </span>
                   </button>
                 </li>
               );

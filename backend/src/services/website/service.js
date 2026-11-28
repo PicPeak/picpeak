@@ -227,6 +227,11 @@ async function getEditorState(adminId) {
 
 function validationError(errors) {
   // Over a limit: refused as too large, never shortened behind the admin's back.
+  if (errors.some((e) => e.code === 'TOO_MANY_CONTACT_FORMS')) {
+    const err = new AppError('A page can have one contact form; remove the second one, or move it to another page', 400, 'WEBSITE_ONE_CONTACT_FORM');
+    err.details = errors;
+    return err;
+  }
   const err = errors.some((e) => LIMIT_CODES.has(e.code))
     ? new AppError('The website is over a size limit (pages, blocks, items or text length); nothing was saved', 400, 'WEBSITE_LIMIT_EXCEEDED')
     : new AppError('The website has problems to fix before it can be saved', 422, 'WEBSITE_INVALID');

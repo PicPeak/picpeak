@@ -163,6 +163,26 @@ describe('WebsiteBuilderPage', () => {
     editable.remove();
   });
 
+  it('allows one contact form a page: no second from the picker or by duplicating, and a page stored with two says so', async () => {
+    const state = structuredClone(STATE);
+    const contact = (id: string, heading: string) => ({ id, type: 'contact' as const, variant: 'simple', background: 'default' as const, heading, intro: '', showPhone: false, showDate: false, submitLabel: '', successMessage: '' });
+    state.document.pages[0].blocks.push(contact('c1', 'Write to us'), contact('c2', 'Second form'));
+    vi.mocked(websiteService.getState).mockResolvedValue(state);
+    renderPage();
+    await screen.findByText('Blocks on “Home”');
+    fireEvent.click(screen.getByRole('button', { name: 'Add block' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: /Contact form/ })).toBeDisabled();
+    expect(within(dialog).getByText('This page already has a contact form.')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(await screen.findByText('Write to us'));
+    expect(screen.getByRole('button', { name: 'Duplicate block' })).toBeDisabled();
+    expect(screen.queryByText(/Only one contact form per page is shown/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'All blocks' }));
+    fireEvent.click(await screen.findByText('Second form'));
+    expect(screen.getByText(/Only one contact form per page is shown/)).toBeInTheDocument();
+  });
+
   it('adds a block after the selected one', async () => {
     renderPage();
     await screen.findByText('Blocks on “Home”');

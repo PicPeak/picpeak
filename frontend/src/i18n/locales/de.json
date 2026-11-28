@@ -13442,7 +13442,9 @@
       "social": {
         "name": "Social-Media-Links",
         "description": "Ihre Profile als Symbole: Instagram, Facebook, TikTok und mehr."
-      }
+      },
+      "extraContact": "Pro Seite wird nur ein Kontaktformular gezeigt, und mit zweien lässt sich der Entwurf nicht speichern. Entfernen Sie dieses oder verschieben Sie es auf eine andere Seite.",
+      "contactTaken": "Diese Seite hat bereits ein Kontaktformular."
     },
     "saved": "Entwurf gespeichert",
     "publishTitle": "Website veröffentlichen?",

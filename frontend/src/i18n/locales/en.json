@@ -13477,7 +13477,9 @@
       "social": {
         "name": "Social links",
         "description": "Your profiles as icons: Instagram, Facebook, TikTok and more."
-      }
+      },
+      "extraContact": "Only one contact form per page is shown, and the draft cannot be saved with two. Remove this one, or move it to another page.",
+      "contactTaken": "This page already has a contact form."
     },
     "saved": "Draft saved",
     "publishTitle": "Publish the website?",

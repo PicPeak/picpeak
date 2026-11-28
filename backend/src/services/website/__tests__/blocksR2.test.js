@@ -160,3 +160,24 @@ test('a block\'s own section class is not reused inside it (its layout rules wou
     expect(body.match(new RegExp(`class="[^"]*\\bpp-${type}\\b(?![-_])`, 'g'))).toHaveLength(1);
   }
 });
+
+describe('one contact form per page', () => {
+  const twoForms = [{ id: 'c1', type: 'contact', heading: 'First' }, { id: 'c2', type: 'contact', heading: 'Second' }];
+
+  test('a second contact form on a page is refused on save', () => {
+    const { errors } = normalize(twoForms);
+    expect(errors).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'TOO_MANY_CONTACT_FORMS', pageId: 'home', blockId: 'c2' })]));
+    // One on each of two pages is fine.
+    expect(normalize([twoForms[0]], [{ id: 'about', slug: 'about', title: 'About', blocks: [twoForms[1]] }]).errors).toEqual([]);
+  });
+
+  test('a page stored with two shows only the first; the preview says why', () => {
+    const live = render(twoForms);
+    expect(live).toContain('First');
+    expect(live).not.toContain('Second');
+    expect(live.match(/<form /g)).toHaveLength(1);
+    const preview = render(twoForms, { ctx: { preview: true } });
+    expect(preview.match(/<form /g)).toHaveLength(1);
+    expect(preview).toContain('Only one contact form per page is shown');
+  });
+});
