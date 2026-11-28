@@ -13189,7 +13189,6 @@
       "rolePlaceholder": "Hochzeit, Juni 2026",
       "portrait": "Foto (optional)",
       "addTestimonial": "Kundenstimme hinzufügen",
-      "formatHint": "Leerzeile = neuer Absatz. **fett**, *kursiv*, [Linktext](https://…)",
       "galleriesMissing_one": "{{count}} gewählte Galerie ist nicht mehr auf der Website und wird nicht gezeigt.",
       "galleriesMissing_other": "{{count}} gewählte Galerien sind nicht mehr auf der Website und werden nicht gezeigt.",
       "galleryUnavailable": "Galerie nicht mehr verfügbar",

@@ -273,7 +273,7 @@ function renderImageText(block, ctx) {
   const figure = image
     ? `<div class="pp-frame" style="aspect-ratio:${aspect(image)}">${imgTag(image, { alt: block.image.alt, sizes: '(min-width: 900px) 50vw, 100vw' })}</div>`
     : '';
-  const text = `<div>${heading(block.heading)}<div class="pp-prose">${richText(block.body)}</div>${button(block.buttonLabel, targetHref(block.buttonTarget, ctx))}</div>`;
+  const text = `<div>${heading(block.heading)}<div class="pp-prose">${block.body}</div>${button(block.buttonLabel, targetHref(block.buttonTarget, ctx))}</div>`;
   const reverse = block.variant === 'image-right' ? ' pp-split--reverse' : '';
   return section(block, `<div class="pp-wrap pp-split${reverse}">${figure}${text}</div>`, ctx);
 }

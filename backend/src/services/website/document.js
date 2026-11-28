@@ -305,7 +305,10 @@ const BLOCK_FIELDS = {
   },
   imageText: (b) => ({
     heading: str(b.heading, 200, 'heading'),
-    body: str(b.body, 5000, 'body'),
+    // Rich text, as the text block's; older text in the short inline format
+    // becomes the HTML it rendered as.
+    body: b.format === 'html' ? rich(b.body, MAX_RICH_TEXT, 'body') : require('./richText').richText(str(b.body, 5000, 'body')),
+    format: 'html',
     image: imageRef(b.image),
     buttonLabel: str(b.buttonLabel, 60, 'buttonLabel'),
     buttonTarget: buttonTarget(b),

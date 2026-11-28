@@ -45,6 +45,12 @@ describe('block buttons', () => {
     expect(onChange.mock.calls.at(-1)?.[0].buttonTarget).toEqual({ kind: 'page', pageId: 'home' });
   });
 
+  it('the image and text block writes its text in the rich text editor, as the text block does', async () => {
+    renderEditor(blocks[1]);
+    expect(await screen.findByTitle(/Bold/)).toBeInTheDocument();
+    expect(screen.queryByText(/\*\*bold\*\*/)).toBeNull();
+  });
+
   it('the photo strip keeps an address for its profile, and says what it is for', () => {
     renderEditor({ ...base, id: 's', type: 'instagram', variant: 'strip', heading: '', handle: 'studio', profileUrl: '', images: [] });
     expect((screen.getByLabelText('Profile link') as HTMLInputElement).tagName).toBe('INPUT');

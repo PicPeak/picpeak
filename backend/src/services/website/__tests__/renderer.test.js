@@ -296,6 +296,25 @@ describe('divider block', () => {
   });
 });
 
+describe('rich text in the image and text block', () => {
+  const block = (over) => normalizeDocument({ pages: [home([{ type: 'imageText', id: 'i1', ...over }])] }).document.pages[0].blocks[0];
+
+  test('older plain text becomes the HTML it rendered as, so the page stays the same', () => {
+    const body = 'First **bold** line\nsecond [link](https://example.com) line\n\nA *new* paragraph with <script>x</script>';
+    const before = require('../renderer').richText(body);
+    expect(block({ body })).toMatchObject({ format: 'html', body: before });
+    expect(render([home([{ type: 'imageText', id: 'i1', body }])])).toContain(`<div class="pp-prose">${before}</div>`);
+  });
+
+  test('HTML from the editor is kept to the rich text allowlist and rendered as it is', () => {
+    const stored = block({ format: 'html', body: '<h2>Title</h2><p>A <strong>b</strong> <a href="javascript:alert(1)">bad</a></p><ul><li>x</li></ul><script>alert(1)</script>' });
+    expect(stored.body).toContain('<h2>Title</h2>');
+    expect(stored.body).toContain('<ul><li>x</li></ul>');
+    expect(stored.body).not.toMatch(/script|javascript:/);
+    expect(render([home([stored])])).toContain(`<div class="pp-prose">${stored.body}</div>`);
+  });
+});
+
 describe('rich text in the text block', () => {
   const textBlock = (over) => normalizeDocument({ pages: [home([{ type: 'text', id: 't1', ...over }])] }).document.pages[0].blocks[0];
 

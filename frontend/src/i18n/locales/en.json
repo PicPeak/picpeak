@@ -13224,7 +13224,6 @@
       "rolePlaceholder": "Wedding, June 2026",
       "portrait": "Photo (optional)",
       "addTestimonial": "Add testimonial",
-      "formatHint": "Blank line = new paragraph. **bold**, *italic*, [link text](https://…)",
       "galleriesMissing_one": "{{count}} chosen gallery is no longer on the website and is not shown.",
       "galleriesMissing_other": "{{count}} chosen galleries are no longer on the website and are not shown.",
       "galleryUnavailable": "Gallery no longer available",

@@ -91,7 +91,7 @@ export function createBlock(type: BlockType, t: TFunction): Block {
   case 'text':
     return { ...base, type, heading: '', body: `<p>${t('website.defaults.textBody', 'Write something here.')}</p>`, bodyRight: '', format: 'html' };
   case 'imageText':
-    return { ...base, type, heading: '', body: '', image: null, buttonLabel: '', buttonTarget: null };
+    return { ...base, type, heading: '', body: '', format: 'html', image: null, buttonLabel: '', buttonTarget: null };
   case 'gallery':
     return { ...base, type, heading: '', images: [], columns: 3 };
   case 'featuredGalleries':

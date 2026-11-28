@@ -33,7 +33,9 @@ export interface TextBlock extends BlockBase { type: 'text'; heading: string; bo
 export interface ImageTextBlock extends BlockBase {
   type: 'imageText';
   heading: string;
+  // Sanitised HTML from the rich text editor, as the text block's.
   body: string;
+  format?: 'html';
   image: ImageRef | null;
   buttonLabel: string;
   buttonTarget: LinkTarget | null;

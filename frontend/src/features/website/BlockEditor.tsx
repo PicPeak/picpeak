@@ -27,13 +27,10 @@ interface BlockEditorProps {
   brandColors?: string[];
 }
 
-const FORMAT_HINT = 'Blank line = new paragraph. **bold**, *italic*, [link text](https://…)';
-
 export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange, brandColors }) => {
   const { t } = useTranslation();
   // Every field edit goes through here, typed per block so a field name is checked.
   const set = <B extends Block>(b: B, patch: Partial<B>, field?: string) => onChange({ ...b, ...patch }, field);
-  const formatHint = t('website.fields.formatHint', FORMAT_HINT);
 
   const common = (
     <>
@@ -92,7 +89,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange, brand
       <>
         <ImageField label={t('website.fields.image', 'Image')} value={block.image} onChange={(image) => set(block, { image })} />
         <TextField label={t('website.fields.heading', 'Heading')} value={block.heading} maxLength={200} onChange={(heading) => set(block, { heading }, 'heading')} />
-        <TextArea label={t('website.fields.body', 'Text')} value={block.body} rows={6} maxLength={5000} helperText={formatHint} onChange={(body) => set(block, { body }, 'body')} />
+        <RichTextField label={t('website.fields.body', 'Text')} value={block.body} onChange={(body) => set(block, { body }, 'body')} />
         <TextField label={t('website.fields.buttonLabel', 'Button text')} value={block.buttonLabel} maxLength={60} onChange={(buttonLabel) => set(block, { buttonLabel }, 'buttonLabel')} />
         <LinkTargetField label={t('website.fields.buttonUrl', 'Button link')} value={block.buttonTarget ?? null} onChange={(buttonTarget) => set(block, { buttonTarget }, 'buttonTarget')} />
       </>
