@@ -48,7 +48,7 @@ const PROVIDER_SOURCES = {
   recaptcha: {
     'script-src': ['https://www.google.com/recaptcha/', 'https://www.gstatic.com/recaptcha/'],
     'frame-src': ['https://www.google.com/recaptcha/', 'https://recaptcha.google.com/recaptcha/'],
-    'connect-src': ["'self'", 'https://www.google.com/recaptcha/'],
+    'connect-src': ['\'self\'', 'https://www.google.com/recaptcha/'],
   },
 };
 
