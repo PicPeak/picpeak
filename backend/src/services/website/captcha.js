@@ -35,14 +35,20 @@ const BASE_POLICY = {
   'base-uri': ['\'none\''],
 };
 const PROVIDER_SOURCES = {
+  // Friendly Captcha: the SDK frames its puzzle from *.frcapi.com (global or
+  // EU servers); the SDK itself, read from the pinned file, makes no
+  // requests and starts no workers on the page.
   friendly: {
     'script-src': [FRIENDLY_SDK.base],
     'frame-src': ['https://*.frcapi.com'],
     'connect-src': ['\'self\'', 'https://*.frcapi.com'],
   },
+  // Google's CSP guidance for reCAPTCHA: its scripts, its frames, and the
+  // widget's requests to www.google.com/recaptcha/.
   recaptcha: {
     'script-src': ['https://www.google.com/recaptcha/', 'https://www.gstatic.com/recaptcha/'],
     'frame-src': ['https://www.google.com/recaptcha/', 'https://recaptcha.google.com/recaptcha/'],
+    'connect-src': ["'self'", 'https://www.google.com/recaptcha/'],
   },
 };
 
