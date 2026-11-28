@@ -210,8 +210,31 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   const handleLaneFocus = (e: React.FocusEvent<HTMLDivElement>) => {
     if ((e.target as Element).matches(':focus-visible')) setKeyboardInside(true);
   };
+  // A dialog opened from the tile hands the focus back to its opener when it
+  // closes, and a hidden button cannot take it. The lane stays revealed
+  // until focus lands outside any dialog: on the tile again, or elsewhere.
+  const stopDialogWatch = useRef<(() => void) | null>(null);
+  useEffect(() => () => stopDialogWatch.current?.(), []);
+  const holdWhileDialogHasFocus = (card: HTMLElement) => {
+    stopDialogWatch.current?.();
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest('[role="dialog"]')) return;
+      stopDialogWatch.current?.();
+      if (!card.contains(target)) setKeyboardInside(false);
+    };
+    document.addEventListener('focusin', onFocusIn);
+    stopDialogWatch.current = () => {
+      document.removeEventListener('focusin', onFocusIn);
+      stopDialogWatch.current = null;
+    };
+  };
   const handleLaneBlur = (e: React.FocusEvent<HTMLDivElement>) => {
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    if ((e.relatedTarget as Element | null)?.closest('[role="dialog"]')) {
+      holdWhileDialogHasFocus(e.currentTarget);
+      return;
+    }
     setKeyboardInside(false);
     // Focus on a control that had dropped to a second row scrolls that row
     // into the lane; back to the first once the keyboard has left.

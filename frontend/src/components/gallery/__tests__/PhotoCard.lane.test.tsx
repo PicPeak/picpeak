@@ -268,6 +268,39 @@ describe('PhotoCard lane mode', () => {
       }
     });
 
+    it('stays revealed while a dialog opened from the tile has the focus, so it can come back', () => {
+      const spy = focusVisible(true);
+      const dialog = document.createElement('div');
+      dialog.setAttribute('role', 'dialog');
+      const inside = document.createElement('button');
+      dialog.appendChild(inside);
+      const elsewhere = document.createElement('button');
+      document.body.append(dialog, elsewhere);
+      try {
+        renderCard();
+        fireEvent.focus(open());
+        // The opener hands its focus to the dialog; hidden, it could not take it back.
+        fireEvent.blur(like(), { relatedTarget: inside });
+        expect(like()).not.toHaveClass('hidden');
+        fireEvent.focusIn(inside);
+        expect(like()).not.toHaveClass('hidden');
+        // Closed: focus is back on the opener, and the usual rule applies again.
+        fireEvent.focusIn(like());
+        expect(like()).not.toHaveClass('hidden');
+        fireEvent.blur(like(), { relatedTarget: elsewhere });
+        expect(like()).toHaveClass('hidden');
+        // Or the dialog sends focus somewhere else: hidden then too.
+        fireEvent.focus(open());
+        fireEvent.blur(like(), { relatedTarget: inside });
+        fireEvent.focusIn(elsewhere);
+        expect(like()).toHaveClass('hidden');
+      } finally {
+        dialog.remove();
+        elsewhere.remove();
+        spy.mockRestore();
+      }
+    });
+
     it('stays hidden on the focus a click or tap leaves on the tile-sized button', () => {
       const spy = focusVisible(false);
       try {
