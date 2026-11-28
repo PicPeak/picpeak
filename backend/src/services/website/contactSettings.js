@@ -26,16 +26,16 @@ const SITE_KEY = /^[A-Za-z0-9_-]{8,100}$/;
 
 const box = createSecretBox({ envKey: 'WEBSITE_SECRET_KEY', salt: 'picpeak-website-captcha', label: 'Website captcha', memoize: true });
 
-async function read(keys) {
-  const rows = await db('app_settings').whereIn('setting_key', keys);
+async function read(keys, conn = db) {
+  const rows = await conn('app_settings').whereIn('setting_key', keys);
   const out = {};
   rows.forEach((row) => { out[row.setting_key] = parseSettingValue(row.setting_value); });
   return out;
 }
 
-async function write(key, value) {
+async function write(conn, key, value) {
   const row = { setting_key: key, setting_value: JSON.stringify(value), setting_type: 'website', updated_at: new Date().toISOString() };
-  await db('app_settings').insert(row).onConflict('setting_key').merge(['setting_value', 'updated_at']);
+  await conn('app_settings').insert(row).onConflict('setting_key').merge(['setting_value', 'updated_at']);
 }
 
 /** Where a new message goes when no recipients are set: the business, else the support address. */
@@ -99,27 +99,36 @@ async function writeContactSettings(input) {
     contact.recipients = [...new Set(list)];
   }
 
-  if (friendly.siteKey !== undefined) await write(KEYS.friendlySiteKey, String(friendly.siteKey));
-  if (friendly.endpoint !== undefined) await write(KEYS.friendlyEndpoint, friendly.endpoint);
-  if (friendly.apiKey !== undefined) await write(KEYS.friendlyApiKey, friendly.apiKey ? box.encryptSecret(friendly.apiKey) : '');
-
+  // The settings as they would be after this save, checked whole before
+  // anything is written: a refused save must not leave half of it behind
+  // (a cleared key would switch the check off without a word).
   const current = await readContactSettings();
-  const chosen = provider === undefined ? current.captcha.provider : provider;
-  if (chosen === 'friendly' && !(current.captcha.friendly.siteKey && current.captcha.friendly.apiKeySet)) {
+  const next = {
+    siteKey: friendly.siteKey === undefined ? current.captcha.friendly.siteKey : String(friendly.siteKey),
+    apiKeySet: friendly.apiKey === undefined ? current.captcha.friendly.apiKeySet : Boolean(friendly.apiKey),
+    provider: provider === undefined ? current.captcha.provider : provider,
+  };
+  if (next.provider === 'friendly' && !(next.siteKey && next.apiKeySet)) {
     throw new AppError('Enter the Friendly Captcha site key and API key first', 400, 'CAPTCHA_NOT_READY');
   }
-  if (chosen === 'recaptcha' && !current.captcha.recaptchaReady) {
+  if (next.provider === 'recaptcha' && !current.captcha.recaptchaReady) {
     throw new AppError('Enter the reCAPTCHA keys under Settings › Security first', 400, 'CAPTCHA_NOT_READY');
   }
   // A confirmation goes to whatever address a visitor types: only with a
   // spam check on, and off again when the check is turned off.
-  const confirmation = contact.confirmation === undefined ? current.contact.confirmation : contact.confirmation === true;
-  if (confirmation && chosen === 'none') {
-    if (contact.confirmation === true) throw new AppError('Turn on a spam check first', 400, 'CONFIRMATION_NEEDS_CAPTCHA');
+  if (contact.confirmation === true && next.provider === 'none') {
+    throw new AppError('Turn on a spam check first', 400, 'CONFIRMATION_NEEDS_CAPTCHA');
   }
-  if (provider !== undefined) await write(KEYS.provider, provider);
-  if (contact.recipients !== undefined) await write(KEYS.recipients, contact.recipients);
-  await write(KEYS.confirmation, confirmation && chosen !== 'none');
+  const confirmation = (contact.confirmation === undefined ? current.contact.confirmation : contact.confirmation === true) && next.provider !== 'none';
+
+  await db.transaction(async (trx) => {
+    if (friendly.siteKey !== undefined) await write(trx, KEYS.friendlySiteKey, next.siteKey);
+    if (friendly.endpoint !== undefined) await write(trx, KEYS.friendlyEndpoint, friendly.endpoint);
+    if (friendly.apiKey !== undefined) await write(trx, KEYS.friendlyApiKey, friendly.apiKey ? box.encryptSecret(friendly.apiKey) : '');
+    if (provider !== undefined) await write(trx, KEYS.provider, provider);
+    if (contact.recipients !== undefined) await write(trx, KEYS.recipients, contact.recipients);
+    await write(trx, KEYS.confirmation, confirmation);
+  });
   // The contact forms on the cached pages show the widget, or not.
   clearWebsiteCache();
   return readContactSettings();

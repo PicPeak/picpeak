@@ -1957,6 +1957,17 @@ describe('spam check on the contact form', () => {
     expect((await request(app).get('/api/admin/website/contact-settings').set(auth(adminId))).body.captcha.provider).toBe('friendly');
   });
 
+  test('a refused save changes nothing: the keys stay, and so does the check', async () => {
+    const before = (await request(app).get('/api/admin/website/contact-settings').set(auth(adminId))).body;
+    expect(before.captcha.provider).toBe('friendly');
+    expect((await settings({ captcha: { friendly: { siteKey: '' } } })).body.code).toBe('CAPTCHA_NOT_READY');
+    expect((await settings({ captcha: { friendly: { apiKey: '' } }, contact: { recipients: ['new@studio.example'] } })).body.code).toBe('CAPTCHA_NOT_READY');
+    expect((await request(app).get('/api/admin/website/contact-settings').set(auth(adminId))).body).toEqual(before);
+    const spy = jest.spyOn(axios, 'post');
+    expect((await post(valid)).headers.location).toBe('/#contact-captcha-c1');
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   test('only the page with the form loads the widget and allows the provider', async () => {
     cache.clearWebsiteCache();
     const home = await service.resolvePublicPage('');
