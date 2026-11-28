@@ -30,6 +30,8 @@
  * obvious which types are still riding the catch-all).
  */
 
+const { PT_EMAIL_TEMPLATES } = require('./ptEmailTemplates');
+
 const VARIABLES = [
   'customer_name', 'event_name', 'event_date',
   'event_type', 'days_before', 'business_name',
@@ -310,6 +312,7 @@ async function ensureEventReminderTemplatesSeeded(db, logger) {
         const templateId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
         await upsertTranslation(templateId, 'en', def.en);
         await upsertTranslation(templateId, 'de', def.de);
+        await upsertTranslation(templateId, 'pt', PT_EMAIL_TEMPLATES[templateKey]);
         touched.push(templateKey);
         if (logger) logger.info(`Self-healed event reminder template: ${templateKey}`);
         continue;
@@ -323,6 +326,9 @@ async function ensureEventReminderTemplatesSeeded(db, logger) {
         if (isEmpty(en)) {
           await upsertTranslation(existing.id, 'en', def.en);
           await upsertTranslation(existing.id, 'de', def.de);
+          // No pt here: pt comes with a template this seeder creates, or from
+          // migration 378. Repairing English must not bring back a pt version
+          // an admin deleted.
           touched.push(templateKey);
           if (logger) logger.info(`Self-healed empty event reminder translations: ${templateKey}`);
         }

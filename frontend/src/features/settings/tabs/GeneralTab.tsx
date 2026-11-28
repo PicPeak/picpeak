@@ -519,10 +519,10 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
               }}
               className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
             >
-              <option value="dd/MM/yyyy">DD/MM/YYYY (European)</option>
-              <option value="MM/dd/yyyy">MM/DD/YYYY (US)</option>
-              <option value="yyyy-MM-dd">YYYY-MM-DD (ISO)</option>
-              <option value="dd.MM.yyyy">DD.MM.YYYY (German)</option>
+              <option value="dd/MM/yyyy">{t('settings.general.dateFormatOptions.european', 'DD/MM/YYYY (European)')}</option>
+              <option value="MM/dd/yyyy">{t('settings.general.dateFormatOptions.us', 'MM/DD/YYYY (US)')}</option>
+              <option value="yyyy-MM-dd">{t('settings.general.dateFormatOptions.iso', 'YYYY-MM-DD (ISO)')}</option>
+              <option value="dd.MM.yyyy">{t('settings.general.dateFormatOptions.german', 'DD.MM.YYYY (German)')}</option>
             </select>
             <p className="text-xs text-muted mt-1">
               {t('settings.general.dateFormatHelp')}

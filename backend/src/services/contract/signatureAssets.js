@@ -5,6 +5,7 @@ const path = require('path');
 const logger = require('../../utils/logger');
 const { AppError } = require('../../utils/errors');
 const pdfStampService = require('../pdfStampService');
+const pdfI18n = require('../pdf-i18n');
 const documentArtifactService = require('../documentArtifactService');
 const { resolveStoredPathStrict, contractPdfRoots } = require('../../utils/safePath');
 
@@ -237,6 +238,11 @@ async function persistSignatureImage(contract, role, dataUrl) {
   return filePath;
 }
 
+/** The name and date labels under a stamped signature, in the contract's language. */
+function signatureCaptionLabels(language) {
+  return { nameLabel: pdfI18n.t(language, 'signed_label_name'), dateLabel: pdfI18n.t(language, 'signed_label_date') };
+}
+
 /**
  * Build the stamp sequence the pdf-lib stamp service expects from a
  * single contract row. Customer first, admin second — provenance
@@ -248,9 +254,7 @@ async function persistSignatureImage(contract, role, dataUrl) {
  * recordCustomerSignature constructs it inline.
  */
 function buildSignatureStamps(contract, { dateFormat = null } = {}) {
-  const locale = contract.language || 'de';
-  const nameLabel = 'Name';
-  const dateLabel = locale === 'de' ? 'Datum' : 'Date';
+  const { nameLabel, dateLabel } = signatureCaptionLabels(contract.language || 'de');
   const stamps = [];
   if (contract.signed_customer_signature_path) {
     stamps.push({
@@ -384,6 +388,7 @@ module.exports = {
   MAX_SIGNATURE_BASE64_BYTES,
   persistSignatureImage,
   buildSignatureStamps,
+  signatureCaptionLabels,
   buildAuditCertContext,
   persistAuditCertificate,
   readCertificate,

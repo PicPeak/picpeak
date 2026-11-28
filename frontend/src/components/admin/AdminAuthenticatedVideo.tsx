@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../../config/api';
 
 interface AdminAuthenticatedVideoProps extends React.VideoHTMLAttributes<HTMLVideoElement> {
@@ -11,6 +12,7 @@ export const AdminAuthenticatedVideo: React.FC<AdminAuthenticatedVideoProps> = (
   fallback,
   ...props
 }) => {
+  const { t } = useTranslation();
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -61,7 +63,7 @@ export const AdminAuthenticatedVideo: React.FC<AdminAuthenticatedVideoProps> = (
       <>{fallback}</>
     ) : (
       <div className="w-full h-full bg-inset flex items-center justify-center text-faint">
-        <span className="text-xs">Failed to load</span>
+        <span className="text-xs">{t('common.loadFailed', 'Could not load this')}</span>
       </div>
     );
   }

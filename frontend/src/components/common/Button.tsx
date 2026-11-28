@@ -1,5 +1,6 @@
 import React from 'react';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -36,6 +37,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref
   ) => {
+    const { t } = useTranslation();
     const baseStyles = 'btn';
     
     const variants = {
@@ -73,7 +75,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         aria-disabled={disabled || isLoading}
       >
         {isLoading ? (
-          <Loader2 className={clsx('h-4 w-4 animate-spin', !iconOnly && 'mr-2')} aria-label="Loading" />
+          <Loader2 className={clsx('h-4 w-4 animate-spin', !iconOnly && 'mr-2')} aria-label={t('common.loading', 'Loading...')} />
         ) : (
           leftIcon && <span className="mr-2" aria-hidden="true">{leftIcon}</span>
         )}

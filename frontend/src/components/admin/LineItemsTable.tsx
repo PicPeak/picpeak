@@ -1084,22 +1084,22 @@ export const LineItemsTable: React.FC<Props> = ({
                     </td>
                     <td className={`px-2 py-2 align-top ${dim}`}>
                       <div className="flex items-center gap-1 justify-end flex-wrap">
-                        <button type="button" onClick={() => move(idx, -1)} aria-label="Move up"
+                        <button type="button" onClick={() => move(idx, -1)} aria-label={t('crm.lineItems.moveUp', 'Move up')}
                           className="p-1 rounded hover:bg-hover disabled:opacity-30">
                           <ArrowUp className="w-4 h-4" />
                         </button>
-                        <button type="button" onClick={() => move(idx, 1)} aria-label="Move down"
+                        <button type="button" onClick={() => move(idx, 1)} aria-label={t('crm.lineItems.moveDown', 'Move down')}
                           className="p-1 rounded hover:bg-hover disabled:opacity-30">
                           <ArrowDown className="w-4 h-4" />
                         </button>
                         {!sub && (
-                          <button type="button" onClick={() => addSubItem(idx)} aria-label="Add sub-item"
+                          <button type="button" onClick={() => addSubItem(idx)} aria-label={t('crm.lineItems.addSubItem', 'Add sub-item')}
                             className="p-1 rounded hover:bg-hover"
                             title={t('crm.lineItems.addSubItem', 'Add sub-item') as string}>
                             <CornerDownRight className="w-4 h-4" />
                           </button>
                         )}
-                        <button type="button" onClick={() => removeRow(idx)} aria-label="Remove"
+                        <button type="button" onClick={() => removeRow(idx)} aria-label={t('crm.lineItems.remove', 'Remove')}
                           className="p-1 rounded hover:bg-danger-soft text-danger-text">
                           <X className="w-4 h-4" />
                         </button>

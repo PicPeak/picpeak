@@ -25,7 +25,7 @@ export const StoryHero: React.FC<StoryHeroProps> = ({
   // Long form on purpose (the hero's look), in the gallery's language rather
   // than always US English. parseISO: a bare yyyy-MM-dd read by `new Date`
   // is UTC midnight, the day before west of UTC.
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const formattedDate = date
     ? parseISO(date).toLocaleDateString(i18n.language, {
         year: 'numeric',
@@ -46,7 +46,7 @@ export const StoryHero: React.FC<StoryHeroProps> = ({
             // of every Story gallery. Emitted unconditionally for every photo
             // (gallery.js:1139), so the fallbacks below are belt-and-braces.
             src={photo.hero_url || photo.url || photo.thumbnail_url || ''}
-            alt="Hero"
+            alt={t('gallery.heroImage', 'Hero image')}
             className="w-full h-full object-cover"
             isGallery={true}
             slug={slug}

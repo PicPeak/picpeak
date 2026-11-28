@@ -203,7 +203,7 @@ export const ArchivesPage: React.FC = () => {
               <option value="wedding">{t('archives.wedding')}</option>
               <option value="birthday">{t('archives.birthday')}</option>
               <option value="corporate">{t('archives.corporate')}</option>
-              <option value="party">Party</option>
+              <option value="party">{t('archives.party', 'Party')}</option>
               <option value="other">{t('archives.other')}</option>
             </select>
 

@@ -407,7 +407,9 @@ function formatDate(value, dateFormat) {
  * what the local accountant + the bank expects on Stelleabrechnung /
  * Rechnung), regardless of the document language. Outside the DACH
  * region we fall through to the bare ISO 639 locale → BCP-47 mapping
- * so en-GB, pt-PT, etc. keep their conventional formatting.
+ * so en-GB, nl-NL, etc. keep their conventional formatting. pt is
+ * Brazilian Portuguese throughout the app (frontend money.ts, the emails'
+ * languageIntlLocale), so it maps to pt-BR here as well.
  *
  * Per maintainer: "in FL, CH, DE we write 1'000.00 not 1,000.00".
  */
@@ -417,7 +419,7 @@ function localeForIntl(locale, issuerCountryCode) {
   // either. A US business gets en-US (utils/issuerIntlLocale).
   const fixed = issuerIntlLocale(issuerCountryCode);
   if (fixed) return fixed;
-  const map = { de: 'de-CH', en: 'en-GB', fr: 'fr-CH', nl: 'nl-NL', pt: 'pt-PT', ru: 'ru-RU' };
+  const map = { de: 'de-CH', en: 'en-GB', fr: 'fr-CH', nl: 'nl-NL', pt: 'pt-BR', ru: 'ru-RU' };
   return map[locale] || locale || 'en-GB';
 }
 
@@ -3299,6 +3301,6 @@ module.exports = {
   // Exposed for unit tests + advanced callers.
   _internal: {
     formatMinor, formatDate, t, registerThemeFonts, drawLineItems, drawContractTotals, stampPageNumbers, themeColor,
-    legalDisclosureLines, smallTextSize, pageMetricsFor, attachTableWithLinks,
+    legalDisclosureLines, smallTextSize, pageMetricsFor, attachTableWithLinks, localeForIntl,
   },
 };

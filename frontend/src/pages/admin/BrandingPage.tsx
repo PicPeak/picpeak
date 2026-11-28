@@ -532,7 +532,7 @@ export const BrandingPage: React.FC = () => {
                 onChange={(e) => handleBrandingChange('footer_text', e.target.value)}
                 className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent"
                 rows={2}
-                placeholder={`© ${new Date().getFullYear()} Your Company. All rights reserved.`}
+                placeholder={t('branding.footerTextPlaceholder', { year: new Date().getFullYear(), defaultValue: '© {{year}} Your Company. All rights reserved.' })}
               />
             </div>
           </div>
@@ -718,7 +718,7 @@ export const BrandingPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <img 
                       src={brandingSettings.favicon_url.startsWith('http') ? brandingSettings.favicon_url : buildResourceUrl(brandingSettings.favicon_url)} 
-                      alt="Current favicon" 
+                      alt="" 
                       className="w-8 h-8"
                     />
                     <span className="text-sm text-soft">{t('branding.currentFavicon')}</span>
@@ -768,7 +768,7 @@ export const BrandingPage: React.FC = () => {
                     <div className="relative">
                       <img 
                         src={brandingSettings.logo_url.startsWith('http') ? brandingSettings.logo_url : buildResourceUrl(brandingSettings.logo_url)} 
-                        alt="Logo"
+                        alt={t('branding.logo', 'Logo')}
                         className="h-16 object-contain bg-inset rounded p-2"
                       />
                       <button
@@ -812,7 +812,7 @@ export const BrandingPage: React.FC = () => {
                     <div className="relative">
                       <img
                         src={logoDarkUrl.startsWith('http') ? logoDarkUrl : buildResourceUrl(logoDarkUrl)}
-                        alt="Dark logo"
+                        alt={t('branding.logoDark', 'Dark-mode logo')}
                         className="h-16 object-contain bg-neutral-800 rounded p-2"
                       />
                       <button
@@ -1077,7 +1077,7 @@ export const BrandingPage: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <img 
                         src={brandingSettings.watermark_logo_url.startsWith('http') ? brandingSettings.watermark_logo_url : buildResourceUrl(brandingSettings.watermark_logo_url)} 
-                        alt="Current watermark" 
+                        alt="" 
                         className="h-16 w-auto object-contain bg-inset p-2 rounded"
                       />
                       <span className="text-sm text-soft">{t('branding.currentWatermark')}</span>

@@ -11,7 +11,7 @@ const emailProcessor = require('../emailProcessor');
 const { ensureContractEmailTemplatesSeeded } = require('../contractEmailTemplates');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const { adminActor, assertNotImported, customerPublicActor, emitContractEvent, maybeStoreIp } = require('./helpers');
-const { buildSignatureStamps, persistAuditCertificate, persistContractPdf, persistSignatureImage, sha256OfFile } = require('./signatureAssets');
+const { buildSignatureStamps, signatureCaptionLabels, persistAuditCertificate, persistContractPdf, persistSignatureImage, sha256OfFile } = require('./signatureAssets');
 const { getContractById } = require('./crud');
 const { auditedUpdate } = require('../accountingHistory');
 const { resolveStoredPath, toStoredPath } = require('../../utils/storedPath');
@@ -249,8 +249,7 @@ async function recordCustomerSignature({ token, name, ip, signatureDataUrl, acce
       caption: {
         name: String(name).trim(),
         signedAt: now,
-        nameLabel: refreshed.contract.language === 'de' ? 'Name' : 'Name',
-        dateLabel: refreshed.contract.language === 'de' ? 'Datum' : 'Date',
+        ...signatureCaptionLabels(refreshed.contract.language),
         dateFormat: await readDocumentDateFormat(),
       },
     });

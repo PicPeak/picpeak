@@ -444,7 +444,7 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
               return logo ? (
                 <img
                   src={logo}
-                  alt={quote.issuer.companyName || 'Logo'}
+                  alt={quote.issuer.companyName || t('branding.logo', 'Logo')}
                   className="mx-auto mb-3 h-16 object-contain"
                 />
               ) : null;

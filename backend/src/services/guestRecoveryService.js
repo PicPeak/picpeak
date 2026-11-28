@@ -13,8 +13,10 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
-const { initializeTransporter, wrapEmailHtml, resolveFromIdentity } = require('./emailProcessor');
+const { initializeTransporter, wrapEmailHtml, resolveFromIdentity, getRecipientLanguage } = require('./emailProcessor');
 const emailWebhookTransport = require('./emailWebhookTransport');
+const { escapeHtml } = require('../utils/formatters');
+const { VERIFICATION_CODE_TEXT } = require('../utils/verificationCodeText');
 
 const CODE_TTL_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
@@ -45,7 +47,34 @@ async function createCode(eventId, email) {
   return code;
 }
 
-async function sendRecoveryEmail(toEmail, code, eventName = 'your gallery') {
+// The recovery mail is composed here rather than from a template, so it
+// carries its own copy per language. Languages without an entry fall back to
+// English, as the template-based emails do.
+const RECOVERY_COPY = {
+  en: {
+    subject: (code) => `Your verification code: ${code}`,
+    heading: (name) => (name ? `Welcome back to ${name}` : 'Welcome back to your gallery'),
+    intro: 'Enter this code to recover your picks in the gallery:',
+    expiry: 'This code expires in 15 minutes. If you did not request it, you can safely ignore this email.',
+    text: VERIFICATION_CODE_TEXT.en,
+  },
+  de: {
+    subject: (code) => `Ihr Bestätigungscode: ${code}`,
+    heading: (name) => (name ? `Willkommen zurück bei ${name}` : 'Willkommen zurück in Ihrer Galerie'),
+    intro: 'Geben Sie diesen Code ein, um Ihre Auswahl in der Galerie wiederherzustellen:',
+    expiry: 'Der Code ist 15 Minuten gültig. Falls Sie ihn nicht angefordert haben, können Sie diese E-Mail ignorieren.',
+    text: VERIFICATION_CODE_TEXT.de,
+  },
+  pt: {
+    subject: (code) => `Seu código de verificação: ${code}`,
+    heading: (name) => (name ? `Que bom ver você de novo em ${name}` : 'Que bom ver você de novo na sua galeria'),
+    intro: 'Digite este código para recuperar suas seleções na galeria:',
+    expiry: 'Este código expira em 15 minutos. Se você não o solicitou, pode ignorar este e-mail com segurança.',
+    text: VERIFICATION_CODE_TEXT.pt,
+  },
+};
+
+async function sendRecoveryEmail(toEmail, code, eventName = '', { eventId = null } = {}) {
   // This composes its own message rather than going through a template, so it
   // has to select the transport itself (#1225). Without this it called
   // initializeTransporter() unconditionally and dereferenced the null it
@@ -65,20 +94,25 @@ async function sendRecoveryEmail(toEmail, code, eventName = 'your gallery') {
     throw new Error('Email configuration not found');
   }
 
-  const subject = `Your verification code: ${code}`;
+  // The gallery's language first, then the guest's customer account, then
+  // the app default — the order every other gallery mail uses.
+  const recipientLanguage = await getRecipientLanguage(toEmail, eventId);
+  const language = RECOVERY_COPY[recipientLanguage] ? recipientLanguage : 'en';
+  const copy = RECOVERY_COPY[language];
+  const subject = copy.subject(code);
   const htmlBody = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 600px;">
-      <h2>Welcome back to ${eventName}</h2>
-      <p>Enter this code to recover your picks in the gallery:</p>
+      <h2>${escapeHtml(copy.heading(eventName))}</h2>
+      <p>${copy.intro}</p>
       <div style="font-size: 32px; font-weight: bold; letter-spacing: 8px; background: #f5f5f5; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0;">
         ${code}
       </div>
       <p style="color: #666; font-size: 14px;">
-        This code expires in 15 minutes. If you did not request it, you can safely ignore this email.
+        ${copy.expiry}
       </p>
     </div>
   `;
-  const styledHtml = await wrapEmailHtml(htmlBody, subject, 'en');
+  const styledHtml = await wrapEmailHtml(htmlBody, subject, language);
 
   const mail = {
     from: `${identity.fromName} <${identity.fromEmail}>`,
@@ -87,8 +121,8 @@ async function sendRecoveryEmail(toEmail, code, eventName = 'your gallery') {
     html: styledHtml,
     // wrapEmailHtml gives the HTML part the signature; the text
     // alternative needs it appended explicitly (#1264 review).
-    text: `Your verification code is ${code}. It expires in 15 minutes.`
-      + await require('./emailProcessor').buildSignatureTextFor('en'),
+    text: copy.text(code)
+      + await require('./emailProcessor').buildSignatureTextFor(language),
   };
   if (viaWebhook) {
     await emailWebhookTransport.send(mail);

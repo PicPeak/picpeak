@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Mail, FileText } from 'lucide-react';
 import { Button, Modal } from '../common';
 
@@ -17,6 +18,7 @@ export const EmailPreviewModal: React.FC<EmailPreviewModalProps> = ({
   htmlContent,
   textContent
 }) => {
+  const { t } = useTranslation();
   const [viewMode, setViewMode] = React.useState<'html' | 'text'>('html');
 
   if (!isOpen) return null;
@@ -30,18 +32,18 @@ export const EmailPreviewModal: React.FC<EmailPreviewModalProps> = ({
       title={
         <span className="flex items-center gap-3">
           <Mail className="w-6 h-6 text-accent" aria-hidden="true" />
-          Email Preview
+          {t('email.previewModal.title', 'Email preview')}
         </span>
       }
       footer={
         <Button variant="outline" onClick={onClose}>
-          Close
+          {t('common.close', 'Close')}
         </Button>
       }
     >
       {/* Subject */}
       <div className="-mx-6 -mt-4 mb-4 px-6 py-4 border-b border-line bg-subtle">
-        <p className="text-sm font-medium text-soft">Subject:</p>
+        <p className="text-sm font-medium text-soft">{t('email.previewModal.subject', 'Subject:')}</p>
         <p className="text-lg font-semibold text-heading mt-1">{subject}</p>
       </div>
 
@@ -53,7 +55,7 @@ export const EmailPreviewModal: React.FC<EmailPreviewModalProps> = ({
           onClick={() => setViewMode('html')}
           leftIcon={<Mail className="w-4 h-4" />}
         >
-          HTML View
+          {t('email.previewModal.htmlView', 'HTML view')}
         </Button>
         {textContent && (
           <Button
@@ -62,7 +64,7 @@ export const EmailPreviewModal: React.FC<EmailPreviewModalProps> = ({
             onClick={() => setViewMode('text')}
             leftIcon={<FileText className="w-4 h-4" />}
           >
-            Text View
+            {t('email.previewModal.textView', 'Text view')}
           </Button>
         )}
       </div>
@@ -73,7 +75,7 @@ export const EmailPreviewModal: React.FC<EmailPreviewModalProps> = ({
           <iframe
             srcDoc={htmlContent}
             className="w-full h-[600px] border-0"
-            title="Email Preview"
+            title={t('email.previewModal.title', 'Email preview')}
             // Same posture as the inbound-mail pane: no scripts, no
             // same-origin. The preview needs neither; images and styles
             // still render, and nothing reaches contentDocument.

@@ -33,7 +33,7 @@ const ALLOWED_ATTR = ['href', 'target', 'rel', 'class', 'style', 'src', 'alt', '
  * per-page logo → global branding logo → bundled placeholder.
  */
 export const CMSContentBlock: React.FC<CMSContentBlockProps> = ({ slug, fallback }) => {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const showAgb = useShowAgbLink();
 
   const { data: settings } = usePublicSettings();
@@ -126,7 +126,7 @@ export const CMSContentBlock: React.FC<CMSContentBlockProps> = ({ slug, fallback
                 className="text-sm font-medium hover:underline"
                 style={{ color: 'var(--color-accent)' }}
               >
-                {lang === 'de' ? '← Zur Startseite' : '← Back to home'}
+                ← {t('legal.goHome', { lng: lang, defaultValue: 'Go to the homepage' })}
               </Link>
             </div>
           </Card>
@@ -139,19 +139,19 @@ export const CMSContentBlock: React.FC<CMSContentBlockProps> = ({ slug, fallback
       >
         <div className="flex justify-center gap-4">
           <Link to="/impressum" className="hover:underline">
-            {lang === 'de' ? 'Impressum' : 'Legal Notice'}
+            {t('legal.impressum', { lng: lang, defaultValue: 'Legal Notice' })}
           </Link>
           <span style={{ color: 'var(--color-surface-border)' }}>•</span>
           {showAgb && (
             <>
               <Link to="/agb" className="hover:underline">
-                {lang === 'de' ? 'AGB' : 'Terms & Conditions'}
+                {t('legal.agb', { lng: lang, defaultValue: 'Terms & Conditions' })}
               </Link>
               <span style={{ color: 'var(--color-surface-border)' }}>•</span>
             </>
           )}
           <Link to="/datenschutz" className="hover:underline">
-            {lang === 'de' ? 'Datenschutz' : 'Privacy Policy'}
+            {t('legal.datenschutz', { lng: lang, defaultValue: 'Privacy Policy' })}
           </Link>
         </div>
         <PoweredBy className="mt-2" />

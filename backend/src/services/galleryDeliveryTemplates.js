@@ -24,6 +24,7 @@
  */
 
 const { upgradeUneditedTemplates } = require('./emailTemplateUpgrade');
+const { PT_EMAIL_TEMPLATES } = require('./ptEmailTemplates');
 
 const TEMPLATES = {
   gallery_completed: {
@@ -183,13 +184,14 @@ async function ensureGalleryDeliveryTemplatesSeeded(db, logger) {
         const inserted = await trx('email_templates').insert(row).returning('id');
         const templateId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
         if (hasTranslations) {
-          for (const language of ['en', 'de']) {
+          const contents = { en: def.en, de: def.de, pt: PT_EMAIL_TEMPLATES[templateKey] };
+          for (const [language, content] of Object.entries(contents)) {
             await trx('email_template_translations').insert({
               template_id: templateId,
               language,
-              subject: def[language].subject,
-              body_html: def[language].body_html,
-              body_text: def[language].body_text,
+              subject: content.subject,
+              body_html: content.body_html,
+              body_text: content.body_text,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             });

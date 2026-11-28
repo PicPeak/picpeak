@@ -1252,7 +1252,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         // a stroke would close the lightbox. Cancel is the way out then.
         hidden={annotating}
         className="absolute p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-30"
-        aria-label="Close"
+        aria-label={t('common.close', 'Close')}
         style={{
           top: 'max(1rem, env(safe-area-inset-top))',
           right: isDesktopFeedback ? `${desktopFeedbackWidth + 16}px` : 'max(1rem, env(safe-area-inset-right))'
@@ -1266,7 +1266,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         onClick={goToPrevious}
         hidden={annotating}
         className={`absolute left-4 ${navArrowPlacement.className} p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-20`}
-        aria-label="Previous photo"
+        aria-label={t('gallery.viewer.previousPhoto', 'Previous photo')}
         style={navArrowPlacement.style}
       >
         <ChevronLeft className="w-6 h-6 text-white" />
@@ -1277,7 +1277,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           onClick={goToNext}
           hidden={annotating}
           className={`absolute ${navArrowPlacement.className} p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-30`}
-          aria-label="Next photo"
+          aria-label={t('gallery.viewer.nextPhoto', 'Next photo')}
           style={{ ...navArrowPlacement.style, right: isDesktopFeedback ? `${desktopFeedbackWidth + 16}px` : '1rem' }}
         >
           <ChevronRight className="w-6 h-6 text-white" />
@@ -1411,7 +1411,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               onClick={handleZoomOut}
               disabled={zoom <= 1}
               className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label="Zoom out"
+              aria-label={t('gallery.viewer.zoomOut', 'Zoom out')}
             >
               <ZoomOut className="w-5 h-5 text-white" />
             </button>
@@ -1425,7 +1425,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               onClick={handleZoomIn}
               disabled={zoom >= fullZoom.maxZoom}
               className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label="Zoom in"
+              aria-label={t('gallery.viewer.zoomIn', 'Zoom in')}
             >
               <ZoomIn className="w-5 h-5 text-white" />
             </button>
@@ -1435,8 +1435,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               onClick={resetZoom}
               disabled={zoom <= 1}
               className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label="Fit to screen"
-              title="Fit to screen"
+              aria-label={t('gallery.viewer.fitToScreen', 'Fit to screen')}
+              title={t('gallery.viewer.fitToScreen', 'Fit to screen')}
             >
               <Minimize2 className="w-5 h-5 text-white" />
             </button>
@@ -1613,8 +1613,10 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                   setShowFeedback(!showFeedback);
                 }}
                 className="relative p-2 bg-black/40 hover:bg-black/60 rounded-full border border-white/40 transition-colors"
-                aria-label="Toggle feedback"
-                title={`Photo feedback${(currentPhoto.comment_count ?? 0) > 0 ? ` (${currentPhoto.comment_count ?? 0} comments)` : ''}`}
+                aria-label={t('feedback.togglePanel', 'Toggle feedback')}
+                title={(currentPhoto.comment_count ?? 0) > 0
+                  ? t('feedback.panelTitleWithCount', { count: currentPhoto.comment_count ?? 0, defaultValue: 'Photo feedback ({{count}} comments)' })
+                  : t('feedback.panelTitle', 'Photo feedback')}
               >
                 <MessageSquare className="w-5 h-5 text-white" />
                 {((currentPhoto.comment_count ?? 0) > 0 || (currentPhoto.average_rating ?? 0) > 0) && (

@@ -1,5 +1,7 @@
 'use strict';
 
+const { PT_EMAIL_TEMPLATES } = require('./ptEmailTemplates');
+
 /**
  * Bring a seeded email template up to date when its default text changed.
  *
@@ -10,6 +12,11 @@
  * whole language as it is; the legacy per-language columns on email_templates
  * are compared and upgraded field by field. Used by the seeders whose
  * defaults changed after they shipped (crmEmailTemplates, galleryDeliveryTemplates).
+ *
+ * en and de only. A pt row (ptEmailTemplates.js) has no previous default to
+ * compare against, so it is not upgraded here: when an en / de default
+ * changes, the pt text needs its own update and a migration for installs
+ * that already have the row.
  */
 async function upgradeUneditedTemplates(db, { templates, previousDefaults, cols, hasTranslationsTable, logger }) {
   for (const [templateKey, previous] of Object.entries(previousDefaults)) {
@@ -92,9 +99,8 @@ async function seedTemplates(db, logger, templates, label) {
       const rows = await db('email_templates').insert(masterRow).returning('id');
       const templateId = typeof rows[0] === 'object' ? rows[0].id : rows[0];
       if (hasTranslationsTable && templateId) {
-        for (const lang of ['en', 'de']) {
-          const content = def[lang];
-          if (!content) continue;
+        for (const lang of ['en', 'de', 'pt']) {
+          const content = lang === 'pt' ? PT_EMAIL_TEMPLATES[templateKey] : def[lang];
           await db('email_template_translations').insert({
             template_id: templateId,
             language: lang,

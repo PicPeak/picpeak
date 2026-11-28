@@ -3,6 +3,7 @@ import { useArchiveDownload } from '../contexts/ArchiveDownloadContext';
 import { useQuery, useMutation, type UseMutationOptions } from '@tanstack/react-query';
 import { galleryService } from '../services';
 import { toast } from 'react-toastify';
+import i18n from 'i18next';
 import { isDownloadLimitError, isGalleryLimited } from '../utils/downloadLimit';
 import { renamedGallerySlug } from './useFollowGalleryRename';
 import { beginPhotoDownload, endPhotoDownload, touchPhotoDownload } from './usePhotoDownloadPending';
@@ -76,12 +77,12 @@ export const useDownloadPhoto = () => {
         // 2263): the call returns before any byte arrives, and the browser's
         // own download UI reports it.
         if (isVideo && !isGalleryLimited(slug)) return;
-        toast.success('Photo downloaded successfully');
+        toast.success(i18n.t('photos.downloaded', 'Photo downloaded successfully'));
       },
       onError: (error) => {
         // The limit refusal already said why (issue 1560).
         if (isDownloadLimitError(error)) return;
-        toast.error('Failed to download photo');
+        toast.error(i18n.t('photos.downloadFailed', 'Failed to download photo'));
       },
     },
   );
@@ -105,7 +106,7 @@ export const useSavePhotoToDevice = () => {
     {
       onError: (error) => {
         if (isDownloadLimitError(error)) return;
-        toast.error('Failed to save photo');
+        toast.error(i18n.t('photos.saveFailed', 'Failed to save photo'));
       },
     },
   );
@@ -117,11 +118,11 @@ export const useDownloadAllPhotos = () => {
     mutationFn: ({ slug, zipReady }: { slug: string; zipReady?: boolean }) =>
       archives.downloadAllPhotos(slug, zipReady),
     onSuccess: (handedOff) => {
-      if (handedOff) toast.success('Download started');
+      if (handedOff) toast.success(i18n.t('events.downloadStarted', 'Download started'));
     },
     onError: (error) => {
       if (isDownloadLimitError(error)) return;
-      toast.error('Failed to download photos');
+      toast.error(i18n.t('photos.downloadManyFailed', 'Failed to download photos'));
     },
   });
 };
