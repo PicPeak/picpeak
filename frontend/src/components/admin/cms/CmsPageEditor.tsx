@@ -16,6 +16,7 @@ import { cmsService, type CMSPage } from '../../../services/cms.service';
 import { buildResourceUrl } from '../../../utils/url';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../../hooks';
+import { useUnsavedChanges } from '../../../contexts/UnsavedChangesContext';
 
 interface CmsPageEditorProps {
   slug: string;
@@ -78,6 +79,10 @@ export const CmsPageEditor: React.FC<CmsPageEditorProps> = ({ slug, saveMode = '
     if (currentPage) setEditForm(currentPage);
     setHasUnsavedChanges(false);
   };
+  // The leave guard (reload, tab close, browser Back): SettingsSaveBar
+  // registers the edits in bar mode; the inline editor (the website
+  // builder's dialog) has no save bar, so it registers them itself.
+  useUnsavedChanges(saveMode === 'inline' && hasUnsavedChanges, discard);
   const change = (patch: Partial<CMSPage>) => {
     setEditForm((prev) => ({ ...prev, ...patch }));
     setHasUnsavedChanges(true);
