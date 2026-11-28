@@ -33,7 +33,7 @@ test.each(['/about', '/about/', '/sitemap.xml', '/site-media/p1.0123456789abcdef
 });
 
 test('the app\'s own single-segment paths stay the SPA shell', async () => {
-  for (const path of ['/admin', '/impressum', '/setup', '/book']) {
+  for (const path of ['/admin', '/setup', '/book', '/not-found']) {
     // eslint-disable-next-line no-await-in-loop
     expect((await run(path)).passed).toBe(true);
   }
@@ -47,4 +47,30 @@ test('with the builder off a slug-shaped path is the SPA shell, as before', asyn
 
 test('the editor preview, an admin API call, still works', async () => {
   expect((await run('/api/admin/website/preview', { method: 'POST', authorization: 'Bearer x' })).passed).toBe(true);
+});
+
+test('legal pages and unknown addresses the website renders are gated with it; with the builder off they are the SPA shell', async () => {
+  for (const path of ['/impressum', '/datenschutz', '/agb', '/no-such-page']) {
+    // eslint-disable-next-line no-await-in-loop
+    expect(await run(path)).toEqual({ passed: false, status: 503 });
+  }
+  mockFlag.mockResolvedValue(false);
+  for (const path of ['/impressum', '/datenschutz', '/agb', '/no-such-page']) {
+    // eslint-disable-next-line no-await-in-loop
+    expect((await run(path)).passed).toBe(true);
+  }
+  mockFlag.mockResolvedValue(true);
+});
+
+test('server routing and the maintenance gate share one decision of which paths the app owns', () => {
+  const { ownedByApp } = require('../../src/services/website/document');
+  expect(ownedByApp('admin')).toBe(true);
+  expect(ownedByApp('not-found')).toBe(true);
+  expect(ownedByApp('impressum')).toBe(false);
+  expect(ownedByApp('about')).toBe(false);
+  const fs = require('fs');
+  const path = require('path');
+  const server = fs.readFileSync(path.join(__dirname, '../../server.js'), 'utf8');
+  expect(server).not.toMatch(/function ownedByApp/);
+  expect(fs.readFileSync(path.join(__dirname, '../../src/middleware/maintenance.js'), 'utf8')).toContain('ownedByApp(');
 });

@@ -66,12 +66,13 @@ async function checkMaintenanceMode() {
 
 // Middleware to enforce maintenance mode
 // The website page location of frontend/nginx.conf, the same shape server.js
-// routes to the builder: one slug-shaped segment outside the reserved list,
-// while the builder is on.
+// routes to the builder: one slug-shaped segment the app does not own itself
+// (a page, a legal page, the not-found page for any other address), while
+// the builder is on. ownedByApp is server.js's own decision.
 const WEBSITE_PAGE_PATH = /^\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/;
 async function isWebsitePagePath(requestPath) {
   const match = WEBSITE_PAGE_PATH.exec(requestPath);
-  if (!match || require('../services/website/document').RESERVED_SLUGS.has(match[1])) return false;
+  if (!match || require('../services/website/document').ownedByApp(match[1])) return false;
   return require('./requireFeatureFlag').isFeatureEnabled('websiteBuilder').catch(() => false);
 }
 
@@ -139,8 +140,10 @@ async function maintenanceMiddleware(req, res, next) {
   //
   // The website builder (issue 2618) adds three proxied shapes: /site-media/
   // (its images), `location = /sitemap.xml`, and the page location, every
-  // slug-shaped single segment that is not one of the app's own paths. A page
-  // is the site root's sibling and is gated like it; while the builder is off
+  // slug-shaped single segment that is not one of the app's own paths (the
+  // legal pages included: the website renders them, and the not-found page
+  // for any other address). A page is the site root's sibling and is gated
+  // like it; while the builder is off
   // the backend owns no such path, so it stays the shell (CMS and not-found
   // pages), exactly as before.
   const BACKEND_RENDERED_PREFIXES = ['/api/', '/photos/', '/thumbnails/', '/fonts/', '/og/', '/s/', '/site-media/'];

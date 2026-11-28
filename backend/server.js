@@ -493,12 +493,8 @@ function sendWebsitePage(req, res, page, slug) {
   res.status(200).send(page.html);
 }
 
-// A path the app answers itself. The legal pages are reserved too, but the
-// live website shows them in its design.
-function ownedByApp(slug) {
-  const { RESERVED_SLUGS, LEGAL_SLUGS } = require('./src/services/website/document');
-  return RESERVED_SLUGS.has(slug) && !LEGAL_SLUGS.includes(slug);
-}
+// A path the app answers itself (document.js; the maintenance gate asks the same).
+const ownedByApp = (slug) => require('./src/services/website/document').ownedByApp(slug);
 
 // `/<slug>` of a published website page, a legal page, or, for any other
 // address, the not-found page, all while the website is live. Anything else

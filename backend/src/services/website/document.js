@@ -38,6 +38,15 @@ const RESERVED_SLUGS = new Set(require('./reservedSlugs.json'));
 // Reserved for pages, but the website renders them in its design while it
 // is live (the CMS legal pages); the app's own page otherwise.
 const LEGAL_SLUGS = ['impressum', 'datenschutz', 'agb'];
+
+/**
+ * A single-segment path the app answers itself (its routes, the SPA's own
+ * pages). The legal pages are reserved too, but the website renders them
+ * while it is live. One decision for server routing and the maintenance gate.
+ */
+function ownedByApp(slug) {
+  return RESERVED_SLUGS.has(slug) && !LEGAL_SLUGS.includes(slug);
+}
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_SLUG_LENGTH = 60;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
@@ -663,6 +672,7 @@ module.exports = {
   BLOCK_VARIANTS,
   RESERVED_SLUGS,
   LEGAL_SLUGS,
+  ownedByApp,
   linkTarget,
   normalizeDocument,
   normalizeBlock,
