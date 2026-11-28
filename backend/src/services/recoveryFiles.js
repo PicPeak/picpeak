@@ -18,6 +18,8 @@ const MANAGED_ROOTS = [
   'events/active', 'events/archived', 'thumbnails', 'previews', 'heroes',
   'videos', 'watermarks', 'uploads/transfers', 'transfers',
   'business-docs/customer-documents', 'album-products', '.print-sales', 'website',
+  // Fonts uploaded in the branding settings (issue 2618), kept through the adapter.
+  'fonts',
 ];
 const DEFAULT_MAX_BYTES = 5000 * 1024 * 1024;
 // The list of required keys lives beside the database dump it belongs to; the

@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
+const { getStorage } = require('./storage');
 
 /**
  * Filesystem-driven font scanner.
@@ -42,6 +43,9 @@ const { AppError } = require('../utils/errors');
  */
 
 const FONTS_CACHE_TTL_MS = 30_000;
+// Where uploads live in storage (STORAGE_PATH/fonts on a local disk).
+const FONTS_PREFIX = 'fonts';
+const FONT_TYPES = { woff2: 'font/woff2', woff: 'font/woff', ttf: 'font/ttf' };
 // Formats a family's weight files may come in, best first: a weight with
 // several keeps the first. Uploads (issue 2618) take any of them.
 const FONT_FORMATS = ['woff2', 'woff', 'ttf'];
@@ -110,6 +114,31 @@ async function readFamilyMeta(folderAbs, folderName) {
 }
 
 /**
+ * A family from its folder's file names: { family, weights, generic,
+ * formats, source }, or null without a usable weight file.
+ */
+function familyFromFiles(folderName, fileNames, generic, source, where) {
+  const formats = {};
+  for (const name of fileNames) {
+    const match = /^(\d+)\.(woff2|woff|ttf)$/i.exec(name);
+    if (!match) continue; // ignore non-numeric weight names and other files
+    const weight = parseInt(match[1], 10);
+    if (weight < 1 || weight > 1000) continue;
+    const format = match[2].toLowerCase();
+    if (!formats[weight] || FONT_FORMATS.indexOf(format) < FONT_FORMATS.indexOf(formats[weight])) formats[weight] = format;
+  }
+  const weights = Object.keys(formats).map(Number);
+
+  if (weights.length === 0) {
+    logger.warn(`[fonts] Skipping ${folderName} in ${where}: no usable <weight>.woff2 files`);
+    return null;
+  }
+
+  weights.sort((a, b) => a - b);
+  return { family: familyDisplayName(folderName), weights, generic, formats, source };
+}
+
+/**
  * Read one family folder and return { family, weights, generic } or null
  * if the folder has no usable .woff2 files.
  */
@@ -122,27 +151,41 @@ async function readFamilyFolder(rootAbs, folderName, source) {
     logger.warn(`[fonts] Could not read family folder ${folderName} in ${rootAbs}: ${err.message}`);
     return null;
   }
+  const names = entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
+  const family = familyFromFiles(folderName, names, DEFAULT_GENERIC, source, rootAbs);
+  return family ? { ...family, generic: await readFamilyMeta(folderAbs, folderName) } : null;
+}
 
-  const formats = {};
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    const match = /^(\d+)\.(woff2|woff|ttf)$/i.exec(entry.name);
-    if (!match) continue; // ignore non-numeric weight names and other files
-    const weight = parseInt(match[1], 10);
-    if (weight < 1 || weight > 1000) continue;
-    const format = match[2].toLowerCase();
-    if (!formats[weight] || FONT_FORMATS.indexOf(format) < FONT_FORMATS.indexOf(formats[weight])) formats[weight] = format;
+/**
+ * The uploaded families as the object store holds them (S3: every replica
+ * sees the same), keyed like scanRoot's result.
+ */
+async function scanStore(storage) {
+  const byFolder = new Map();
+  for (const entry of await storage.list(`${FONTS_PREFIX}/`)) {
+    const parts = String(entry.key).split('/');
+    if (parts.length !== 3 || parts[0] !== FONTS_PREFIX || !parts[1] || parts[1].startsWith('.')) continue;
+    if (!byFolder.has(parts[1])) byFolder.set(parts[1], []);
+    byFolder.get(parts[1]).push(parts[2]);
   }
-  const weights = Object.keys(formats).map(Number);
-
-  if (weights.length === 0) {
-    logger.warn(`[fonts] Skipping ${folderName} in ${rootAbs}: no usable <weight>.woff2 files`);
-    return null;
+  const result = new Map();
+  for (const [folder, names] of byFolder) {
+    let generic = DEFAULT_GENERIC;
+    if (names.includes('meta.json')) {
+      try {
+        const chunks = [];
+        // eslint-disable-next-line no-await-in-loop -- one small file per family
+        for await (const chunk of await storage.get(`${FONTS_PREFIX}/${folder}/meta.json`)) chunks.push(Buffer.from(chunk));
+        const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        if (parsed && VALID_GENERICS.has(parsed.generic)) generic = parsed.generic;
+      } catch (err) {
+        logger.warn(`[fonts] Could not read meta.json for ${folder}: ${err.message}`);
+      }
+    }
+    const family = familyFromFiles(folder, names, generic, 'uploaded', 'the object store');
+    if (family && !result.has(family.family.toLowerCase())) result.set(family.family.toLowerCase(), family);
   }
-
-  weights.sort((a, b) => a - b);
-  const generic = await readFamilyMeta(folderAbs, folderName);
-  return { family: familyDisplayName(folderName), weights, generic, formats, source };
+  return result;
 }
 
 /**
@@ -195,7 +238,10 @@ async function listFonts() {
   }
 
   const bundled = await scanRoot(getBundledFontsRoot(), 'bundled');
-  const userAdded = await scanRoot(getUserFontsRoot(), 'uploaded');
+  // Uploads live where the storage adapter keeps files: on this disk, or in
+  // the object store every replica shares.
+  const storage = getStorage();
+  const userAdded = storage.kind() === 's3' ? await scanStore(storage) : await scanRoot(getUserFontsRoot(), 'uploaded');
 
   // User additions override bundled families of the same name.
   const merged = new Map(bundled);
@@ -237,10 +283,11 @@ function fontError(message, code) {
 }
 
 /**
- * Store an uploaded font weight (Settings › Branding) as
- * STORAGE_PATH/fonts/<Family-Name>/<weight>.<format>, the layout listFonts
- * reads, so the galleries and the website both offer it. A file of the same
- * weight in another format is replaced.
+ * Store an uploaded font weight (Settings › Branding) through the storage
+ * adapter as fonts/<Family-Name>/<weight>.<format> (on local storage:
+ * STORAGE_PATH/fonts/..., the layout listFonts reads; on S3 in the bucket,
+ * so every replica serves it), so the galleries and the website both offer
+ * it. A file of the same weight in another format is replaced.
  */
 async function saveUploadedFont({ family, weight, generic, buffer }) {
   const format = fontFormatOf(buffer);
@@ -248,14 +295,14 @@ async function saveUploadedFont({ family, weight, generic, buffer }) {
   const name = typeof family === 'string' ? family.trim().replace(/\s+/g, ' ') : '';
   if (!FAMILY_NAME.test(name) || name.length > 60) throw fontError('Name the font with letters, digits and spaces', 'FONT_NAME');
   if (!UPLOAD_WEIGHTS.includes(Number(weight))) throw fontError('Pick a weight from 100 to 900', 'FONT_WEIGHT');
-  const folder = path.join(getUserFontsRoot(), name.replace(/ /g, '-'));
-  await fs.mkdir(folder, { recursive: true });
+  const storage = getStorage();
+  const folder = `${FONTS_PREFIX}/${name.replace(/ /g, '-')}`;
   for (const other of FONT_FORMATS) {
     // eslint-disable-next-line no-await-in-loop -- three names at most
-    if (other !== format) await fs.rm(path.join(folder, `${Number(weight)}.${other}`), { force: true });
+    if (other !== format) await storage.delete(`${folder}/${Number(weight)}.${other}`);
   }
-  await fs.writeFile(path.join(folder, `${Number(weight)}.${format}`), buffer);
-  if (VALID_GENERICS.has(generic)) await fs.writeFile(path.join(folder, 'meta.json'), JSON.stringify({ generic }));
+  await storage.put(`${folder}/${Number(weight)}.${format}`, buffer, { contentType: FONT_TYPES[format] });
+  if (VALID_GENERICS.has(generic)) await storage.put(`${folder}/meta.json`, Buffer.from(JSON.stringify({ generic })), { contentType: 'application/json' });
   clearFontsCache();
   return { family: name, weight: Number(weight), format };
 }
@@ -264,13 +311,12 @@ async function saveUploadedFont({ family, weight, generic, buffer }) {
 async function deleteUploadedFamily(family) {
   const name = typeof family === 'string' ? family.trim() : '';
   if (!FAMILY_NAME.test(name)) return false;
-  const folder = path.join(getUserFontsRoot(), name.replace(/ /g, '-'));
-  try {
-    await fs.access(folder);
-  } catch {
-    return false;
-  }
-  await fs.rm(folder, { recursive: true, force: true });
+  const storage = getStorage();
+  const prefix = `${FONTS_PREFIX}/${name.replace(/ /g, '-')}/`;
+  const entries = await storage.list(prefix);
+  if (!entries.length) return false;
+  for (const entry of entries) await storage.delete(entry.key); // eslint-disable-line no-await-in-loop
+  if (storage.kind() !== 's3') await fs.rm(path.join(getUserFontsRoot(), name.replace(/ /g, '-')), { recursive: true, force: true });
   clearFontsCache();
   return true;
 }

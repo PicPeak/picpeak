@@ -73,7 +73,8 @@ const EXCLUDED_TABLES = new Set([
 ]);
 
 // Storage subdirs holding non-recalculable blobs — always included.
-const DOC_DIRS = ['business-docs', 'uploads', 'transfers', 'album-products', '.print-sales', 'website'];
+// fonts/: fonts uploaded in the branding settings (issue 2618), their only copy.
+const DOC_DIRS = ['business-docs', 'uploads', 'transfers', 'album-products', '.print-sales', 'website', 'fonts'];
 // Original gallery photos — only when includePhotos is true (large; otherwise
 // the admin re-uploads originals per gallery and previews are re-rendered).
 const PHOTO_DIRS = ['events/active', 'events/archived', 'thumbnails', 'previews', 'heroes', 'videos', 'watermarks'];

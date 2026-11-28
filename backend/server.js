@@ -761,12 +761,10 @@ app.use('/uploads/favicons', setCorsHeaders, secureStatic(path.join(storagePath,
 // admin-writable and a restored backup can populate it, so anything else in
 // it must not be served from the app origin. nosniff keeps a browser from
 // promoting a font response to another type.
-const { isPublicFontFile } = require('./src/middleware/secureStatic');
-const fontStaticOpts = {
-  maxAge: '7d',
-  onlyServe: isPublicFontFile,
-  setHeaders: (res) => res.setHeader('X-Content-Type-Options', 'nosniff'),
-};
+const { fontReadThrough, fontStaticOpts } = require('./src/middleware/fontReadThrough');
+// Uploaded fonts kept in an object store (S3): served from a local copy, so
+// every replica serves what any replica uploaded (issue 2618).
+app.use('/fonts', setCorsHeaders, fontReadThrough());
 app.use(
   '/fonts',
   setCorsHeaders,

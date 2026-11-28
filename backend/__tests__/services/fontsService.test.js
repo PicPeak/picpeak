@@ -81,6 +81,8 @@ beforeEach(async () => {
   userRoot = path.join(storageParent, 'fonts');
   process.env.STORAGE_PATH = storageParent;
 
+  // Uploads go through the storage adapter, rooted at STORAGE_PATH.
+  require('../../src/services/storage').resetStorage();
   // Reset the module-level cache so each test sees a fresh scan.
   // (Both getBundledFontsRoot and getUserFontsRoot read process.env at
   // call-time, so the env vars set above are picked up without needing
@@ -359,5 +361,62 @@ describe('uploaded fonts (issue 2618)', () => {
     await expect(fontsService.saveUploadedFont({ family: '../etc', weight: 400, buffer: WOFF2 })).rejects.toMatchObject({ code: 'FONT_NAME' });
     await expect(fontsService.saveUploadedFont({ family: 'Ok', weight: 450, buffer: WOFF2 })).rejects.toMatchObject({ code: 'FONT_WEIGHT' });
     expect(fs.readdirSync(userRoot)).toEqual([]);
+  });
+});
+
+// An S3-like store in memory: the adapter interface fontsService uses.
+function memoryStore() {
+  const objects = new Map();
+  const { Readable } = require('stream');
+  return {
+    objects,
+    kind: () => 's3',
+    put: async (key, body) => { objects.set(key, Buffer.isBuffer(body) ? body : Buffer.from(String(body))); },
+    get: async (key) => { if (!objects.has(key)) throw Object.assign(new Error('missing'), { code: 'ENOENT' }); return Readable.from([objects.get(key)]); },
+    getToFile: async (key, local) => { await fsPromises.mkdir(path.dirname(local), { recursive: true }); await fsPromises.writeFile(local, objects.get(key)); },
+    stat: async (key) => (objects.has(key) ? { size: objects.get(key).length, mtime: new Date() } : null),
+    exists: async (key) => objects.has(key),
+    delete: async (key) => { objects.delete(key); },
+    list: async (prefix) => [...objects.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key, size: objects.get(key).length })),
+  };
+}
+
+describe('uploaded fonts on an object store (S3, several replicas)', () => {
+  const WOFF2 = Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(60)]);
+  const TTF = Buffer.concat([Buffer.from([0x00, 0x01, 0x00, 0x00]), Buffer.alloc(60)]);
+  let store;
+  beforeEach(() => { store = memoryStore(); require('../../src/services/storage').setStorageForTesting(store); });
+  afterEach(() => require('../../src/services/storage').resetStorage());
+
+  test('an upload is stored in the object store, listed from it on any replica, and removed from it', async () => {
+    await fontsService.saveUploadedFont({ family: 'Studio Serif', weight: 400, generic: 'serif', buffer: TTF });
+    await fontsService.saveUploadedFont({ family: 'Studio Serif', weight: 400, generic: 'serif', buffer: WOFF2 });
+    await fontsService.saveUploadedFont({ family: 'Studio Serif', weight: 700, generic: 'serif', buffer: TTF });
+    expect([...store.objects.keys()].sort()).toEqual(['fonts/Studio-Serif/400.woff2', 'fonts/Studio-Serif/700.ttf', 'fonts/Studio-Serif/meta.json']);
+    // Nothing on this replica's disk.
+    expect(fs.readdirSync(userRoot)).toEqual([]);
+    fontsService.clearFontsCache();
+    expect((await fontsService.listFonts()).find((f) => f.family === 'Studio Serif'))
+      .toEqual({ family: 'Studio Serif', weights: [400, 700], generic: 'serif', formats: { 400: 'woff2', 700: 'ttf' }, source: 'uploaded' });
+    expect(await fontsService.deleteUploadedFamily('Studio Serif')).toBe(true);
+    expect(store.objects.size).toBe(0);
+    expect(await fontsService.deleteUploadedFamily('Studio Serif')).toBe(false);
+  });
+
+  test('the fonts route serves an uploaded file from the object store (read through a local copy)', async () => {
+    store.objects.set('fonts/Studio-Serif/400.woff2', WOFF2);
+    const express = require('express');
+    const request = require('supertest');
+    const app = express();
+    app.use('/fonts', require('../../src/middleware/fontReadThrough').fontReadThrough());
+    const res = await request(app).get('/fonts/Studio-Serif/400.woff2');
+    expect(res.status).toBe(200);
+    expect(Buffer.from(res.body).equals(WOFF2)).toBe(true);
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    // Only font files, only from fonts/.
+    store.objects.set('fonts/Studio-Serif/evil.html', Buffer.from('<script>'));
+    expect((await request(app).get('/fonts/Studio-Serif/evil.html')).status).toBe(404);
+    expect((await request(app).get('/fonts/..%2Fsecrets/400.woff2')).status).toBe(404);
+    expect((await request(app).get('/fonts/Missing/400.woff2')).status).toBe(404);
   });
 });

@@ -60,11 +60,17 @@ describe('/fonts serves font formats only', () => {
     for (const bad of ['a.html', 'a.js', 'a.svg', 'a.json', 'a.css', 'a', '', undefined]) expect(isPublicFontFile(bad)).toBe(false);
   });
 
-  it('server.js wires both /fonts mounts through the font allowlist', () => {
+  it('server.js wires every /fonts mount through the font allowlist', () => {
     const src = fs.readFileSync(path.resolve(__dirname, '../../server.js'), 'utf8');
-    expect(src).toMatch(/onlyServe:\s*isPublicFontFile/);
-    expect(src).toMatch(/X-Content-Type-Options',\s*'nosniff'/);
+    // The options live beside the object-store mount (issue 2618), which
+    // serves through them too.
+    const opts = fs.readFileSync(path.resolve(__dirname, '../../src/middleware/fontReadThrough.js'), 'utf8');
+    expect(opts).toMatch(/onlyServe:\s*isPublicFontFile/);
+    expect(opts).toMatch(/X-Content-Type-Options',\s*'nosniff'/);
+    expect(opts).toMatch(/secureStatic\(cacheDir, fontStaticOpts\)/);
+    expect(src).toMatch(/const \{ fontReadThrough, fontStaticOpts \} = require\('\.\/src\/middleware\/fontReadThrough'\)/);
     const mounts = src.match(/app\.use\(\s*'\/fonts',\s*setCorsHeaders,\s*secureStatic\([^)]*\),\s*fontStaticOpts\)/g) || [];
     expect(mounts).toHaveLength(2);
+    expect(src).toMatch(/app\.use\('\/fonts', setCorsHeaders, fontReadThrough\(\)\)/);
   });
 });
