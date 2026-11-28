@@ -2107,6 +2107,7 @@ describe('mails of the contact form', () => {
     expect(await queued('website_contact_admin')).toHaveLength(4);
     // A day later, the address can get one again.
     await db('email_queue').where({ email_type: 'website_contact_confirmation' }).update({ created_at: Date.now() - 25 * 60 * 60 * 1000 });
+    await db('website_contact_confirmations').update({ window_start: new Date(Date.now() - 86400000).toISOString().slice(0, 10) });
     await post({ ...valid, email: 'third@example.com', 'frc-captcha-response': 'ok' });
     expect(await queued('website_contact_confirmation')).toHaveLength(2);
     // The same address in other letter case is the same address.
@@ -2131,6 +2132,18 @@ describe('mails of the contact form', () => {
     expect(stale.status).toBe(409);
     expect(stale.body.code).toBe('WEBSITE_CONTACT_CONFLICT');
     expect((await request(app).get('/api/admin/website/contact-settings').set(auth(adminId))).body.contact.recipients).toEqual(['colleague@studio.example']);
+  });
+
+  test('five messages at once from one address get one confirmation', async () => {
+    await settings({ captcha: { provider: 'friendly', friendly: { siteKey: 'FCMTEST0123', apiKey: 'A1-secret-key' } }, contact: { confirmation: true } }).expect(200);
+    await db('email_queue').del();
+    jest.spyOn(axios, 'post').mockResolvedValue({ data: { success: true } });
+    const results = await Promise.all(Array.from({ length: 5 }, (_, i) => post({ ...valid, email: i % 2 ? 'burst@example.com' : 'BURST@example.com', 'frc-captcha-response': 'ok' })));
+    results.forEach((res) => expect(res.headers.location).toBe('/#contact-sent-c1'));
+    expect((await queued('website_contact_confirmation')).map((r) => r.recipient_email)).toEqual(['burst@example.com']);
+    // The reservation behind it: one row for the address and the day.
+    expect(await db('website_contact_confirmations').where({ address_key: 'burst@example.com' }).count({ c: '*' }).first()).toMatchObject({ c: 1 });
+    await settings({ captcha: { provider: 'none' } });
   });
 
   test('changing where messages go takes the settings permission', async () => {

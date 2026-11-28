@@ -140,6 +140,27 @@ const CONFIRMATION_WINDOW_MS = 24 * 60 * 60 * 1000;
 // address; a +tag stays, it is part of what the visitor typed).
 const confirmationKey = (email) => String(email).trim().toLowerCase();
 
+/**
+ * Reserve today's confirmation for an address (migration 383): true only for
+ * the one request whose insert made the row, however many arrive at once,
+ * on however many replicas. confirmedRecently still keeps it to one in any
+ * 24 hours across midnight.
+ */
+async function reserveConfirmation(key) {
+  if (!(await db.schema.hasTable('website_contact_confirmations'))) return true;
+  const now = new Date();
+  const claim = crypto.randomUUID();
+  const day = now.toISOString().slice(0, 10);
+  await db('website_contact_confirmations')
+    .insert({ address_key: key, window_start: day, claim, created_at: now.toISOString() })
+    .onConflict(['address_key', 'window_start']).ignore();
+  const row = await db('website_contact_confirmations').where({ address_key: key, window_start: day }).first('claim');
+  // Yesterday's rows still count above (confirmedRecently); older ones go.
+  const cutoff = new Date(now.getTime() - 2 * 86400000).toISOString().slice(0, 10);
+  await db('website_contact_confirmations').where('window_start', '<', cutoff).del();
+  return Boolean(row && row.claim === claim);
+}
+
 async function confirmedRecently(key) {
   const { toMillis } = require('../../utils/queueTimestamps');
   const since = Date.now() - CONFIRMATION_WINDOW_MS;
@@ -185,7 +206,7 @@ async function sendMails(values, page, { captchaOn }) {
     await emailProcessor.queueEmail(null, to, 'website_contact_admin', { ...studio });
   }
   const key = confirmationKey(values.email);
-  if (settings.confirmation && captchaOn && !(await confirmedRecently(key))) {
+  if (settings.confirmation && captchaOn && !(await confirmedRecently(key)) && (await reserveConfirmation(key))) {
     const name = (await getAppSetting('branding_company_name', '')) || '';
     await emailProcessor.queueEmail(null, key, 'website_contact_confirmation', {
       sender_name: values.name.slice(0, 60), business_name: typeof name === 'string' ? name : '', __language: language,
