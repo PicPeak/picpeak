@@ -27,6 +27,7 @@ const { ensurePreviewImageAtWidth } = require('../services/imageProcessor');
 const { isPresentationRenditionKey } = require('../services/galleryAssetPolicy');
 const renditionRefresh = require('../services/renditionRefresh');
 const media = require('../services/website/media');
+const { parseByteRange } = require('../utils/byteRange');
 const websiteService = require('../services/website/service');
 const imageResourcePolicy = require('../services/imageResourcePolicy');
 const { capPreviewRendition, watermarkPreviewRendition } = require('../services/galleryViewRendition');
@@ -135,18 +136,14 @@ router.get('/:token/:size', async (req, res) => {
       return res.end(copy.buffer);
     }
 
-    const range = isVideo ? req.headers.range : null;
-    if (range) {
-      const match = /^bytes=(\d+)-(\d*)$/.exec(range);
-      const start = match ? Number(match[1]) : NaN;
-      const end = match && match[2] ? Number(match[2]) : size_ - 1;
-      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || start >= size_) {
+    if (isVideo && req.headers.range) {
+      const range = parseByteRange(req.headers.range, size_);
+      if (!range) {
         res.set('Content-Range', `bytes */${size_}`);
         return res.status(416).end();
       }
-      const boundedEnd = Math.min(end, size_ - 1);
-      const stream = await storage.getRange(key, start, boundedEnd);
-      res.status(206).set({ ...headers, 'Content-Range': `bytes ${start}-${boundedEnd}/${size_}`, 'Content-Length': boundedEnd - start + 1 });
+      const stream = await storage.getRange(key, range.start, range.end);
+      res.status(206).set({ ...headers, 'Content-Range': `bytes ${range.start}-${range.end}/${size_}`, 'Content-Length': range.end - range.start + 1 });
       return pipeStreamToResponse(stream, res, { context: 'website media range' });
     }
     const stream = await storage.get(key);

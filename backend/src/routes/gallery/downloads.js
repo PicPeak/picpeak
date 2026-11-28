@@ -58,6 +58,7 @@ const {
 } = require('../../services/downloadFilenameService');
 const { buildContentDisposition, uniquifyZipNames } = require('../../utils/filenameSanitizer');
 const { getStorage } = require('../../services/storage');
+const { parseByteRange } = require('../../utils/byteRange');
 const { createArchiveStreamGuard, streamingArchiveAdmission, paceArchive } = require('../../utils/archiveStreamGuard');
 const {
   downloadLimitOf, currentDownloadLimit, grantDownloads, checkDownloads, downloadLimitError,
@@ -119,31 +120,6 @@ function releaseUnshipped(res, eventId, quota) {
   };
 }
 
-function parseByteRange(header, size) {
-  if (!header || typeof header !== 'string' || !size) return null;
-  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
-  if (!match) return null;
-
-  const [, rawStart, rawEnd] = match;
-  if (rawStart === '' && rawEnd === '') return null;
-
-  let start;
-  let end;
-  if (rawStart === '') {
-    // Suffix form: the last N bytes.
-    const suffix = parseInt(rawEnd, 10);
-    if (!suffix) return null;
-    start = Math.max(0, size - suffix);
-    end = size - 1;
-  } else {
-    start = parseInt(rawStart, 10);
-    end = rawEnd === '' ? size - 1 : parseInt(rawEnd, 10);
-  }
-
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
-  if (start > end || start >= size) return null;
-  return { start, end: Math.min(end, size - 1) };
-}
 // The guest a download is logged under (issue 2503): set by guestDownloadGate
 // only while the gallery asks for the guest's identity before downloading.
 // Spread into each access_logs row, so with the setting off the row is

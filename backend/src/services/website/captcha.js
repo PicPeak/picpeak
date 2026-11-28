@@ -8,6 +8,7 @@
  */
 const axios = require('axios');
 const logger = require('../../utils/logger');
+const { siteverify } = require('../recaptcha');
 
 // The Friendly Captcha SDK, pinned to one version and its hashes (SRI), so
 // the CDN can serve nothing else under these tags.
@@ -17,7 +18,6 @@ const FRIENDLY_SDK = {
   compat: { file: 'site.compat.min.js', integrity: 'sha384-qLx6bp+i1AL11vTZQPURIwNd01JOJn/EVk85XIMxJSV/GtOVQ0EgFAO89N553SMu' },
 };
 const FRIENDLY_VERIFY = { global: 'https://global.frcapi.com/api/v2/captcha/siteverify', eu: 'https://eu.frcapi.com/api/v2/captcha/siteverify' };
-const RECAPTCHA_VERIFY = 'https://www.google.com/recaptcha/api/siteverify';
 
 // The form field each widget adds to the form.
 const RESPONSE_FIELD = { friendly: 'frc-captcha-response', recaptcha: 'g-recaptcha-response' };
@@ -101,12 +101,9 @@ async function verifyAnswer(captcha, body, { ip } = {}) {
       // Friendly Captcha v2 names the page's origin the puzzle was solved on.
       return Boolean(data && data.success === true) && await solvedHere(data.data && data.data.challenge && data.data.challenge.origin);
     }
-    const params = new URLSearchParams({ secret: captcha.secret, response: answer });
-    if (ip) params.set('remoteip', ip);
-    const { data } = await axios.post(RECAPTCHA_VERIFY, params.toString(),
-      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 8000 });
+    const data = await siteverify(captcha.secret, answer, { ip });
     // reCAPTCHA names the hostname of the page it was solved on.
-    return Boolean(data && data.success === true) && await solvedHere(data.hostname);
+    return data.success === true && await solvedHere(data.hostname);
   } catch (error) {
     logger.warn('Website contact form: captcha check failed', { provider: captcha.provider, error: error.message });
     return false;

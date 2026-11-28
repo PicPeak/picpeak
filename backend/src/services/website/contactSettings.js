@@ -6,7 +6,7 @@
  * Settings › Security, whether or not the galleries use it.
  */
 const { db } = require('../../database/db');
-const { parseSettingValue } = require('../../utils/appSettings');
+const { getAppSettings, upsertAppSetting } = require('../../utils/appSettings');
 const { createSecretBox } = require('../../utils/secretBox');
 const { AppError } = require('../../utils/errors');
 const { clearWebsiteCache } = require('./cache');
@@ -29,23 +29,14 @@ const SITE_KEY = /^[A-Za-z0-9_-]{8,100}$/;
 
 const box = createSecretBox({ envKey: 'WEBSITE_SECRET_KEY', salt: 'picpeak-website-captcha', label: 'Website captcha', memoize: true });
 
-async function read(keys, conn = db) {
-  const rows = await conn('app_settings').whereIn('setting_key', keys);
-  const out = {};
-  rows.forEach((row) => { out[row.setting_key] = parseSettingValue(row.setting_value); });
-  return out;
-}
-
-async function write(conn, key, value) {
-  const row = { setting_key: key, setting_value: JSON.stringify(value), setting_type: 'website', updated_at: new Date().toISOString() };
-  await conn('app_settings').insert(row).onConflict('setting_key').merge(['setting_value', 'updated_at']);
-}
+// Within the save's transaction, after its revision bump: one writer at a time.
+const write = (conn, key, value) => upsertAppSetting(key, JSON.stringify(value), 'website', conn);
 
 /** Where a new message goes when no recipients are set: the business, else the support address. */
 async function defaultRecipient() {
   const { profile } = await require('../businessProfileService').getProfile().catch(() => ({ profile: null }));
   if (profile && profile.email) return profile.email;
-  const s = await read(['branding_support_email']);
+  const s = await getAppSettings(['branding_support_email']);
   return typeof s.branding_support_email === 'string' ? s.branding_support_email : '';
 }
 
@@ -55,7 +46,7 @@ function recipientList(value) {
 
 /** What the admin sees: no secret, only whether one is set. */
 async function readContactSettings() {
-  const s = await read([...Object.values(KEYS), 'security_recaptcha_site_key', 'security_recaptcha_secret_key']);
+  const s = await getAppSettings([...Object.values(KEYS), 'security_recaptcha_site_key', 'security_recaptcha_secret_key']);
   return {
     revision: Number.isInteger(s[KEYS.revision]) ? s[KEYS.revision] : 0,
     contact: {
@@ -169,7 +160,7 @@ function decrypt(stored) {
  * messages rather than taking them unchecked.
  */
 async function activeCaptcha() {
-  const s = await read([...Object.values(KEYS), 'security_recaptcha_site_key', 'security_recaptcha_secret_key']);
+  const s = await getAppSettings([...Object.values(KEYS), 'security_recaptcha_site_key', 'security_recaptcha_secret_key']);
   if (s[KEYS.provider] === 'friendly') {
     const secret = s[KEYS.friendlySiteKey] && s[KEYS.friendlyApiKey] ? decrypt(s[KEYS.friendlyApiKey]) : null;
     if (!secret) return { provider: 'friendly', unusable: true };
@@ -196,7 +187,7 @@ function changedFields(before, after, body) {
 
 /** Who hears of a new message, and whether the visitor gets a confirmation. */
 async function mailSettings() {
-  const s = await read([KEYS.recipients, KEYS.confirmation]);
+  const s = await getAppSettings([KEYS.recipients, KEYS.confirmation]);
   const recipients = recipientList(s[KEYS.recipients]);
   const fallback = recipients.length ? '' : await defaultRecipient();
   return { recipients: recipients.length ? recipients : [fallback].filter(Boolean), confirmation: s[KEYS.confirmation] === true };

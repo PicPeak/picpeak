@@ -11,7 +11,6 @@
 const crypto = require('crypto');
 const { sanitizeCssColor, MAX_CSS_SIZE } = require('../../utils/cssSanitizer');
 const { DEFAULT_PUBLIC_SITE_CSS, DEFAULT_PUBLIC_SITE_HTML } = require('../../constants/publicSiteDefaults');
-const { parseBooleanInput } = require('../../utils/parsers');
 
 const DOCUMENT_VERSION = 1;
 const MAX_PAGES = 30;
@@ -36,7 +35,7 @@ const MAX_CUSTOM_CSS = MAX_CSS_SIZE + DEFAULT_PUBLIC_SITE_CSS.length + 2;
 const { SOCIAL_NETWORKS, STEP_ICONS } = require('./icons');
 const { sanitizeRichText, isEmptyRichText, richText } = require('./richText');
 const {
-  MAX_URL_LENGTH, ASSET_ID_PATTERN, SLUG_PATTERN, FONT_NAME_PATTERN, EMAIL_PATTERN, cleanText, safeUrl,
+  MAX_URL_LENGTH, ASSET_ID_PATTERN, SLUG_PATTERN, FONT_NAME_PATTERN, EMAIL_PATTERN, cleanText, flag, safeUrl,
 } = require('./validators');
 const RESERVED_SLUGS = new Set(require('./reservedSlugs.json'));
 // Reserved for pages, but the website renders them in its design while it
@@ -119,12 +118,6 @@ function capText(value, max, field) {
 function capped(list, max, field) {
   if (list.length > max) report({ code: 'TOO_MANY_ITEMS', field, max });
   return list.slice(0, max);
-}
-
-// A flag as the editor sends it, or as a string someone else sent: "false"
-// and "0" are off, never a truthy string.
-function bool(value, fallback = false) {
-  return parseBooleanInput(value, fallback);
 }
 
 function pick(value, allowed, fallback) {
@@ -314,15 +307,15 @@ const BLOCK_FIELDS = {
     heading: str(b.heading, 200, 'heading'),
     intro: str(b.intro, 1000, 'intro'),
     packageIds: idList(b.packageIds, 12, 'packageIds'),
-    showPrices: bool(b.showPrices, true),
+    showPrices: flag(b.showPrices, true),
     buttonLabel: str(b.buttonLabel, 60, 'buttonLabel'),
     buttonTarget: buttonTarget(b),
   }),
   contact: (b) => ({
     heading: str(b.heading, 200, 'heading'),
     intro: str(b.intro, 1000, 'intro'),
-    showPhone: bool(b.showPhone),
-    showDate: bool(b.showDate),
+    showPhone: flag(b.showPhone),
+    showDate: flag(b.showDate),
     submitLabel: str(b.submitLabel, 60, 'submitLabel'),
     successMessage: str(b.successMessage, 300, 'successMessage'),
   }),
@@ -340,7 +333,7 @@ const BLOCK_FIELDS = {
     images: imageList(b.images, 12),
   }),
   spacer: (b) => ({
-    divider: bool(b.divider),
+    divider: flag(b.divider),
   }),
   divider: (b) => ({
     width: pick(b.width, ['full', 'short'], 'full'),
@@ -373,7 +366,7 @@ const BLOCK_FIELDS = {
   }),
   logos: (b) => ({
     heading: str(b.heading, 200, 'heading'),
-    grayscale: bool(b.grayscale),
+    grayscale: flag(b.grayscale),
     items: objects(b.items, MAX_ITEMS, 'items').map((item) => ({ image: imageRef(item.image), url: linkUrl(item.url) })),
   }),
   social: (b) => ({
@@ -383,7 +376,7 @@ const BLOCK_FIELDS = {
   customHtml: (b) => ({
     html: typeof b.html === 'string' ? capText(b.html, MAX_CUSTOM_HTML, 'html') : '',
     // The imported single-page site: rendered in its old containers.
-    ...(bool(b.legacy) ? { legacy: true } : {}),
+    ...(flag(b.legacy) ? { legacy: true } : {}),
   }),
 };
 
@@ -448,14 +441,14 @@ function normalizeMenu(raw, pages, inNavById) {
   const items = Array.isArray(menu.items)
     ? objects(menu.items, MAX_MENU_ITEMS, 'menu').map((item) => {
       const target = linkTarget(item.target);
-      return target ? { id: blockId(item.id), label: str(item.label, 60, 'menuLabel'), hidden: bool(item.hidden), target } : null;
+      return target ? { id: blockId(item.id), label: str(item.label, 60, 'menuLabel'), hidden: flag(item.hidden), target } : null;
     }).filter(Boolean)
     : pages.filter((p) => inNavById.get(p.id)).map((p) => ({ id: p.id, label: '', hidden: false, target: { kind: 'page', pageId: p.id } }));
   return {
     layout: pick(menu.layout, MENU_LAYOUTS, 'left'),
     style: pick(menu.style, MENU_STYLES, 'plain'),
-    sticky: bool(menu.sticky, true),
-    transparent: bool(menu.transparent),
+    sticky: flag(menu.sticky, true),
+    transparent: flag(menu.transparent),
     mobile: pick(menu.mobile, MENU_MOBILE, 'dropdown'),
     background: hex(menu.background),
     text: hex(menu.text),
@@ -569,14 +562,14 @@ function normalizeInto(raw, reservedSlugs, errors) {
       .forEach((b) => errors.push({ code: 'TOO_MANY_CONTACT_FORMS', pageId: id, blockId: b.id }));
     where = { pageId: id };
     const seo = p.seo && typeof p.seo === 'object' ? p.seo : {};
-    inNavById.set(id, bool(p.inNav, true));
+    inNavById.set(id, flag(p.inNav, true));
     return {
       id,
       slug,
       title,
       navLabel: str(p.navLabel, 60, 'navLabel'),
-      hidden: bool(p.hidden),
-      isHome: bool(p.isHome),
+      hidden: flag(p.hidden),
+      isHome: flag(p.isHome),
       seo: {
         title: str(seo.title, 120, 'title'),
         description: str(seo.description, 300, 'description'),

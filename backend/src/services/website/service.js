@@ -8,10 +8,9 @@
  */
 const crypto = require('crypto');
 const { db } = require('../../database/db');
-const { parseSettingValue } = require('../../utils/appSettings');
+const { getAppSettings, parseSettingValue, upsertAppSetting } = require('../../utils/appSettings');
 const { formatBoolean } = require('../../utils/dbCompat');
 const { AppError } = require('../../utils/errors');
-const { parseBooleanInput } = require('../../utils/parsers');
 const { isFeatureEnabled } = require('../../middleware/requireFeatureFlag');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const { canAccessEvent } = require('../../middleware/ownership');
@@ -25,14 +24,13 @@ const media = require('./media');
 const { livePhotos } = require('../../utils/photoVisibility');
 const { renderPage, renderSystemPage, renderedImages, pageHref, legalPageName } = require('./renderer');
 const { sanitizeCmsHtml } = require('./richText');
-const { FONT_NAME_PATTERN, safeUrl } = require('./validators');
+const { FONT_NAME_PATTERN, flag, safeUrl } = require('./validators');
 const { cacheGeneration, getCached, setCached, clearWebsiteCache } = require('./cache');
 
 const FLAG = 'websiteBuilder';
 
 // A boolean setting as stored: JSON true, or 1/0 where the settings writer
 // went through formatBoolean on SQLite.
-const flag = (value) => parseBooleanInput(value, false);
 
 function parseDocument(row) {
   if (!row) return null;
@@ -85,7 +83,7 @@ function starterDocument() {
 
 /** The single-page landing page as a first draft (document.js legacyImport). */
 async function legacySite() {
-  const settings = await readSettings(['general_public_site_enabled', 'general_public_site_html', 'general_public_site_custom_css']);
+  const settings = await getAppSettings(['general_public_site_enabled', 'general_public_site_html', 'general_public_site_custom_css']);
   return legacyImport({
     enabled: flag(settings.general_public_site_enabled),
     html: settings.general_public_site_html,
@@ -109,7 +107,7 @@ const LEGACY_NOTICE = 'website_legacy_landing';
 /** An install migration 381 moved into the builder, whose old page `/` still serves. */
 async function legacyLandingLive(published) {
   if (published) return false;
-  const settings = await readSettings(['website_legacy_landing_migrated']);
+  const settings = await getAppSettings(['website_legacy_landing_migrated']);
   return flag(settings.website_legacy_landing_migrated);
 }
 
@@ -135,12 +133,7 @@ async function setSiteVisible(enabled) {
   if (enabled && !(await readRow('published')) && !(await legacySite()).used) {
     throw new AppError('Publish the website first: there is nothing to show yet', 409, 'WEBSITE_NOTHING_TO_SHOW');
   }
-  const value = JSON.stringify(formatBoolean(enabled));
-  const now = new Date().toISOString();
-  const updated = await db('app_settings').where({ setting_key: 'general_public_site_enabled' }).update({ setting_value: value, updated_at: now });
-  if (!updated) {
-    await db('app_settings').insert({ setting_key: 'general_public_site_enabled', setting_value: value, setting_type: 'general', updated_at: now });
-  }
+  await upsertAppSetting('general_public_site_enabled', JSON.stringify(formatBoolean(enabled)), 'general');
   publicSite.clearPublicSiteCache();
 }
 
@@ -191,7 +184,7 @@ async function brandColors() {
  * saved a moment later.
  */
 async function editorState(draft, published) {
-  const settings = await readSettings(['general_public_site_enabled']);
+  const settings = await getAppSettings(['general_public_site_enabled']);
   return {
     // As the editor saves it (normalised): an older stored shape, such as a
     // text block's inline format, reaches the editor in the current one.
@@ -449,13 +442,6 @@ async function resolveTheme(docTheme) {
   };
 }
 
-async function readSettings(keys) {
-  const rows = await db('app_settings').whereIn('setting_key', keys);
-  const out = {};
-  rows.forEach((row) => { out[row.setting_key] = parseSettingValue(row.setting_value); });
-  return out;
-}
-
 /**
  * A package as a quote would take it (quoteTemplateService.packageLine), or
  * why it cannot be offered: archived, empty, or holding an archived item.
@@ -576,7 +562,7 @@ async function buildContext(document, page, {
     refs.photoIds = refs.photoIds.filter((id) => allowed.photoIds.has(id));
     refs.eventIds = refs.eventIds.filter((id) => allowed.eventIds.has(id));
   }
-  const settings = await readSettings([
+  const settings = await getAppSettings([
     'general_default_language', 'seo_allow_indexing', 'seo_meta_noindex', 'seo_meta_nofollow', 'seo_meta_noai',
   ]);
   const locale = settings.general_default_language === 'de' ? 'de' : 'en';
@@ -673,7 +659,7 @@ async function mediaRobotsTag() {
   const generation = cacheGeneration();
   const cached = getCached('media-robots');
   if (cached !== undefined) return cached;
-  const settings = await readSettings(['seo_meta_noai']);
+  const settings = await getAppSettings(['seo_meta_noai']);
   const tag = flag(settings.seo_meta_noai) ? 'noai, noimageai' : null;
   setCached('media-robots', tag, generation);
   return tag;
@@ -682,7 +668,7 @@ async function mediaRobotsTag() {
 /** Flag on, public site on, something published: the builder owns `/`. */
 async function isWebsiteActive() {
   if (!(await isFeatureEnabled(FLAG))) return false;
-  const settings = await readSettings(['general_public_site_enabled']);
+  const settings = await getAppSettings(['general_public_site_enabled']);
   if (!flag(settings.general_public_site_enabled)) return false;
   return !!(await db('website_documents').where({ state: 'published' }).first('id'));
 }
@@ -772,7 +758,7 @@ async function sitemapXml() {
   if (cached !== undefined) return cached;
   const document = await publishedDocument();
   const base = await getFrontendBaseUrl().catch(() => '');
-  const settings = await readSettings(['seo_allow_indexing']);
+  const settings = await getAppSettings(['seo_allow_indexing']);
   // Sitemap entries must be absolute; without a known public origin, or with
   // indexing off, the sitemap is empty rather than pointing at a guess.
   const pages = base && flag(settings.seo_allow_indexing) ? document.pages.filter((p) => !p.hidden) : [];

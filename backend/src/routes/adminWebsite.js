@@ -28,7 +28,7 @@ const websiteService = require('../services/website/service');
 const actorOf = (req) => ({ type: 'admin', id: req.admin.id, name: req.admin.username });
 const assets = require('../services/website/assets');
 const media = require('../services/website/media');
-const { ASSET_ID_PATTERN } = require('../services/website/validators');
+const { ASSET_ID_PATTERN, flag } = require('../services/website/validators');
 const { requiresGalleryPassword } = require('../utils/galleryLifecycle');
 
 const router = express.Router();
@@ -198,7 +198,7 @@ router.get('/galleries', canView, [
       name: e.event_name,
       slug: e.slug,
       date: toDateOnly(e.event_date),
-      showOnWebsite: e.show_on_website === true || e.show_on_website === 1,
+      showOnWebsite: flag(e.show_on_website),
       // The picker says that opting in publishes the picked photos although
       // the gallery has a password.
       hasPassword: requiresGalleryPassword(e),

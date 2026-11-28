@@ -15,12 +15,12 @@
  */
 const crypto = require('crypto');
 const { db } = require('../../database/db');
-const { isAwaitingPayment, isGalleryAvailable, requiresGalleryPassword, isTrue } = require('../../utils/galleryLifecycle');
+const { isAwaitingPayment, isGalleryAvailable, requiresGalleryPassword } = require('../../utils/galleryLifecycle');
 const { isGalleryHidden } = require('../../utils/revealMode');
 const { capsFullSizeView, MAXIMUM_PROTECTION_CAP } = require('../galleryAssetPolicy');
 const { viewWatermarkSettings } = require('../galleryViewRendition');
 const { AppError } = require('../../utils/errors');
-const { ASSET_ID, ASSET_ID_PATTERN } = require('./validators');
+const { ASSET_ID, ASSET_ID_PATTERN, flag } = require('./validators');
 const {
   applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed, whereNotVideo,
 } = require('../../utils/photoVisibility');
@@ -47,7 +47,8 @@ function verifyMedia(kind, id, signature) {
 // The photo columns that change when its picture does: a replacement writes
 // a new path and hash (photoReplacementService), an external source a new
 // size or mtime, the EXIF refresh a new rendition_version.
-const PHOTO_VERSION_COLUMNS = ['photos.path', 'photos.content_sha256', 'photos.size_bytes', 'photos.source_mtime_ms', 'photos.rendition_version'];
+const VERSION_FIELDS = ['path', 'content_sha256', 'size_bytes', 'source_mtime_ms', 'rendition_version'];
+const PHOTO_VERSION_COLUMNS = VERSION_FIELDS.map((column) => `photos.${column}`);
 
 /**
  * A short tag of a photo's content and of how a guest sees it (`photo.view`,
@@ -55,8 +56,7 @@ const PHOTO_VERSION_COLUMNS = ['photos.path', 'photos.content_sha256', 'photos.s
  * watermark is a new URL and no copy cached under the old one survives.
  */
 function photoVersion(photo) {
-  const parts = ['path', 'content_sha256', 'size_bytes', 'source_mtime_ms', 'rendition_version']
-    .map((column) => (photo[column] == null ? '' : String(photo[column])));
+  const parts = VERSION_FIELDS.map((column) => (photo[column] == null ? '' : String(photo[column])));
   parts.push(photo.view ? photo.view.tag : '');
   return crypto.createHash('sha1').update(parts.join('|')).digest('hex').slice(0, 10);
 }
@@ -161,7 +161,7 @@ function parseMediaToken(token) {
  */
 function isEventWebsiteEligible(event, now = new Date()) {
   return !!event
-    && isTrue(event.show_on_website)
+    && flag(event.show_on_website)
     && isGalleryAvailable(event)
     && !isGalleryHidden(event, now)
     && !isAwaitingPayment(event);
@@ -170,7 +170,7 @@ function isEventWebsiteEligible(event, now = new Date()) {
 /** Why a gallery is not eligible, for the admin picker; null when it is. */
 function eventIneligibleReason(event, now = new Date()) {
   if (!event) return 'missing';
-  if (!isTrue(event.show_on_website)) return 'not_opted_in';
+  if (!flag(event.show_on_website)) return 'not_opted_in';
   if (!isGalleryAvailable(event)) return 'unavailable';
   if (isGalleryHidden(event, now)) return 'hidden';
   if (isAwaitingPayment(event)) return 'payment_lock';
