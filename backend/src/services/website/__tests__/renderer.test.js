@@ -315,8 +315,12 @@ describe('rich text in the text block', () => {
     expect(flowing).toContain('<div class="pp-prose pp-columns"><p>Only one</p></div>');
     const split = render([home([{ type: 'text', id: 't1', variant: 'columns', format: 'html', body: '<p>Left</p>', bodyRight: '<p>Right</p>' }])]);
     expect(split).toContain('<div class="pp-two-cols"><div class="pp-prose"><p>Left</p></div><div class="pp-prose"><p>Right</p></div></div>');
-    // The right column exists for the columns layout only.
-    expect(textBlock({ variant: 'left', format: 'html', body: '<p>L</p>', bodyRight: '<p>R</p>' }).bodyRight).toBe('');
+    // The right column is kept in every layout, so switching back restores
+    // it; only the columns layout shows it.
+    expect(textBlock({ variant: 'left', format: 'html', body: '<p>L</p>', bodyRight: '<p>R</p>' }).bodyRight).toBe('<p>R</p>');
+    const single = render([home([{ type: 'text', id: 't1', variant: 'left', format: 'html', body: '<p>L</p>', bodyRight: '<p>R</p>' }])]);
+    expect(single).toContain('<p>L</p>');
+    expect(single).not.toContain('<p>R</p>');
   });
 });
 
