@@ -56,6 +56,10 @@ const STRINGS = {
     reloadForm: 'This form was just updated. Please reload the page and send your message again.',
     follow: 'Follow',
     backHome: 'Back to the home page',
+    skip: 'Skip to content',
+    navMain: 'Main',
+    navPages: 'Pages',
+    navLinks: 'Links',
     videoInPreview: 'Video plays on the published page',
   },
   de: {
@@ -84,6 +88,10 @@ const STRINGS = {
     reloadForm: 'Dieses Formular wurde soeben aktualisiert. Bitte laden Sie die Seite neu und senden Sie Ihre Nachricht erneut.',
     follow: 'Folgen',
     backHome: 'Zur Startseite',
+    skip: 'Zum Inhalt springen',
+    navMain: 'Hauptmenü',
+    navPages: 'Seiten',
+    navLinks: 'Links',
     videoInPreview: 'Das Video läuft auf der veröffentlichten Seite',
   },
 };
@@ -91,6 +99,9 @@ const STRINGS = {
 function strings(locale) {
   return STRINGS[locale] || STRINGS.en;
 }
+
+// The name the site goes by where the branding has none.
+const siteNameOf = (branding) => branding.companyName || 'PicPeak';
 
 /** A legal page's name where its CMS page has no title of its own. */
 function legalPageName(locale, slug) {
@@ -845,11 +856,11 @@ function renderHeader(ctx) {
   const { branding } = ctx;
   const { menu } = ctx.document;
   const s = strings(ctx.locale);
-  const name = branding.companyName || 'PicPeak';
+  const name = siteNameOf(branding);
   const logo = branding.logoUrl ? `<img src="${esc(branding.logoUrl)}" alt="" height="40">` : '';
   const links = navLinks(ctx);
   const nav = links
-    ? `<nav class="pp-nav" aria-label="Main"><ul>${links}</ul></nav><details class="pp-menu${menu.mobile === 'panel' ? ' pp-menu--panel' : ''}"><summary>${esc(s.menu)}</summary><nav aria-label="Main"><ul>${links}</ul></nav></details>`
+    ? `<nav class="pp-nav" aria-label="${esc(s.navMain)}"><ul>${links}</ul></nav><details class="pp-menu${menu.mobile === 'panel' ? ' pp-menu--panel' : ''}"><summary>${esc(s.menu)}</summary><nav aria-label="${esc(s.navMain)}"><ul>${links}</ul></nav></details>`
     : '';
   // Over the picture only on a page that starts with a hero shown with its
   // picture (heroLayout: one whose picture is gone is shown text only).
@@ -870,11 +881,11 @@ function footerColumn(column, ctx) {
   const h = column.heading ? `<h2 class="pp-footer__h">${esc(column.heading)}</h2>` : '';
   switch (column.kind) {
   case 'brand':
-    return `<div>${h}<strong>${esc(branding.companyName || 'PicPeak')}</strong>${branding.companyTagline ? `<p>${esc(branding.companyTagline)}</p>` : ''}${branding.footerText ? `<p>${esc(branding.footerText)}</p>` : ''}</div>`;
+    return `<div>${h}<strong>${esc(siteNameOf(branding))}</strong>${branding.companyTagline ? `<p>${esc(branding.companyTagline)}</p>` : ''}${branding.footerText ? `<p>${esc(branding.footerText)}</p>` : ''}</div>`;
   case 'pages': {
     const pages = ctx.document.pages.filter((p) => !p.hidden)
       .map((p) => `<li><a href="${esc(pageHref(p))}">${esc(p.navLabel || p.title)}</a></li>`).join('');
-    return `<nav aria-label="Pages">${h}<ul>${pages}</ul></nav>`;
+    return `<nav aria-label="${esc(strings(ctx.locale).navPages)}">${h}<ul>${pages}</ul></nav>`;
   }
   case 'links': {
     const links = column.links.map((link) => {
@@ -882,7 +893,7 @@ function footerColumn(column, ctx) {
       const label = href && menuLabel(link, ctx);
       return label ? `<li><a href="${esc(href)}"${linkAttrs(href)}>${esc(label)}</a></li>` : '';
     }).join('');
-    return `<nav aria-label="${esc(column.heading || 'Links')}">${h}<ul>${links}</ul></nav>`;
+    return `<nav aria-label="${esc(column.heading || strings(ctx.locale).navLinks)}">${h}<ul>${links}</ul></nav>`;
   }
   case 'text':
     return `<div>${h}${column.text ? `<div class="pp-prose">${column.text}</div>` : ''}</div>`;
@@ -905,7 +916,7 @@ function renderFooter(ctx) {
   const { branding } = ctx;
   const { footer } = ctx.document;
   const s = strings(ctx.locale);
-  const name = branding.companyName || 'PicPeak';
+  const name = siteNameOf(branding);
   const legal = (ctx.legalLinks || []).map((l) => `<li><a href="${esc(l.href)}">${esc(l.label)}</a></li>`);
   if (branding.supportEmail) legal.push(`<li><a href="mailto:${esc(branding.supportEmail)}">${esc(s.support)}</a></li>`);
   const year = String((ctx.now || new Date()).getUTCFullYear());
@@ -929,7 +940,7 @@ function absolute(base, path) {
 
 function renderHead(ctx, body) {
   const { page, branding } = ctx;
-  const siteName = branding.companyName || 'PicPeak';
+  const siteName = siteNameOf(branding);
   const title = page.seo.title || (page.isHome ? siteName : `${page.title} · ${siteName}`);
   const description = page.seo.description || branding.companyTagline || '';
   const canonical = absolute(ctx.baseUrl, pageHref(page));
@@ -984,13 +995,17 @@ function renderPage(input) {
   const blocks = ctx.page.blocks.map((block) => RENDERERS[block.type](block, ctx)).join('\n');
   // The first image the page shows stands in for a missing OG image.
   ctx.firstImage = ctx.resolved.length ? ctx.resolved[0].image : null;
-  const body = `<a class="pp-skip" href="#main">Skip to content</a>
+  return renderShell(ctx, blocks);
+}
+
+// The page around its content: the skip link, the header, <main>, the footer.
+function renderShell(ctx, main) {
+  return renderHead(ctx, `<a class="pp-skip" href="#main">${esc(strings(ctx.locale).skip)}</a>
 ${renderHeader(ctx)}
 <main id="main">
-${blocks}
+${main}
 </main>
-${renderFooter(ctx)}`;
-  return renderHead(ctx, body);
+${renderFooter(ctx)}`);
 }
 
 // The heading a CMS text starts with, and the text after it.
@@ -1016,13 +1031,7 @@ function renderSystemPage(input, { content, notFound = false }) {
   const own = lead && (notFound || plainText(lead.html) === plainText(title)) ? lead : null;
   const h1 = own && notFound ? own.html : title;
   const home = notFound ? `<p>${button(strings(ctx.locale).backHome, '/')}</p>` : '';
-  const body = `<a class="pp-skip" href="#main">Skip to content</a>
-${renderHeader(ctx)}
-<main id="main">
-<section class="pp-block pp-system"><div class="pp-wrap pp-narrow"><h1 class="pp-h">${h1}</h1><div class="pp-prose">${own ? own.rest : content}</div>${home}</div></section>
-</main>
-${renderFooter(ctx)}`;
-  return renderHead(ctx, body);
+  return renderShell(ctx, `<section class="pp-block pp-system"><div class="pp-wrap pp-narrow"><h1 class="pp-h">${h1}</h1><div class="pp-prose">${own ? own.rest : content}</div>${home}</div></section>`);
 }
 
 /** The images (photo and upload refs) a rendered page shows, in page order. */

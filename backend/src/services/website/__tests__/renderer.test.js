@@ -281,6 +281,14 @@ describe('legal and system pages: one heading, and a way home from the not-found
   });
 });
 
+test('a German page names its landmarks in German', () => {
+  const html = render([home([]), { id: 'about', slug: 'about', title: 'Über uns', blocks: [] }], { ctx: { locale: 'de' } });
+  expect(html).toContain('<a class="pp-skip" href="#main">Zum Inhalt springen</a>');
+  expect(html).toContain('<nav class="pp-nav" aria-label="Hauptmenü">');
+  expect(html).toContain('<nav aria-label="Seiten">');
+  expect(html).not.toMatch(/Skip to content|aria-label="(Main|Pages)"/);
+});
+
 test('the footer sits at the bottom of the window on a short page', () => {
   const html = render([home([{ type: 'text', heading: 'Short' }])]);
   // The page is a column at least as tall as the window, and the content
