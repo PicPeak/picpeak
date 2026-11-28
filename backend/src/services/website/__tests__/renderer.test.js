@@ -194,6 +194,15 @@ test('the public page ships no script, the preview marks blocks and disables the
   expect(preview).toMatch(/<button class="pp-btn" type="submit" disabled>/);
 });
 
+test('the footer sits at the bottom of the window on a short page', () => {
+  const html = render([home([{ type: 'text', heading: 'Short' }])]);
+  // The page is a column at least as tall as the window, and the content
+  // takes what is left, so no strip of page background shows under the footer.
+  expect(html).toMatch(/body\{[^}]*min-height:100vh[^}]*display:flex[^}]*flex-direction:column/);
+  expect(html).toMatch(/body>main\{flex:1 0 auto\}/);
+  expect(html).not.toMatch(/\.pp-system\{min-height/);
+});
+
 test('the photo strip names the account once', () => {
   const html = render([home([{ type: 'instagram', handle: '@studio', profileUrl: 'https://www.instagram.com/studio', images: [{ source: 'photo', id: 11 }] }])], { ctx: { photos: new Map([[11, { id: 11, width: 10, height: 10 }]]) } });
   expect(html.match(/@studio/g)).toHaveLength(1);

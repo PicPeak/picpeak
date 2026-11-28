@@ -604,7 +604,8 @@ function palette(theme) {
 
 const BASE_CSS = `*,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--bg);color:var(--text);font:400 1.0625rem/1.65 var(--font-body);-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--bg);color:var(--text);font:400 1.0625rem/1.65 var(--font-body);-webkit-font-smoothing:antialiased;min-height:100vh;display:flex;flex-direction:column}
+body>main{flex:1 0 auto}
 img,video{display:block;max-width:100%}
 a{color:var(--link)}
 .pp-h{font-family:var(--font-heading);font-weight:600;line-height:1.15;letter-spacing:-.01em;margin:0 0 .6em;color:var(--text)}
@@ -727,7 +728,7 @@ h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 .pp-spacer.pp-v-small{padding:1.5rem 0}.pp-spacer.pp-v-medium{padding:3rem 0}.pp-spacer.pp-v-large{padding:6rem 0}
 .pp-rule{border:0;border-top:1px solid var(--border);margin:0}
 .pp-customHtml{padding:0}
-.pp-system{min-height:55vh}.pp-system .pp-prose h1,.pp-system .pp-prose h4,.pp-system .pp-prose h5,.pp-system .pp-prose h6{font-family:var(--font-heading);line-height:1.2}
+.pp-system .pp-prose h1,.pp-system .pp-prose h4,.pp-system .pp-prose h5,.pp-system .pp-prose h6{font-family:var(--font-heading);line-height:1.2}
 .pp-faq__list{display:grid;gap:.6rem}
 .pp-faq__item{border-bottom:1px solid var(--border);padding:.2rem 0}
 .pp-v-boxed .pp-faq__item{border:1px solid var(--border);border-radius:calc(var(--radius) / 2);background:var(--surface);padding:.2rem 1.1rem}
