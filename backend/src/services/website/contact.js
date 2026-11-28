@@ -133,11 +133,17 @@ async function storeSubmission(values, page) {
 // At most one confirmation a day to an address, whatever the senders do.
 const CONFIRMATION_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+// email_queue.created_at comes back as a Date (PostgreSQL) or epoch ms
+// (SQLite), so it is read with toMillis rather than compared in SQL.
 async function confirmedRecently(email) {
-  const since = new Date(Date.now() - CONFIRMATION_WINDOW_MS).toISOString();
-  const row = await db('email_queue').where({ email_type: 'website_contact_confirmation', recipient_email: email })
-    .where('created_at', '>=', since).first('id');
-  return Boolean(row);
+  const { toMillis } = require('../../utils/queueTimestamps');
+  const since = Date.now() - CONFIRMATION_WINDOW_MS;
+  const rows = await db('email_queue').where({ email_type: 'website_contact_confirmation', recipient_email: email })
+    .orderBy('id', 'desc').limit(5).select('created_at');
+  return rows.some((row) => {
+    const ms = toMillis(row.created_at);
+    return ms !== null && ms >= since;
+  });
 }
 
 /**

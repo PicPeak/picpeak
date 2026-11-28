@@ -2045,6 +2045,9 @@ describe('mails of the contact form', () => {
     await db('email_queue').del();
     jest.spyOn(axios, 'post').mockResolvedValue({ data: { success: true } });
     await post({ ...valid, email: 'third@example.com', 'frc-captcha-response': 'ok' });
+    // queueEmail's created_at as SQLite really stores it, epoch ms (under jest
+    // its Date would land as text, see CLAUDE.md).
+    await db('email_queue').where({ email_type: 'website_contact_confirmation' }).update({ created_at: Date.now() - 60 * 1000 });
     await post({ ...valid, email: 'third@example.com', 'frc-captcha-response': 'ok' });
     const confirmations = await queued('website_contact_confirmation');
     expect(confirmations.map((r) => r.recipient_email)).toEqual(['third@example.com']);
@@ -2052,6 +2055,10 @@ describe('mails of the contact form', () => {
     expect(data.sender_name).toBe('Linus');
     expect(JSON.stringify(data)).not.toContain('Secret plans');
     expect(await queued('website_contact_admin')).toHaveLength(4);
+    // A day later, the address can get one again.
+    await db('email_queue').where({ email_type: 'website_contact_confirmation' }).update({ created_at: Date.now() - 25 * 60 * 60 * 1000 });
+    await post({ ...valid, email: 'third@example.com', 'frc-captcha-response': 'ok' });
+    expect(await queued('website_contact_confirmation')).toHaveLength(2);
     // Turning the spam check off turns the confirmation off with it.
     const off = await settings({ captcha: { provider: 'none' } });
     expect(off.body.contact.confirmation).toBe(false);
