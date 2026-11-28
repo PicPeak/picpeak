@@ -143,7 +143,26 @@ describe('Gallery Folio', () => {
     const video = { ...photos[2], hero_url: undefined, slideshow_url: undefined, thumbnail_url: null } as unknown as Photo;
     const { container } = mount({ photos: [video], heroPhotoOverride: video });
     expect(container.querySelector('.folio-cover-image')).toBeNull();
-    expect(root(container).dataset.cover).toBe('plain');
+    expect(container.querySelector('.folio-cover--plain')).not.toBeNull();
+  });
+
+  it('scrolls "View the gallery" to the photos, under the nav however tall it is', () => {
+    const scrollTo = vi.fn();
+    vi.stubGlobal('scrollTo', scrollTo);
+    try {
+      const { container } = mount();
+      // The selection row makes the sticky nav taller; a fixed offset would
+      // leave the first photos under it.
+      const navElement = container.querySelector('.folio-nav') as HTMLElement;
+      const main = container.querySelector('.folio-main') as HTMLElement;
+      Object.defineProperty(navElement, 'offsetHeight', { value: 104 });
+      main.getBoundingClientRect = () => ({ top: 700 } as DOMRect);
+      fireEvent.click(screen.getByRole('button', { name: 'View the gallery' }));
+      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 596 }));
+      expect(document.activeElement).toBe(main);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('opens the shared lightbox at the clicked photo', () => {
@@ -279,6 +298,17 @@ describe('Gallery Folio', () => {
     expect(toggle.closest('[data-lane-controls]')).toHaveAttribute('data-lane-controls', 'start');
   });
 
+  it('draws every nav icon at one size, logout included', () => {
+    mount({
+      ...likes, onLogout: vi.fn(), onUploadClick: vi.fn(), onManageGallery: vi.fn(), onDownloadEverything: vi.fn(),
+      onToggleSelectionMode: vi.fn(), onPhotoSelect: vi.fn(), onCopyFilenames: vi.fn(), copyFilenamesCount: 1,
+    });
+    const row = screen.getByRole('navigation', { name: 'Gallery' }).querySelector('.folio-nav-actions') as HTMLElement;
+    const icons = Array.from(row.querySelectorAll(':scope > .folio-nav-btn > svg'));
+    expect(icons).toHaveLength(7);
+    for (const icon of icons) expect(icon).toHaveClass('w-[18px]', 'h-[18px]');
+  });
+
   it('has no menu when there is nothing secondary to put in it', () => {
     mount();
     expect(nav().queryByRole('button', { name: 'More actions' })).toBeNull();
@@ -295,8 +325,7 @@ describe('Gallery Folio design options', () => {
   it('defaults to paper, a full cover, 3 columns on a desktop and 2 on a phone', () => {
     const { container } = mount();
     const page = root(container);
-    expect(page.dataset.palette).toBe('paper');
-    expect(page.dataset.cover).toBe('full');
+    expect(container.querySelector('.folio-cover--full')).not.toBeNull();
     expect(page.style.getPropertyValue('--color-background')).toBe('#f4f1eb');
     const { columns, spacing } = lastAlbum();
     expect([columns(390), columns(800), columns(1440)]).toEqual([2, 2, 3]);
@@ -311,7 +340,6 @@ describe('Gallery Folio design options', () => {
       },
     });
     const page = root(container);
-    expect(page.dataset.palette).toBe('charcoal');
     expect(page.style.getPropertyValue('--color-background')).toBe('#1c1c1b');
     expect(page.style.getPropertyValue('--color-text')).toBe('#eeece7');
     expect(page.dataset.type).toBe('modern');
@@ -325,7 +353,7 @@ describe('Gallery Folio design options', () => {
 
   it('falls back to a title-only cover when there is no photo to show', () => {
     const { container } = mount({ photos: [], suppressEmptyState: true });
-    expect(root(container).dataset.cover).toBe('plain');
+    expect(container.querySelector('.folio-cover--plain')).not.toBeNull();
     expect(container.querySelector('.folio-cover-image')).toBeNull();
   });
 });

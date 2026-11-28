@@ -97,12 +97,15 @@
   text-transform: uppercase;
 }
 
+/* A 44 px target; the words sit at its foot, so the underline stays under
+   them. */
 .folio-cover-enter {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 0.5rem;
-  margin-top: 1.5rem;
-  padding: 0.5rem 0 0.35rem;
+  min-height: 2.75rem;
+  margin-top: 0.5rem;
+  padding: 0 0 0.4rem;
   border: 0;
   border-bottom: 1px solid currentColor;
   background: none;
@@ -134,14 +137,14 @@
   color: #fff;
 }
 
-/* Dark enough under the text block (the date tops it at about 30% of the
-   cover's height) for white small print on a white photograph, and gone
-   above it. */
+/* Dark enough under the text block (the date tops it at about 35% of the
+   cover's height on a phone, 27% on a desktop) for white small print on a
+   white photograph, and gone above it. */
 .folio-cover--full .folio-cover-media::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.68) 0%, rgba(0, 0, 0, 0.56) 33%, rgba(0, 0, 0, 0.34) 46%, rgba(0, 0, 0, 0) 78%);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.68) 0%, rgba(0, 0, 0, 0.56) 36%, rgba(0, 0, 0, 0.34) 48%, rgba(0, 0, 0, 0) 78%);
 }
 
 .folio-cover--full .folio-cover-text {
@@ -234,7 +237,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.5rem;
   min-height: 3.5rem;
   padding: 0 var(--folio-pad);
 }
@@ -249,7 +252,7 @@
 .folio-nav-label {
   overflow: hidden;
   font-family: var(--folio-display);
-  font-size: 1.1rem;
+  font-size: 1rem;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -272,15 +275,27 @@
   flex-shrink: 0;
 }
 
+/* Its words go before the studio label has to: the arrow alone until the row
+   has room for both. */
+.folio-nav-back > span {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .folio-nav-back > span {
+    display: inline;
+  }
+}
+
 .folio-nav-btn {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  min-width: 2.5rem;
+  min-width: 2.25rem;
   height: 2.5rem;
-  padding: 0 0.6rem;
+  padding: 0 0.4rem;
   border: 0;
   border-radius: 9999px;
   background: transparent;
@@ -303,7 +318,7 @@
 }
 
 .folio-nav-more > button {
-  width: 2.5rem;
+  width: 2.25rem;
   height: 2.5rem;
   border: 0;
   border-radius: 9999px;
@@ -316,7 +331,22 @@
   background-color: var(--color-elevated);
 }
 
+/* On a phone the buttons are a little narrower and the label a little
+   smaller, so a studio's name fits beside them at 320 px. */
 @media (min-width: 640px) {
+  .folio-nav-row {
+    gap: 0.75rem;
+  }
+
+  .folio-nav-label {
+    font-size: 1.1rem;
+  }
+
+  .folio-nav-btn {
+    min-width: 2.5rem;
+    padding: 0 0.6rem;
+  }
+
   .folio-nav-actions {
     gap: 0.125rem;
   }
@@ -484,7 +514,6 @@
 .folio-main {
   padding: clamp(1.5rem, 4vw, 3.25rem) var(--folio-pad) 4rem;
   outline: none;
-  scroll-margin-top: 3.5rem;
 }
 
 .folio-intro {

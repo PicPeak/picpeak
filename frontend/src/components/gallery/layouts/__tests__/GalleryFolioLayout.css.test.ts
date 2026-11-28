@@ -51,6 +51,25 @@ describe('Folio nav on a phone', () => {
   });
 });
 
+describe('Folio touch targets and room for the label', () => {
+  it('gives "View the gallery" a 44 px target, its underline still under the words', () => {
+    const enter = declarations('.folio-cover-enter');
+    expect(enter).toMatch(/min-height:\s*2\.75rem/);
+    expect(enter).toMatch(/align-items:\s*flex-end/);
+  });
+
+  it('drops the words of the way back before the studio label has to give', () => {
+    // Icon only until the row is wide enough for both.
+    expect(declarations('.folio-nav-back > span')).toMatch(/display:\s*none/);
+    expect(declarations('.folio-nav-back > span', 'min-width: 900px')).toMatch(/display:\s*inline/);
+  });
+
+  it('keeps the nav buttons at 36 px or more on a phone, narrower than from 640 px', () => {
+    expect(declarations('.folio-nav-btn')).toMatch(/min-width:\s*2\.25rem/);
+    expect(declarations('.folio-nav-btn', FOLIO_WIDE_NAV_QUERY.slice(1, -1))).toMatch(/min-width:\s*2\.5rem/);
+  });
+});
+
 describe('Folio focus ring', () => {
   it('is drawn in the palette\'s ink, not in the control\'s own colour', () => {
     // An active nav button, the primary pill and the chosen category are
@@ -99,15 +118,16 @@ describe('Folio full cover', () => {
     return contrastRatio('#ffffff', `#${level}${level}${level}`);
   };
 
-  it('keeps the small text readable on the brightest photo: 4.5:1 up to a third of its height', () => {
-    // The date tops the text block at about 30% on a phone, 28% on a desktop.
-    for (const height of [0, 10, 20, 30, 33]) {
+  it('keeps the small text readable on the brightest photo: 4.5:1 as high as the text reaches', () => {
+    // Measured in a browser: the date tops the text block at 35% of the
+    // cover's height on a 390 px phone, 27% on a 1440 px desktop.
+    for (const height of [0, 10, 20, 30, 36]) {
       expect(whiteOnWhitePhoto(height)).toBeGreaterThanOrEqual(4.5);
     }
   });
 
   it('fades out above the text, so the upper half of the photo is untouched', () => {
-    expect(alphaAt(45)).toBeLessThanOrEqual(0.4);
+    expect(alphaAt(50)).toBeLessThanOrEqual(0.4);
     expect(stops.at(-1)!.alpha).toBe(0);
     expect(stops.at(-1)!.at).toBeLessThanOrEqual(80);
   });

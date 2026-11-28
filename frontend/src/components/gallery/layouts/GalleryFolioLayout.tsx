@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { parseISO } from 'date-fns';
 import { MasonryPhotoAlbum } from 'react-photo-album';
@@ -17,7 +17,6 @@ import { DownloadQuotaNotice } from '../DownloadQuotaNotice';
 import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
 import { heroImageUrl } from '../heroImage';
 import { GallerySecondaryText, useGallerySecondaryText } from '../../../hooks/useGalleryText';
-import { useInputMode } from '../../../hooks/useInputMode';
 import { useOptionalTheme } from '../../../contexts/ThemeContext';
 import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
 import { PhotoSalesCartButton } from '../../../features/photo-sales/PhotoSalesCartButton';
@@ -118,7 +117,6 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
   const theme = useOptionalTheme()?.theme;
   const folio = folioSettings(theme?.gallerySettings);
   const paletteStyle = folioPaletteStyle(folio.palette);
-  const inputMode = useInputMode();
   const wideNav = useWideNav();
   const bands = useLazyBands();
   const downloadQuota = useDownloadQuota();
@@ -154,10 +152,16 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
   });
   const labels = useFullPageLabels({ isClient, hasVideos, isSelectionMode, copyFilenamesCount });
 
+  const navRef = useRef<HTMLElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
   const scrollToPhotos = useCallback(() => {
-    const main = document.getElementById('folio-photos');
-    main?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
-    main?.focus({ preventScroll: true });
+    const main = mainRef.current;
+    if (!main) return;
+    // To just under the sticky nav, at the height it has now: the selection
+    // row makes it taller, and a fixed offset would hide the first photos.
+    const top = main.getBoundingClientRect().top + window.scrollY - (navRef.current?.offsetHeight ?? 0);
+    window.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+    main.focus({ preventScroll: true });
   }, []);
   const scrollToTop = useCallback(() => {
     window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
@@ -298,11 +302,8 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
   return (
     <div
       className="gallery-folio"
-      data-palette={folio.palette}
-      data-cover={coverVariant}
       data-type={folio.type}
       data-spacing={folio.spacing}
-      data-input-mode={inputMode}
       style={paletteStyle}
     >
       <header className={`folio-cover folio-cover--${coverVariant}`}>
@@ -337,7 +338,7 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
         </div>
       </header>
 
-      <nav className="folio-nav" aria-label={t('gallery.folio.navLabel', 'Gallery')}>
+      <nav ref={navRef} className="folio-nav" aria-label={t('gallery.folio.navLabel', 'Gallery')}>
         <div className="folio-nav-row">
           <div className="folio-nav-start">
             {showBackToAccount && <BackToAccountLink className="folio-nav-btn folio-nav-back" />}
@@ -437,7 +438,7 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
                 aria-label={t('common.logout', 'Logout')}
                 title={t('common.logout', 'Logout')}
               >
-                <LogOut className="w-4 h-4" aria-hidden="true" />
+                <LogOut className="w-[18px] h-[18px]" aria-hidden="true" />
               </button>
             )}
             <ActionMenu
@@ -499,7 +500,7 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
         )}
       </nav>
 
-      <main id="folio-photos" className="folio-main" tabIndex={-1}>
+      <main ref={mainRef} className="folio-main" tabIndex={-1}>
         {(welcomeMessage || secondaryWelcome) && (
           <p className="folio-intro">{welcomeMessage}<GallerySecondaryText kind="welcome" /></p>
         )}
