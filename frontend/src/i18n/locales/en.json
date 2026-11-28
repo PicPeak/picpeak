@@ -6064,7 +6064,9 @@
     "notFoundTitle": "Page not found",
     "notFoundBody": "The page you are looking for does not exist.",
     "goHome": "Go to the homepage",
-    "copyright": "© {{year}} PicPeak. All rights reserved."
+    "copyright": "© {{year}} PicPeak. All rights reserved.",
+    "not-found": "Page not found",
+    "gallery-not-found": "Gallery not found"
   },
   "toast": {
     "saveSuccess": "Changes saved successfully",

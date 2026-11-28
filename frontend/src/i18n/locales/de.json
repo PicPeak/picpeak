@@ -6701,7 +6701,9 @@
     "notFoundTitle": "Seite nicht gefunden",
     "notFoundBody": "Die gesuchte Seite gibt es nicht.",
     "goHome": "Zur Startseite",
-    "copyright": "© {{year}} PicPeak. Alle Rechte vorbehalten."
+    "copyright": "© {{year}} PicPeak. Alle Rechte vorbehalten.",
+    "not-found": "Seite nicht gefunden",
+    "gallery-not-found": "Galerie nicht gefunden"
   },
   "toast": {
     "saveSuccess": "Änderungen erfolgreich gespeichert",

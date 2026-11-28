@@ -7,7 +7,8 @@ import { Link } from 'react-router-dom';
 import { Card, Loading, Notice, useConfirm } from '../../components/common';
 import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
 import { CmsPageEditor } from '../../components/admin/cms/CmsPageEditor';
-import { cmsService } from '../../services/cms.service';
+import { useCmsPageTitle } from '../../components/admin/cms/cmsPageTitle';
+import { cmsService, type CMSPage as CMSPageRow } from '../../services/cms.service';
 import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
 
 /**
@@ -29,7 +30,8 @@ export const CMSPage: React.FC = () => {
   });
   const listed = pages || [];
   const selectedPage = selected && listed.some((p) => p.slug === selected) ? selected : listed[0]?.slug || null;
-  const pageTitle = (page: { slug: string; title_en: string }) => t(`legal.${page.slug}`, { defaultValue: page.title_en || page.slug });
+  const titleOf = useCmsPageTitle();
+  const pageTitle = (page: CMSPageRow) => titleOf(page.slug, page);
 
   if (isLoading) {
     return (

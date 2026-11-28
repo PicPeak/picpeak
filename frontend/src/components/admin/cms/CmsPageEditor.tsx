@@ -13,6 +13,7 @@ import { Button, Input } from '../../common';
 import { CMSEditor } from '../CMSEditor';
 import { SettingsSaveBar } from '../SettingsSaveBar';
 import { cmsService, type CMSPage } from '../../../services/cms.service';
+import { useCmsPageTitle } from './cmsPageTitle';
 import { buildResourceUrl } from '../../../utils/url';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../../hooks';
@@ -29,6 +30,7 @@ interface CmsPageEditorProps {
 
 export const CmsPageEditor: React.FC<CmsPageEditorProps> = ({ slug, saveMode = 'bar', onDirtyChange, onSaved }) => {
   const { t } = useTranslation();
+  const pageTitle = useCmsPageTitle();
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
   const queryClient = useQueryClient();
   const [editingLang, setEditingLang] = useState<'en' | 'de'>('en');
@@ -143,7 +145,7 @@ export const CmsPageEditor: React.FC<CmsPageEditorProps> = ({ slug, saveMode = '
     <div>
       <div className="flex items-center justify-between mb-6 gap-4">
         <h2 className="text-lg font-semibold text-heading">
-          {t('cms.editPage', { page: t(`legal.${slug}`, { defaultValue: currentPage?.title_en || slug }) })}
+          {t('cms.editPage', { page: pageTitle(slug, currentPage) })}
         </h2>
         <div className="flex gap-2">
           {langTab('en', 'English')}
