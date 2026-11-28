@@ -338,6 +338,13 @@ describe('WebsiteBuilderPage', () => {
     await waitFor(() => expect(websiteService.setVisibility).toHaveBeenLastCalledWith(false));
   });
 
+  it('offers showing or hiding the website only with the settings permission', async () => {
+    vi.mocked(usePermission).mockImplementation((p: string) => p !== 'settings.edit');
+    renderPage();
+    await screen.findByText('Blocks on “Home”');
+    expect(screen.queryByRole('button', { name: 'Take offline' })).toBeNull();
+  });
+
   it('opens on the Pages panel from a link to it', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     queryClient = client;

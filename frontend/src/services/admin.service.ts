@@ -178,6 +178,11 @@ export type ActivityType =
   | "favicon_uploaded"
   | "analytics_settings_updated"
   | "cms_page_updated"
+  // Website builder (issue 2618).
+  | "website_visibility_changed"
+  | "website_contact_settings_updated"
+  | "font_uploaded"
+  | "font_deleted"
   | "security_settings_updated"
   | "password_reset"
   | "admin_logout"

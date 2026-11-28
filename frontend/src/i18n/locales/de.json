@@ -5929,7 +5929,12 @@
       "productChoiceUnlocked": "{{eventName}}: {{productName}} entsperrt",
       "productReleased": "{{eventName}}: {{productName}} für den Kunden freigegeben",
       "productWithdrawn": "{{eventName}}: Freigabe von {{productName}} zurückgenommen",
-      "websiteContactCapReached": "Das Kontaktformular der Website hat sein Tageslimit von {{cap}} Nachrichten erreicht. Besucher erhalten bis zum Ende des Tages eine Fehlermeldung."
+      "websiteContactCapReached": "Das Kontaktformular der Website hat sein Tageslimit von {{cap}} Nachrichten erreicht. Besucher erhalten bis zum Ende des Tages eine Fehlermeldung.",
+      "websiteShown": "Die Website wurde an der Startadresse gezeigt",
+      "websiteHidden": "Die Website wurde offline genommen",
+      "websiteContactSettingsUpdated": "Die Einstellungen des Website-Kontaktformulars wurden geändert",
+      "fontUploaded": "Schrift hochgeladen: {{family}}",
+      "fontDeleted": "Schrift entfernt: {{family}}"
     },
     "notificationToasts": {
       "markedAllRead": "Alle Benachrichtigungen als gelesen markiert",
@@ -6494,7 +6499,11 @@
       "album_product_reopened": "{{productName}} in {{eventName}} für den Kunden wieder geöffnet",
       "album_product_unlocked": "{{productName}} in {{eventName}} entsperrt",
       "album_product_released": "{{productName}} in {{eventName}} für den Kunden freigegeben",
-      "album_product_withdrawn": "Freigabe von {{productName}} in {{eventName}} zurückgenommen"
+      "album_product_withdrawn": "Freigabe von {{productName}} in {{eventName}} zurückgenommen",
+      "website_visibility_changed": "Website gezeigt oder offline genommen",
+      "website_contact_settings_updated": "Einstellungen des Website-Kontaktformulars geändert",
+      "font_uploaded": "Schrift hochgeladen: {{family}}",
+      "font_deleted": "Schrift entfernt: {{family}}"
     },
     "customerActivity": {
       "customer_invitation_created": "Einladung gesendet",

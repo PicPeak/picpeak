@@ -2201,3 +2201,46 @@ describe('multipart field names that would make the parser walk a huge sparse ar
     expect(res.status).toBe(400);
   });
 });
+
+describe('site-wide switches take the settings permission and are logged', () => {
+  let cmsEditorId;
+  beforeAll(async () => {
+    // The admin role: cms.edit and settings.view, not settings.edit.
+    cmsEditorId = await insertId('admin_users', { username: 'cmsonly', email: 'cmsonly@example.com', password_hash: 'x', must_change_password: false, created_at: new Date().toISOString() });
+    await assignAdminRole(db, cmsEditorId, 'admin');
+    require('../../src/middleware/permissions').clearPermissionCache();
+  });
+  const logged = (type) => db('activity_logs').where({ activity_type: type }).orderBy('id', 'desc').first();
+
+  test('showing or hiding the website takes settings.edit and is logged', async () => {
+    expect((await request(app).put('/api/admin/website/visibility').set(auth(cmsEditorId)).send({ enabled: false })).status).toBe(403);
+    const res = await request(app).put('/api/admin/website/visibility').set(auth(adminId)).send({ enabled: true });
+    expect(res.status).toBe(200);
+    expect(JSON.parse((await logged('website_visibility_changed')).metadata)).toEqual({ enabled: true });
+  });
+
+  test('the contact settings: reading takes settings.view, saving is logged without secrets', async () => {
+    expect((await request(app).get('/api/admin/website/contact-settings').set(auth(viewerId))).status).toBe(403);
+    expect((await request(app).get('/api/admin/website/contact-settings').set(auth(cmsEditorId))).status).toBe(200);
+    await request(app).put('/api/admin/website/contact-settings').set(auth(adminId)).send({ captcha: { friendly: { apiKey: 'Z9-new-secret' } }, contact: { recipients: ['logged@studio.example'] } }).expect(200);
+    const row = await logged('website_contact_settings_updated');
+    expect(JSON.parse(row.metadata)).toMatchObject({ changed: expect.arrayContaining(['recipients', 'friendlyApiKey']) });
+    expect(row.metadata).not.toContain('Z9-new-secret');
+    expect(row.metadata).not.toContain('logged@studio.example');
+  });
+
+  test('a revision sent as a numeric string is the same revision', async () => {
+    const { revision } = (await request(app).get('/api/admin/website/contact-settings').set(auth(adminId))).body;
+    expect((await request(app).put('/api/admin/website/contact-settings').set(auth(adminId)).send({ revision: String(revision), contact: { recipients: [] } })).status).toBe(200);
+  });
+
+  test('uploading and removing a font is logged', async () => {
+    const res = await request(app).post('/api/admin/settings/fonts').set(auth(adminId))
+      .field('family', 'Logged Serif').field('weight', '400').field('generic', 'serif')
+      .attach('file', Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(200)]), 'x.woff2');
+    expect(res.status).toBe(201);
+    expect(JSON.parse((await logged('font_uploaded')).metadata)).toEqual({ family: 'Logged Serif', weight: 400, format: 'woff2' });
+    await request(app).delete('/api/admin/settings/fonts/Logged%20Serif').set(auth(adminId)).expect(204);
+    expect(JSON.parse((await logged('font_deleted')).metadata)).toEqual({ family: 'Logged Serif' });
+  });
+});

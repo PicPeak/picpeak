@@ -11,7 +11,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const multer = require('multer');
 const { body, param, query } = require('express-validator');
-const { db } = require('../database/db');
+const { db, logActivity } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireFeatureFlag, isFeatureEnabled } = require('../middleware/requireFeatureFlag');
@@ -24,6 +24,8 @@ const { toDateOnly } = require('../utils/dateOnly');
 const { parseBooleanInput } = require('../utils/parsers');
 const { escapeLikePattern, likeWithEscape, unicodeSearchForms } = require('../utils/sqlSecurity');
 const websiteService = require('../services/website/service');
+// The activity log's actor, as the other admin routes write it.
+const actorOf = (req) => ({ type: 'admin', id: req.admin.id, name: req.admin.username });
 const assets = require('../services/website/assets');
 const media = require('../services/website/media');
 const { requiresGalleryPassword } = require('../utils/galleryLifecycle');
@@ -52,22 +54,31 @@ router.put('/draft', canEdit, [
 
 // The website at the site root, on or off (cms.edit; it used to be the CMS
 // tab's landing page switch).
-router.put('/visibility', canEdit, [
+// Showing or hiding the website at the site root is a site-wide switch, as
+// the landing page's was: settings.edit as well, and logged.
+router.put('/visibility', canEdit, requirePermission('settings.edit'), [
   body('enabled').isBoolean(),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
-  await websiteService.setSiteVisible(parseBooleanInput(req.body.enabled, false));
-  res.json({ enabled: parseBooleanInput(req.body.enabled, false) });
+  const enabled = parseBooleanInput(req.body.enabled, false);
+  await websiteService.setSiteVisible(enabled);
+  await logActivity('website_visibility_changed', { enabled }, null, actorOf(req));
+  res.json({ enabled });
 }));
 
 // The contact form's settings (spam check, notifications): saved right away,
 // not part of the draft. No secret goes back.
-router.get('/contact-settings', canView, handleAsync(async (req, res) => {
+router.get('/contact-settings', canView, requirePermission('settings.view'), handleAsync(async (req, res) => {
   res.json(await require('../services/website/contactSettings').readContactSettings());
 }));
 // Where visitors' messages go is a studio setting: settings.edit as well.
 router.put('/contact-settings', canEdit, requirePermission('settings.edit'), handleAsync(async (req, res) => {
-  res.json(await require('../services/website/contactSettings').writeContactSettings(req.body));
+  const contactSettings = require('../services/website/contactSettings');
+  const before = await contactSettings.readContactSettings();
+  const after = await contactSettings.writeContactSettings(req.body);
+  // Which settings changed, by name: never a key or an address.
+  await logActivity('website_contact_settings_updated', { changed: contactSettings.changedFields(before, after, req.body) }, null, actorOf(req));
+  res.json(after);
 }));
 
 // The booking block's form: client booking on or off, and the bookable

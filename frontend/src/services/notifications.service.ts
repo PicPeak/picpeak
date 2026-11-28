@@ -154,6 +154,16 @@ export const notificationsService = {
         return t('admin.notificationMessages.cmsPageUpdated', { 
           slug: notification.metadata.slug 
         });
+      case 'website_visibility_changed':
+        return notification.metadata?.enabled
+          ? t('admin.notificationMessages.websiteShown', 'The website was put at the site root')
+          : t('admin.notificationMessages.websiteHidden', 'The website was taken offline');
+      case 'website_contact_settings_updated':
+        return t('admin.notificationMessages.websiteContactSettingsUpdated', 'The website contact form settings were changed');
+      case 'font_uploaded':
+        return t('admin.notificationMessages.fontUploaded', 'Font uploaded: {{family}}', { family: notification.metadata?.family });
+      case 'font_deleted':
+        return t('admin.notificationMessages.fontDeleted', 'Font removed: {{family}}', { family: notification.metadata?.family });
       case 'email_config_updated':
         return t('admin.notificationMessages.emailConfigUpdated');
       case 'favicon_uploaded':
@@ -428,6 +438,12 @@ export const notificationsService = {
         return { icon: 'Folder', color: 'text-chart-1' };
       case 'cms_page_updated':
         return { icon: 'FileText', color: 'text-success-text' };
+      case 'website_visibility_changed':
+      case 'website_contact_settings_updated':
+        return { icon: 'Globe', color: 'text-chart-4' };
+      case 'font_uploaded':
+      case 'font_deleted':
+        return { icon: 'FileText', color: 'text-chart-1' };
       case 'favicon_uploaded':
         return { icon: 'Globe', color: 'text-chart-4' };
       case 'archive_downloaded':

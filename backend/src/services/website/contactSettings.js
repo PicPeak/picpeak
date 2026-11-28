@@ -134,7 +134,9 @@ async function writeContactSettings(input) {
   await db.transaction(async (trx) => {
     const row = await trx('app_settings').where({ setting_key: KEYS.revision }).first('setting_value');
     const revision = Number(JSON.parse(row.setting_value)) || 0;
-    const expected = body.revision === undefined ? revision : body.revision;
+    // A revision as a number, or as the numeric string a form may send.
+    const expected = body.revision === undefined ? revision
+      : (/^\d{1,9}$/.test(String(body.revision)) ? Number(body.revision) : -1);
     // Moved on since the admin's view: refused, and only the bump that
     // still finds the revision it read goes through.
     const bumped = expected === revision && await trx('app_settings')
@@ -180,6 +182,18 @@ async function activeCaptcha() {
   return null;
 }
 
+/** The settings a save changed, by name, for the activity log (never a value). */
+function changedFields(before, after, body) {
+  const changed = [];
+  if (before.captcha.provider !== after.captcha.provider) changed.push('provider');
+  if (before.captcha.friendly.siteKey !== after.captcha.friendly.siteKey) changed.push('friendlySiteKey');
+  if (before.captcha.friendly.endpoint !== after.captcha.friendly.endpoint) changed.push('friendlyEndpoint');
+  if (body && body.captcha && body.captcha.friendly && body.captcha.friendly.apiKey !== undefined) changed.push('friendlyApiKey');
+  if (before.contact.recipients.join(',') !== after.contact.recipients.join(',')) changed.push('recipients');
+  if (before.contact.confirmation !== after.contact.confirmation) changed.push('confirmation');
+  return changed;
+}
+
 /** Who hears of a new message, and whether the visitor gets a confirmation. */
 async function mailSettings() {
   const s = await read([KEYS.recipients, KEYS.confirmation]);
@@ -188,4 +202,4 @@ async function mailSettings() {
   return { recipients: recipients.length ? recipients : [fallback].filter(Boolean), confirmation: s[KEYS.confirmation] === true };
 }
 
-module.exports = { readContactSettings, writeContactSettings, activeCaptcha, mailSettings, KEYS };
+module.exports = { readContactSettings, writeContactSettings, activeCaptcha, mailSettings, changedFields, KEYS };

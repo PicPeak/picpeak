@@ -94,6 +94,8 @@ export const WebsiteBuilderPage: React.FC = () => {
   useFillViewport();
   const confirm = useConfirm();
   const canEdit = usePermission('cms.edit');
+  // Showing the website at the site root is a site-wide switch (server: settings.edit too).
+  const canSwitchSite = usePermission('settings.edit') && canEdit;
   const editor = useWebsiteEditor();
   const queryClient = useQueryClient();
   // Shown at the site root or not: an action like Publish, taken at once.
@@ -377,7 +379,7 @@ export const WebsiteBuilderPage: React.FC = () => {
           actions={(
             <div className="flex flex-wrap items-center gap-2">
               {status}
-              {canEdit && server.publicSiteEnabled && (
+              {canSwitchSite && server.publicSiteEnabled && (
                 <Button size="sm" variant="ghost" isLoading={visibility.isPending} onClick={() => { void takeOffline(); }}>
                   {t('website.takeOffline', 'Take offline')}
                 </Button>
@@ -435,7 +437,7 @@ export const WebsiteBuilderPage: React.FC = () => {
         )}
         {!server.publicSiteEnabled && (
           <Notice tone="warning" size="sm"
-            action={canEdit ? (
+            action={canSwitchSite ? (
               <Button size="sm" variant="secondary" isLoading={visibility.isPending} onClick={() => visibility.mutate(true)}>
                 {t('website.showAtRoot', 'Show it at the site root')}
               </Button>

@@ -5275,7 +5275,12 @@
       "productChoiceUnlocked": "{{eventName}}: {{productName}} unlocked",
       "productReleased": "{{eventName}}: {{productName}} released to the client",
       "productWithdrawn": "{{eventName}}: release of {{productName}} withdrawn",
-      "websiteContactCapReached": "The website contact form reached its daily limit of {{cap}} messages. Visitors get an error until the day is over."
+      "websiteContactCapReached": "The website contact form reached its daily limit of {{cap}} messages. Visitors get an error until the day is over.",
+      "websiteShown": "The website was put at the site root",
+      "websiteHidden": "The website was taken offline",
+      "websiteContactSettingsUpdated": "The website contact form settings were changed",
+      "fontUploaded": "Font uploaded: {{family}}",
+      "fontDeleted": "Font removed: {{family}}"
     },
     "notificationToasts": {
       "markedAllRead": "All notifications marked as read",
@@ -5842,7 +5847,11 @@
       "album_product_reopened": "{{productName}} reopened for the client in {{eventName}}",
       "album_product_unlocked": "{{productName}} unlocked in {{eventName}}",
       "album_product_released": "{{productName}} released to the client in {{eventName}}",
-      "album_product_withdrawn": "Release of {{productName}} withdrawn in {{eventName}}"
+      "album_product_withdrawn": "Release of {{productName}} withdrawn in {{eventName}}",
+      "website_visibility_changed": "Website shown or taken offline",
+      "website_contact_settings_updated": "Website contact form settings changed",
+      "font_uploaded": "Font uploaded: {{family}}",
+      "font_deleted": "Font removed: {{family}}"
     },
     "customerActivity": {
       "customer_invitation_created": "Invitation sent",

@@ -579,6 +579,8 @@ router.post('/fonts', adminAuth, requirePermission('settings.edit'), (req, res, 
       family: req.body.family, weight: Number(req.body.weight), generic: req.body.generic, buffer: req.file.buffer,
     });
     clearPublicSiteCache();
+    await logActivity('font_uploaded', { family: saved.family, weight: saved.weight, format: saved.format }, null,
+      { type: 'admin', id: req.admin.id, name: req.admin.username });
     res.status(201).json(saved);
   } catch (error) {
     if (error.statusCode === 400) return res.status(400).json({ error: error.message, code: error.code });
@@ -592,6 +594,8 @@ router.delete('/fonts/:family', adminAuth, requirePermission('settings.edit'), a
       return res.status(404).json({ error: 'No uploaded font of that name', code: 'FONT_NOT_FOUND' });
     }
     clearPublicSiteCache();
+    await logActivity('font_deleted', { family: req.params.family }, null,
+      { type: 'admin', id: req.admin.id, name: req.admin.username });
     res.status(204).end();
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to remove the font');
