@@ -91,5 +91,9 @@ test('the website location passes a website 404 through and hands every other an
   expect(website).toContain('proxy_set_header X-PicPeak-Spa-Fallback "1";');
   const spa = block('location = /__spa {');
   expect(spa).toContain('internal;');
-  expect(spa).toContain('try_files /index.html =404;');
+  // Through the shell's own location, so its headers (no-cache, noindex,
+  // the security set) are defined in exactly one place.
+  expect(spa).toContain('rewrite ^ /index.html last;');
+  expect(spa).not.toMatch(/try_files|add_header|root /);
+  expect(block('location = /index.html {')).toContain('add_header X-Robots-Tag "noindex" always;');
 });
