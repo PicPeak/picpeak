@@ -309,6 +309,26 @@ function clearFontsCache() {
   fontsCacheExpiresAt = 0;
 }
 
+/**
+ * The folder an uploaded family already has, matched without regard to
+ * letter case (on S3 or a case-sensitive disk "Studio-Serif" and
+ * "studio-serif" would be two folders, one hidden by the de-duplication in
+ * listFonts); the folder of the name as given when there is none.
+ */
+async function familyFolder(name) {
+  const wanted = name.replace(/ /g, '-');
+  const lc = wanted.toLowerCase();
+  const folders = new Set();
+  for (const entry of await getStorage().list(`${FONTS_PREFIX}/`)) {
+    const parts = String(entry.key).split('/');
+    if (parts.length === 3 && parts[1]) folders.add(parts[1]);
+  }
+  try {
+    for (const entry of await fs.readdir(getUserFontsRoot(), { withFileTypes: true })) if (entry.isDirectory()) folders.add(entry.name);
+  } catch { /* no fonts folder on this disk */ }
+  return [...folders].sort().find((folder) => folder.toLowerCase() === lc) || wanted;
+}
+
 /** The font format a file's first bytes prove ('woff2', 'woff', 'ttf'), or null. */
 function fontFormatOf(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 12) return null;
@@ -337,7 +357,9 @@ async function saveUploadedFont({ family, weight, generic, buffer }) {
   if (!FAMILY_NAME.test(name) || name.length > 60) throw fontError('Name the font with letters, digits and spaces', 'FONT_NAME');
   if (!UPLOAD_WEIGHTS.includes(Number(weight))) throw fontError('Pick a weight from 100 to 900', 'FONT_WEIGHT');
   const storage = getStorage();
-  const folder = `${FONTS_PREFIX}/${name.replace(/ /g, '-')}`;
+  // Into the family's existing folder, whatever the letter case typed.
+  const folderName = await familyFolder(name);
+  const folder = `${FONTS_PREFIX}/${folderName}`;
   for (const other of FONT_FORMATS) {
     // eslint-disable-next-line no-await-in-loop -- three names at most
     if (other !== format) await storage.delete(`${folder}/${Number(weight)}.${other}`);
@@ -346,9 +368,9 @@ async function saveUploadedFont({ family, weight, generic, buffer }) {
   if (VALID_GENERICS.has(generic)) await storage.put(`${folder}/meta.json`, Buffer.from(JSON.stringify({ generic })), { contentType: 'application/json' });
   // This replica's copy of the object-store file goes at once (others go by
   // the new version in the address).
-  require('../middleware/fontReadThrough').forgetCachedFamily(name.replace(/ /g, '-'));
+  require('../middleware/fontReadThrough').forgetCachedFamily(folderName);
   clearFontsCache();
-  return { family: name, weight: Number(weight), format };
+  return { family: familyDisplayName(folderName), weight: Number(weight), format };
 }
 
 /** Remove an uploaded family; a bundled one cannot be. Returns whether one was removed. */
@@ -356,16 +378,17 @@ async function deleteUploadedFamily(family) {
   const name = typeof family === 'string' ? family.trim() : '';
   if (!FAMILY_NAME.test(name)) return false;
   const storage = getStorage();
-  const prefix = `${FONTS_PREFIX}/${name.replace(/ /g, '-')}/`;
+  const folderName = await familyFolder(name);
+  const prefix = `${FONTS_PREFIX}/${folderName}/`;
   const entries = await storage.list(prefix);
   for (const entry of entries) await storage.delete(entry.key); // eslint-disable-line no-await-in-loop
   // On this disk too: with the object store, fonts placed here before are
   // listed beside the stored ones (listFonts) and removed the same way.
-  const folder = path.join(getUserFontsRoot(), name.replace(/ /g, '-'));
+  const folder = path.join(getUserFontsRoot(), folderName);
   const onDisk = await fs.stat(folder).then((st) => st.isDirectory()).catch(() => false);
   if (onDisk) await fs.rm(folder, { recursive: true, force: true });
   if (!entries.length && !onDisk) return false;
-  require('../middleware/fontReadThrough').forgetCachedFamily(name.replace(/ /g, '-'));
+  require('../middleware/fontReadThrough').forgetCachedFamily(folderName);
   clearFontsCache();
   return true;
 }

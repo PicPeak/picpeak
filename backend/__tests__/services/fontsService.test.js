@@ -478,4 +478,21 @@ describe('uploaded fonts on an object store (S3, several replicas)', () => {
     expect(v3).not.toBe(v2);
     expect(Buffer.from((await request(app).get(`/fonts/Swap-Serif/400.woff2?v=${v3}`)).body).equals(v3Bytes)).toBe(true);
   });
+
+  test.each([
+    ['Studio Serif', 'studio serif', 'Studio-Serif', 'Studio Serif'],
+    ['studio serif', 'Studio Serif', 'studio-serif', 'studio serif'],
+  ])('"%s" then "%s" is one family, in the first one\'s folder and name', async (first, second, folder, shown) => {
+    await fontsService.saveUploadedFont({ family: first, weight: 400, generic: 'serif', buffer: WOFF2 });
+    const saved = await fontsService.saveUploadedFont({ family: second, weight: 700, generic: 'serif', buffer: TTF });
+    expect(saved.family).toBe(shown);
+    expect([...store.objects.keys()].filter((k) => k.endsWith('.woff2') || k.endsWith('.ttf')).sort())
+      .toEqual([`fonts/${folder}/400.woff2`, `fonts/${folder}/700.ttf`]);
+    fontsService.clearFontsCache();
+    expect((await fontsService.listFonts()).filter((f) => f.family.toLowerCase() === 'studio serif'))
+      .toEqual([expect.objectContaining({ family: shown, weights: [400, 700] })]);
+    // Removing it by either spelling removes it.
+    expect(await fontsService.deleteUploadedFamily(second)).toBe(true);
+    expect(store.objects.size).toBe(0);
+  });
 });
