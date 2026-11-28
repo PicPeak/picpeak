@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePermission } from '../../hooks/usePermission';
+import { isRevisionConflict, takeWriteAnswer } from './revisionedDraft';
 import { websiteService, type CaptchaProvider, type ContactSettings, type ContactSettingsUpdate } from '../../services/website.service';
 
 export const CONTACT_SETTINGS_KEY = ['website-contact-settings'];
@@ -50,7 +51,7 @@ function takeUntouched(draft: ContactDraft, was: ContactDraft, next: ContactDraf
 }
 
 const recipientList = (text: string) => text.split(/[\s,;]+/).filter(Boolean);
-const isConflict = (err: unknown) => (err as { response?: { data?: { code?: string } } })?.response?.data?.code === 'WEBSITE_CONTACT_CONFLICT';
+const CONFLICT = 'WEBSITE_CONTACT_CONFLICT';
 
 export function useContactSettingsDraft() {
   const queryClient = useQueryClient();
@@ -104,17 +105,16 @@ export function useContactSettingsDraft() {
         contact: { recipients: recipientList(sent.recipients), confirmation: sent.confirmation && sent.provider !== 'none' },
       });
       const next = fromServer(saved);
-      // A read still under way would answer with the settings before this save.
-      await queryClient.cancelQueries({ queryKey: CONTACT_SETTINGS_KEY });
+      // Taken in here, field by field, not by the effect above.
       adopted.current = saved;
+      await takeWriteAnswer(queryClient, CONTACT_SETTINGS_KEY, saved);
       // Fields still as sent take the saved value; what was typed meanwhile stays.
       setState((s) => (s ? { draft: takeUntouched(s.draft, sent, next), accepted: next, revision: saved.revision } : s));
-      queryClient.setQueryData(CONTACT_SETTINGS_KEY, saved);
       // The preview's and the live pages' forms change with it.
       void queryClient.invalidateQueries({ queryKey: ['website-preview'] });
       return saved;
     } catch (err) {
-      if (isConflict(err)) setConflict(true);
+      if (isRevisionConflict(err, CONFLICT)) setConflict(true);
       throw err;
     }
   };

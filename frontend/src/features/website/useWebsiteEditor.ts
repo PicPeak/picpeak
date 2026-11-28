@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { websiteService } from '../../services/website.service';
+import { isRevisionConflict, takeWriteAnswer } from './revisionedDraft';
 import type { EditorState, WebsiteDocument } from './types';
 
 const HISTORY_LIMIT = 100;
@@ -24,10 +25,7 @@ const same = (a: WebsiteDocument | null, b: WebsiteDocument | null) => JSON.stri
 
 // Only a draft saved elsewhere is a conflict to reload from; another 409
 // (a pick from a gallery that is off) is the page's own error to fix.
-function isConflict(err: unknown): boolean {
-  const response = (err as { response?: { data?: { code?: string } } } | null)?.response;
-  return response?.data?.code === 'WEBSITE_REVISION_CONFLICT';
-}
+const CONFLICT = 'WEBSITE_REVISION_CONFLICT';
 
 /**
  * The editor's draft of the website: the server's draft plus local edits,
@@ -68,6 +66,16 @@ export function useWebsiteEditor() {
     setBase(next);
   }, []);
 
+  // Start over from a server state: it is the base and the draft, and the
+  // history goes, since it describes documents from before this one (undoing
+  // into them and saving would overwrite whoever wrote this draft).
+  const rebase = useCallback((state: EditorState) => {
+    replaceBase({ document: state.document, revision: state.draft.revision });
+    replaceDraft(state.document);
+    setHistory({ past: [], future: [] });
+    lastEdit.current = null;
+  }, [replaceBase, replaceDraft]);
+
   // A server state the draft is not based on yet: take it over while the
   // draft is clean, leave a dirty draft alone.
   useEffect(() => {
@@ -76,15 +84,8 @@ export function useWebsiteEditor() {
     // Only a newer revision: a fetch that started before a save can land
     // after it, and must not take the draft back.
     if (current && server.draft.revision <= current.revision) return;
-    if (!current || same(draftRef.current, current.document)) {
-      replaceBase({ document: server.document, revision: server.draft.revision });
-      replaceDraft(server.document);
-      // The history describes documents from before this one: undoing into
-      // them and saving would overwrite whoever wrote this draft.
-      setHistory({ past: [], future: [] });
-      lastEdit.current = null;
-    }
-  }, [server, replaceBase, replaceDraft]);
+    if (!current || same(draftRef.current, current.document)) rebase(server);
+  }, [server, rebase]);
 
   const isDirty = !!(draft && base && !same(draft, base.document));
 
@@ -129,14 +130,12 @@ export function useWebsiteEditor() {
   const adopt = useCallback((state: EditorState, sent: WebsiteDocument | null) => {
     replaceBase({ document: state.document, revision: state.draft.revision });
     if (!sent || same(draftRef.current, sent)) replaceDraft(state.document);
-    // A fetch already on its way describes the state before this write.
-    void queryClient.cancelQueries({ queryKey: EDITOR_QUERY_KEY });
-    queryClient.setQueryData(EDITOR_QUERY_KEY, state);
+    void takeWriteAnswer(queryClient, EDITOR_QUERY_KEY, state);
     setConflict(false);
   }, [queryClient, replaceBase, replaceDraft]);
 
   const onError = useCallback((err: unknown) => {
-    if (isConflict(err)) setConflict(true);
+    if (isRevisionConflict(err, CONFLICT)) setConflict(true);
   }, []);
 
   const saveMutation = useMutation({
@@ -183,12 +182,9 @@ export function useWebsiteEditor() {
     const result = await query.refetch();
     const from = baseRef.current;
     if (result.isError || !result.data || (from && result.data.draft.revision <= from.revision)) return;
-    replaceBase({ document: result.data.document, revision: result.data.draft.revision });
-    replaceDraft(result.data.document);
-    setHistory({ past: [], future: [] });
-    lastEdit.current = null;
+    rebase(result.data);
     setConflict(false);
-  }, [query, replaceBase, replaceDraft]);
+  }, [query, rebase]);
 
   return {
     query,

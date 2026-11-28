@@ -19,7 +19,7 @@ import { SettingsSaveBar } from '../../components/admin/SettingsSaveBar';
 import { useFillViewport } from '../../components/admin/fillViewport';
 import { usePermission } from '../../hooks/usePermission';
 import { mediaKey, websiteService } from '../../services/website.service';
-import { apiErrorText } from '../../utils/apiErrorText';
+import { apiErrorCode, apiErrorDetails, apiErrorText } from '../../utils/apiErrorText';
 import { BLOCK_ICONS, BLOCK_TYPES, blockLabel, collectImageRefs, createBlock, moveItem, newId } from './blocks';
 import { BlockEditor } from './BlockEditor';
 import { WebsiteDocContext } from './LinkTargetField';
@@ -202,15 +202,16 @@ export const WebsiteBuilderPage: React.FC = () => {
   const busy = editor.save.isPending || editor.publish.isPending;
 
   const onSaveError = (err: unknown) => {
-    const data = (err as { response?: { data?: { code?: string; details?: unknown } } })?.response?.data;
-    if (data?.code === 'WEBSITE_GALLERY_NOT_ON_WEBSITE') {
-      const names = (Array.isArray(data.details) ? data.details as Array<{ name?: string }> : [])
+    const code = apiErrorCode(err);
+    const refused = apiErrorDetails(err);
+    if (code === 'WEBSITE_GALLERY_NOT_ON_WEBSITE') {
+      const names = (Array.isArray(refused) ? refused as Array<{ name?: string }> : [])
         .map((d) => d.name).filter(Boolean).join(', ');
       toast.error(t('website.galleryOff', '{{names}} is not on the website. Remove the pick, or switch the gallery on in its settings or in the image picker.', { names }));
       return;
     }
-    const details = data?.details as ValidationProblem[] | undefined;
-    if (data?.code === 'WEBSITE_ONE_CONTACT_FORM' && Array.isArray(details) && details[0]?.pageId) {
+    const details = refused as ValidationProblem[] | undefined;
+    if (code === 'WEBSITE_ONE_CONTACT_FORM' && Array.isArray(details) && details[0]?.pageId) {
       // Straight to the second form, where the notice says what to do.
       setPageId(details[0].pageId);
       setPanel('blocks');
