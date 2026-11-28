@@ -70,6 +70,19 @@ describe('GalleryLayoutCard — Folio', () => {
     expect(screen.queryByText('branding.photoSpacing')).toBeNull();
   });
 
+  it.each(['gallery-folio', 'gallery-premium', 'gallery-story', 'masonry', 'carousel', 'timeline', 'mosaic'] as const)(
+    'offers no photo animation for %s, which does not animate its photos',
+    (galleryLayout) => {
+      renderCard({ galleryLayout });
+      expect(screen.queryByText('branding.photoAnimation')).toBeNull();
+    },
+  );
+
+  it('keeps the photo animation for the grid, the layout that reads it', () => {
+    renderCard({ galleryLayout: 'grid' });
+    expect(screen.getByText('branding.photoAnimation')).toBeInTheDocument();
+  });
+
   it('stores each option under its folio key', () => {
     const { updateGallerySettings } = renderCard({ galleryLayout: 'gallery-folio' });
     fireEvent.click(screen.getByRole('radio', { name: 'branding.folio.covers.split' }));
