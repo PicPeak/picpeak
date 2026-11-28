@@ -39,6 +39,12 @@ async function readJpegExifSegment(filePath) {
     let offset = 2;
     for (let i = 0; i < MAX_JPEG_SEGMENTS; i += 1) {
       if ((await handle.read(head, 0, 4, offset)).bytesRead < 4 || head[0] !== 0xff) return null;
+      // A fill byte: any number of 0xFF may precede a marker. Counted like a
+      // segment, so a run of them cannot keep the walk going.
+      if (head[1] === 0xff) {
+        offset += 1;
+        continue;
+      }
       // Start of scan or end of image: the metadata segments are behind us.
       if (head[1] === 0xda || head[1] === 0xd9) return null;
       const length = head.readUInt16BE(2);

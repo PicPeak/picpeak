@@ -20,33 +20,13 @@ jest.mock('../../src/database/db', () => {
 
 const { extractCapture } = require('../../src/services/imageProcessor');
 const { extractPhotoExif } = require('../../src/services/photoExif');
-
-// An APPn segment of `size` payload bytes after its identifier.
-const appSegment = (marker, id, size) => {
-  const body = Buffer.concat([Buffer.from(id, 'latin1'), Buffer.alloc(size, 0x20)]);
-  const head = Buffer.from([0xff, marker, 0, 0]);
-  head.writeUInt16BE(body.length + 2, 2);
-  return Buffer.concat([head, body]);
-};
+const jpegBehindSegments = require('../helpers/jpegBehindSegments');
 
 describe('EXIF behind large metadata segments (issue 2617)', () => {
   let tmpDir;
-  const jpeg = async (name, leadingSegments, { exif = true, xmp = false } = {}) => {
-    let image = sharp({ create: { width: 30, height: 20, channels: 3, background: { r: 5, g: 5, b: 5 } } });
-    if (exif) {
-      image = image.withExif({
-        IFD0: { Make: 'Canon', Model: 'Canon EOS R5' },
-        IFD2: { DateTimeOriginal: '2025:06:01 09:45:03', OffsetTimeOriginal: '+02:00' },
-      });
-    }
-    const plain = await image.jpeg().toBuffer();
-    // sharp writes the EXIF APP1 right after SOI; the extra blocks go in front of it.
-    if (exif) expect(plain.readUInt16BE(2)).toBe(0xffe1);
-    const extra = Array.from({ length: leadingSegments }, () => (xmp
-      ? appSegment(0xe1, 'http://ns.adobe.com/xap/1.0/\0', 65000)
-      : appSegment(0xe2, 'ICC_PROFILE\0', 65000)));
+  const jpeg = async (name, leadingSegments, options) => {
     const file = path.join(tmpDir, name);
-    await fs.writeFile(file, Buffer.concat([plain.subarray(0, 2), ...extra, plain.subarray(2)]));
+    await fs.writeFile(file, await jpegBehindSegments(leadingSegments, options));
     return file;
   };
 
@@ -69,6 +49,13 @@ describe('EXIF behind large metadata segments (issue 2617)', () => {
 
   it('reads the camera details behind ~1 MB of leading segments', async () => {
     const file = await jpeg('details.jpg', 16);
+    expect(await extractPhotoExif(file)).toEqual({ make: 'Canon', model: 'Canon EOS R5' });
+  });
+
+  it('steps over fill bytes in front of a marker', async () => {
+    // Any number of 0xFF may precede a marker (ITU T.81 B.1.1.2).
+    const file = await jpeg('fill.jpg', 2, { fillBytes: 3 });
+    expect((await extractCapture(file)).wall).toBe('2025-06-01T09:45:03+02:00');
     expect(await extractPhotoExif(file)).toEqual({ make: 'Canon', model: 'Canon EOS R5' });
   });
 
@@ -122,7 +109,7 @@ describe('EXIF behind large metadata segments (issue 2617)', () => {
     });
 
     it('only walks the marker chain of a JPEG without EXIF', async () => {
-      const file = await jpeg('noexif.jpg', 16, { exif: false });
+      const file = await jpeg('noexif.jpg', 16, { exif: null });
       expect(await readBoth(file)).toBeLessThanOrEqual(2 * (FIRST_PASS + 2 + 4 * 32));
     });
 
