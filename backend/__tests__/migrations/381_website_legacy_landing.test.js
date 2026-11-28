@@ -55,6 +55,23 @@ test.each([
   if (state.css) expect(document.customCss).toContain('.hero{color:teal}');
   // Nothing is published: `/` keeps serving the old page.
   expect(await db('website_documents').where({ state: 'published' }).first()).toBeUndefined();
+  // Exactly the document the builder would store: normalising it changes nothing.
+  const { normalizeDocument } = require('../../src/services/website/document');
+  expect(normalizeDocument(document).document).toEqual(document);
+  // What the import does when the builder first opens, as of this migration.
+  const { legacyImport } = require('../../src/services/website/document');
+  const today = legacyImport({ enabled: !!state.enabled, html: state.html ?? DEFAULT_PUBLIC_SITE_HTML.trim(), css: state.css ?? '' }).document;
+  if (today) {
+    expect(document.customCss).toBe(today.customCss);
+    expect(document.pages[0].blocks[0].html).toBe(today.pages[0].blocks[0].html);
+  }
+});
+
+test('the migration is a snapshot: it loads no application code', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const source = fs.readFileSync(path.join(__dirname, '../../migrations/core/381_website_legacy_landing.js'), 'utf8');
+  expect(source).not.toMatch(/require\(['"]\.\.\/\.\.\/src\//);
 });
 
 test('a page too long for a custom HTML block switches the website on but is not cut into a draft', async () => {

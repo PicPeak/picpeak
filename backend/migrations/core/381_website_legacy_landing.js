@@ -21,8 +21,51 @@
  * are only set. down() drops the tables and the marker; the flag and an
  * imported draft stay (irreversible by design: someone may have edited it).
  */
-const { formatBoolean } = require('../../src/utils/dbCompat');
-const { legacyImport, normalizeDocument } = require('../../src/services/website/document');
+// A snapshot, not the application's code: what the landing page's defaults
+// were, and how the builder imports a landing page, when this was written.
+const crypto = require('crypto');
+const { DEFAULT_PUBLIC_SITE_HTML, DEFAULT_PUBLIC_SITE_CSS } = require('./snapshots/381_public_site_defaults');
+
+const MAX_CUSTOM_HTML = 100 * 1024;
+const newId = () => crypto.randomBytes(6).toString('hex');
+// A boolean as the engine stores it (dbCompat.formatBoolean).
+const formatBooleanFor = (knex) => (value) => (knex.client.config.client === 'pg' ? value : (value ? 1 : 0));
+
+/**
+ * The import (document.js legacyImport) and the stored shape the builder
+ * gives it (normalizeDocument), as of this migration: one home page with the
+ * page as a legacy custom HTML block, the menu made from it, the footer as it
+ * always was, the default stylesheet before the page's own.
+ */
+function legacyImport({ enabled, html, css }) {
+  const page = typeof html === 'string' ? html : '';
+  const style = typeof css === 'string' ? css : '';
+  const used = !!page.trim() && (enabled || page.trim() !== DEFAULT_PUBLIC_SITE_HTML.trim() || !!style.trim());
+  if (!used) return { used: false };
+  if (page.length > MAX_CUSTOM_HTML) return { used: true, refused: true };
+  const pageId = newId();
+  return {
+    used: true,
+    document: {
+      version: 1,
+      pages: [{
+        id: pageId, slug: 'home', title: 'Home', navLabel: '', hidden: false, isHome: true,
+        seo: { title: '', description: '', image: null },
+        blocks: [{ id: newId(), type: 'customHtml', variant: 'default', background: 'default', html: page, legacy: true }],
+      }],
+      menu: {
+        layout: 'left', style: 'plain', sticky: true, transparent: false, mobile: 'dropdown', background: null, text: null,
+        items: [{ id: pageId, label: '', hidden: false, target: { kind: 'page', pageId } }],
+      },
+      footer: {
+        columns: [{ id: 'brand', kind: 'brand', heading: '' }, { id: 'pages', kind: 'pages', heading: '' }],
+        legal: 'column', copyright: '', background: 'default',
+      },
+      theme: { headingFont: null, bodyFont: null, buttonStyle: null, accent: null, background: null, text: null },
+      customCss: `${DEFAULT_PUBLIC_SITE_CSS}\n\n${style}`.trim(),
+    },
+  };
+}
 
 const MARKER = 'website_legacy_landing_migrated';
 
@@ -33,6 +76,7 @@ function settingValue(row) {
 }
 
 exports.up = async function up(knex) {
+  const formatBoolean = formatBooleanFor(knex);
   if (!(await knex.schema.hasTable('admin_notice_dismissals'))) {
     await knex.schema.createTable('admin_notice_dismissals', (t) => {
       t.increments('id').primary();
@@ -79,7 +123,7 @@ exports.up = async function up(knex) {
   }
   if (legacy.document && !(await knex('website_documents').where({ state: 'draft' }).first())) {
     await knex('website_documents').insert({
-      state: 'draft', document: JSON.stringify(normalizeDocument(legacy.document).document), revision: 1, updated_by: null, updated_at: now,
+      state: 'draft', document: JSON.stringify(legacy.document), revision: 1, updated_by: null, updated_at: now,
     });
   }
 };
