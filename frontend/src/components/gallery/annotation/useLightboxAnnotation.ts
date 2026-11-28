@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'react-toastify';
 import {
   ANNOTATION_MAX_STROKES,
   type AnnotationStroke,
@@ -17,6 +19,8 @@ interface Options {
   onStart: () => void;
   /** Called when a stored drawing is put on the photo. */
   onShow: () => void;
+  /** The edit revision of the picture on screen (issue 2619; 0: unedited). */
+  editRevision?: number;
 }
 
 /**
@@ -25,13 +29,22 @@ interface Options {
  * guest picked from the comment list. Kept out of PhotoLightbox so that file
  * only has the integration points.
  */
-export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, onShow }: Options) {
+export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, onShow, editRevision = 0 }: Options) {
+  const { t } = useTranslation();
   const onShowRef = useRef(onShow);
   onShowRef.current = onShow;
   const [drawing, setDrawing] = useState(false);
   const [strokes, setStrokes] = useState<AnnotationStroke[]>([]);
   const [draft, setDraft] = useState<PhotoAnnotation | null>(null);
-  const [shown, setShown] = useState<{ commentId: number; annotation: PhotoAnnotation } | null>(null);
+  // The picture the drawing was started on (issue 2619): its photo and edit
+  // revision, captured when drawing starts, not when it is finished.
+  const [drawnOn, setDrawnOn] = useState<{ photoId: number | undefined; revision: number } | null>(null);
+  // The stored drawing picked from the comment list, in the geometry of the
+  // revision it was picked on (issue 2619).
+  const [picked, setShown] = useState<{ commentId: number; annotation: PhotoAnnotation; revision: number } | null>(null);
+  // A newer revision on screen has another geometry: the list refetches the
+  // drawing placed on it, and the old placement is not shown meanwhile.
+  const shown = picked && picked.revision === editRevision ? picked : null;
   const [tool, setTool] = useState<AnnotationTool>('free');
   const [color, setColor] = useState(0);
   // A comment is on its way (reported by the comment form). Its success
@@ -60,9 +73,12 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
     if (!canDraw || sending) return;
     setShown(null);
     setStrokes(draft?.strokes ?? []);
+    // A draft still here was drawn on this very picture (a newer revision
+    // drops it, below), so the revision now on screen is the draft's too.
+    setDrawnOn({ photoId, revision: editRevision });
     setDrawing(true);
     onStart();
-  }, [canDraw, sending, draft, onStart]);
+  }, [canDraw, sending, draft, onStart, photoId, editRevision]);
 
   /** Leave the mode, keeping whatever was attached before it was entered. */
   const cancel = useCallback(() => setDrawing(false), []);
@@ -78,6 +94,24 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
     setDraft(null);
   }, []);
 
+  // The photo on screen was updated to a new edit revision while a drawing
+  // was in progress or waiting on the comment form: its strokes belong to the
+  // old picture, so they go, with a notice. Another photo is handled above.
+  const staleDrawing = (drawing || draft !== null)
+    && drawnOn !== null && drawnOn.photoId === photoId && drawnOn.revision !== editRevision;
+  useEffect(() => {
+    if (!staleDrawing) return;
+    setDrawing(false);
+    setStrokes([]);
+    setDraft(null);
+    setDrawnOn(null);
+    toast.info(t('feedback.annotation.photoUpdated', 'The photo was updated. Please draw again.'));
+  }, [staleDrawing, t]);
+
+  useEffect(() => {
+    if (picked && picked.revision !== editRevision) setShown(null);
+  }, [picked, editRevision]);
+
   // Called from a request's success handler, which can arrive late: after
   // the panel was closed and reopened, or on another photo. Only the very
   // draft that was sent goes; a drawing made since is not this comment's.
@@ -90,9 +124,9 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
       setShown(null);
       return;
     }
-    setShown({ commentId, annotation });
+    setShown({ commentId, annotation, revision: editRevision });
     onShowRef.current();
-  }, [shown]);
+  }, [shown, editRevision]);
 
   const hideShown = useCallback(() => setShown(null), []);
 
@@ -105,13 +139,14 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
     canDraw,
     drawing,
     draft,
+    draftRevision: drawnOn?.revision ?? 0,
     discard,
     discardSent,
     setSending,
     shownCommentId: shown?.commentId ?? null,
     toggleShown,
     hideShown,
-  }), [canDraw, drawing, draft, discard, discardSent, shown, toggleShown, hideShown]);
+  }), [canDraw, drawing, draft, drawnOn, discard, discardSent, shown, toggleShown, hideShown]);
 
   // What lies on the photo: the strokes in progress, else the drawing picked
   // from the comment list, else the one waiting on the comment form.

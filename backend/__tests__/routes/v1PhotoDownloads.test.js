@@ -662,6 +662,82 @@ describe('v1 original downloads (issue 1473)', () => {
       });
       afterAll(() => { zipLimits.maxBytes = defaultMax; });
 
+      it('counts an edited photo once (issue 2619)', async () => {
+        // Recorded as 63 KB; what goes out is the edited render, a few KB.
+        // The original's size stands in for the render, which is drawn only
+        // when its entry is written: counted as both, the pair went over the
+        // 64 KB cap.
+        const noise = await require('sharp')(crypto.randomBytes(96 * 64 * 3), { raw: { width: 96, height: 64, channels: 3 } })
+          .jpeg({ quality: 95 }).toBuffer();
+        await mkPhoto('edited', evId, 'dl-stale', 'dl-stale_edited.jpg', noise, {
+          size_bytes: 63 * 1024, media_type: 'image', processing_status: 'complete',
+          edit_params: JSON.stringify({ v: 1, exposure: 0.5 }), edit_rev: 1, edit_applied_rev: 1,
+        });
+        const res = await get(`/api/v1/events/${evId}/photos/download`);
+        expect(res.status).toBe(200);
+        // The listing describes the file the download serves: the edit.
+        const render = (await db('photos').where({ id: photos.edited }).first()).edit_render_path;
+        const listed = json(await get(`/api/v1/events/${evId}/photos`)).photos.find((p) => p.id === photos.edited);
+        expect(listed).toMatchObject({
+          mime_type: 'image/jpeg', width: 96, height: 64, size_bytes: fs.statSync(path.join(storageRoot, render)).size,
+        });
+        // A newer save not rendered yet: the render on record is of the
+        // revision before, so its size is not the download's. Unknown.
+        await db('photos').where({ id: photos.edited }).update({
+          edit_params: JSON.stringify({ v: 1, rotate: 90 }), edit_rev: 2, edit_width: 64, edit_height: 96,
+        });
+        const resaved = json(await get(`/api/v1/events/${evId}/photos`)).photos.find((p) => p.id === photos.edited);
+        expect(resaved).toMatchObject({ width: 64, height: 96, size_bytes: null });
+        // The download is logged; the cases below count those rows from zero.
+        await new Promise((r) => setTimeout(r, 100));
+        await db('activity_logs').where({ event_id: evId }).delete();
+      });
+
+      it('renders an edited photo with its entry: the first one goes out before the second is drawn (issue 2619)', async () => {
+        const small = await require('sharp')({ create: { width: 32, height: 24, channels: 3, background: { r: 200, g: 90, b: 40 } } }).jpeg().toBuffer();
+        for (const key of ['editedA', 'editedB']) {
+          await mkPhoto(key, evId, 'dl-stale', `dl-stale_${key}.jpg`, small, {
+            size_bytes: small.length, media_type: 'image', processing_status: 'complete',
+            edit_params: JSON.stringify({ v: 1, exposure: 0.5 }), edit_rev: 1, edit_applied_rev: 1,
+          });
+        }
+        const photoEdits = require('../../src/services/photoEdits');
+        const deliver = photoEdits.deliveredPhoto;
+        let firstBytes;
+        const bytesArrived = new Promise((resolve) => { firstBytes = resolve; });
+        let renders = 0;
+        let secondRenderSawBytes = null;
+        const slow = jest.spyOn(photoEdits, 'deliveredPhoto').mockImplementation(async (row, options) => {
+          renders += 1;
+          if (renders === 2) {
+            secondRenderSawBytes = await Promise.race([bytesArrived.then(() => true), new Promise((r) => setTimeout(() => r(false), 3000))]);
+          }
+          return deliver(row, options);
+        });
+        const server = http.createServer(app);
+        await new Promise((r) => server.listen(0, '127.0.0.1', r));
+        try {
+          const status = await new Promise((resolve, reject) => {
+            http.get({
+              host: '127.0.0.1', port: server.address().port, path: `/api/v1/events/${evId}/photos/download`,
+              headers: { Authorization: `Bearer ${readToken}` },
+            }, (res) => {
+              res.on('data', () => firstBytes());
+              res.on('end', () => resolve(res.statusCode));
+              res.on('error', reject);
+            }).on('error', reject);
+          });
+          expect(status).toBe(200);
+          expect(renders).toBe(2);
+          expect(secondRenderSawBytes).toBe(true);
+        } finally {
+          slow.mockRestore();
+          await new Promise((r) => server.close(r));
+        }
+        await new Promise((r) => setTimeout(r, 100));
+        await db('activity_logs').where({ event_id: evId }).delete();
+      });
+
       it('stats a row recorded as 0 bytes instead of trusting it', async () => {
         await mkPhoto('zero', evId, 'dl-stale', 'dl-stale_zero.jpg', crypto.randomBytes(128 * 1024), {
           size_bytes: 0,

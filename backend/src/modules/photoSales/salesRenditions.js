@@ -39,6 +39,16 @@ function salesSettingsFingerprint(settings) {
   return crypto.createHash('sha1').update(material).digest('hex').slice(0, 12);
 }
 
+/**
+ * What a persisted sales preview was cut for: the forced settings and, for an
+ * edited photo, the edit revision (issue 2619). Unchanged for a photo never
+ * edited, so its stored previews stay current.
+ */
+function salesPreviewFingerprint(settings, photo) {
+  const rev = Number(photo?.edit_rev) || 0;
+  return `${salesSettingsFingerprint(settings)}${rev > 0 ? `-e${rev}` : ''}`;
+}
+
 function salesPreviewKey(photoId, fingerprint) {
   return `${STORE_DIR}/${photoId}_sales_preview_${fingerprint}.jpg`;
 }
@@ -50,11 +60,10 @@ function salesPreviewKey(photoId, fingerprint) {
  */
 async function findPersistedSalesPreview(event, photo, settings) {
   if (!event || !photo || !settings || !settings.enabled || !settings.tiled) return null;
-  const fingerprint = salesSettingsFingerprint(settings);
   const row = await db('photos')
     .where({ id: photo.id })
-    .first('photo_sales_preview_key', 'photo_sales_preview_path');
-  if (!row || row.photo_sales_preview_key !== fingerprint || !row.photo_sales_preview_path) {
+    .first('photo_sales_preview_key', 'photo_sales_preview_path', 'edit_rev');
+  if (!row || row.photo_sales_preview_key !== salesPreviewFingerprint(settings, row) || !row.photo_sales_preview_path) {
     return null;
   }
   try {
@@ -107,6 +116,11 @@ async function generateSalesPreviewForPhoto(photoId) {
         return { success: false, error: 'No forced watermark settings' };
       }
 
+      // A photo edit (issue 2619) is drawn from the preview once its
+      // renditions are rebuilt; until then none is persisted for it.
+      if (Number(photo.edit_rev) !== Number(photo.edit_applied_rev)) {
+        return { success: false, error: 'Photo edit is still being applied' };
+      }
       const { ensurePreviewImage, withLocalCopy } = require('../../services/imageProcessor');
       const previewPath = await ensurePreviewImage(photo);
       if (!previewPath) return { success: false, error: 'Preview unavailable' };
@@ -118,7 +132,7 @@ async function generateSalesPreviewForPhoto(photoId) {
         watermarkService.applyWatermark(localPath, settings, { failClosed: true })
       );
 
-      const fingerprint = salesSettingsFingerprint(settings);
+      const fingerprint = salesPreviewFingerprint(settings, photo);
       const key = salesPreviewKey(photo.id, fingerprint);
       await getStorage().put(key, buffer, {
         contentType: previewPath.endsWith('.webp') ? 'image/webp' : 'image/jpeg',

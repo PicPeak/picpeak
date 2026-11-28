@@ -170,6 +170,23 @@ describe('drawn annotations on a comment (issue 1733)', () => {
     expect(await rows()).toHaveLength(0);
   });
 
+  it('takes a drawing made on the applied edit revision and refuses one made on a replaced picture (issue 2619)', async () => {
+    await db('photos').where({ id: photoId }).update({ edit_applied_rev: 2, edit_rev: 2 });
+    try {
+      const stale = await post('A', { feedback_type: 'comment', comment_text: 'On the old picture', annotation: ANNOTATION, annotation_rev: 1 });
+      expect(stale.status).toBe(409);
+      expect(stale.body.code).toBe('IMAGE_CHANGED');
+      expect(await rows()).toHaveLength(0);
+      expect((await post('A', { feedback_type: 'comment', comment_text: 'Bad', annotation: ANNOTATION, annotation_rev: 'x' })).status).toBe(400);
+      expect((await post('A', { feedback_type: 'comment', comment_text: 'Current', annotation: ANNOTATION, annotation_rev: 2 })).status).toBe(200);
+      // An older client sends none: the revision applied now.
+      expect((await post('B', { feedback_type: 'comment', comment_text: 'Old client', annotation: ANNOTATION })).status).toBe(200);
+      expect(await rows()).toHaveLength(2);
+    } finally {
+      await db('photos').where({ id: photoId }).update({ edit_applied_rev: 0, edit_rev: 0 });
+    }
+  });
+
   it('needs the comment text and a comment type', async () => {
     expect((await comment('A', ANNOTATION, '   ')).status).toBe(400);
     const onLike = await post('A', { feedback_type: 'like', annotation: ANNOTATION });

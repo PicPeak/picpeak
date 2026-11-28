@@ -153,7 +153,8 @@ export const PeopleSheet: React.FC<PeopleSheetProps> = ({
                         // this a group photo shows whoever is centred — often
                         // not the person being labelled, and identical for two
                         // people whose cover is the same photo.
-                        style={faceCropStyle(person.cover, photo.width, photo.height, 64)
+                        // The size the box came with (issue 2619), the listing's otherwise.
+                        style={faceCropStyle(person.cover, person.cover?.photo_width || photo.width, person.cover?.photo_height || photo.height, 64)
                           || { width: '100%', height: '100%', objectFit: 'cover' }}
                       />
                     )}

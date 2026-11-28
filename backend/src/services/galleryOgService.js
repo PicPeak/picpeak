@@ -229,9 +229,11 @@ async function buildOgMetadata(slug, requestPath) {
       // Never a team upload still under review (issue 743), nor a photo the
       // worker has not finished, which the gallery itself does not show.
       .whereNull('moderation_status')
-      .select('id', 'thumbnail_path')
+      .select('id', 'thumbnail_path', 'media_type', 'mime_type', 'edit_params', 'edit_rev', 'edit_applied_rev', 'edit_applied_params', 'edit_failed_rev')
       .first();
-    if (heroPhoto && heroPhoto.thumbnail_path) {
+    // Nor one withheld while a crop or turn fails to render (issue 2619):
+    // the default image instead.
+    if (heroPhoto && heroPhoto.thumbnail_path && !(await require('./photoEdits').withheldFromGuests(heroPhoto))) {
       image = `${base}/og/gallery/${event.slug}/cover`;
     }
   }
@@ -348,6 +350,13 @@ async function handleGalleryOgCover(req, res) {
       .first();
     let photo = await coverQuery();
     if (!photo) {
+      res.status(404).type('text/plain').send('Cover not available');
+      return;
+    }
+    // A photo withheld from guests while a crop or turn fails to render
+    // (issue 2619) is no public cover either; the preview names none.
+    if (await require('./photoEdits').withheldFromGuests(photo)) {
+      res.set('Cache-Control', 'no-store');
       res.status(404).type('text/plain').send('Cover not available');
       return;
     }

@@ -1,4 +1,5 @@
 const express = require('express');
+const photoEdits = require('../../services/photoEdits');
 const fs = require('fs');
 const { db } = require('../../database/db');
 const { sellablePhotos } = require('../../modules/photoSales/sellable');
@@ -150,8 +151,10 @@ router.get('/purchased-downloads/:accessToken/photos/:photoId', noStoreCache, as
     if (isTrue(event?.temporarily_disabled)) {
       return res.status(403).json({ error: 'This gallery is temporarily unavailable.', code: 'GALLERY_TEMPORARILY_DISABLED' });
     }
+    // An edited photo (issue 2619) is sold as its edited render.
     const photo = event
-      ? await sellablePhotos(db, event.id).where('photos.id', photoId).first('photos.*')
+      ? await photoEdits.deliveredPhoto(await sellablePhotos(db, event.id).where('photos.id', photoId).first('photos.*'),
+        { headOnly: req.method === 'HEAD' })
       : null;
     if (!photo) return res.status(404).json({ error: 'Photo not found' });
 

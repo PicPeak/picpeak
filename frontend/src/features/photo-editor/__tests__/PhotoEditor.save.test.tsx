@@ -1,0 +1,243 @@
+/**
+ * Saving in the photo editor (issue 2619): the server's normalised edit (a
+ * RAW is saved with develop on) becomes the saved state without a phantom
+ * "not saved"; moving on waits for a save still on its way; a copy to more
+ * photos than one request takes goes out in parts.
+ */
+import React from 'react';
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { service, toast } = vi.hoisted(() => ({
+  service: {
+    get: vi.fn(), baseImage: vi.fn(), developPreview: vi.fn(), save: vi.fn(), copyTo: vi.fn(), retry: vi.fn(),
+    listPresets: vi.fn(), settings: vi.fn(), saveSettings: vi.fn(), createPreset: vi.fn(), deletePreset: vi.fn(), developRaw: vi.fn(),
+  },
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+}));
+
+vi.mock('../../../services/photoEditor.service', () => ({ photoEditorService: service }));
+vi.mock('react-toastify', () => ({ toast }));
+vi.mock('react-i18next', async () => ({
+  ...(await vi.importActual<typeof import('react-i18next')>('react-i18next')),
+  useTranslation: () => ({
+    t: (key: string, fallback?: any) => {
+      if (typeof fallback === 'string') return fallback;
+      if (fallback?.defaultValue) return String(fallback.defaultValue).replace(/\{\{(\w+)\}\}/g, (_: string, name: string) => String(fallback[name]));
+      return key;
+    },
+    i18n: { language: 'en' },
+  }),
+}));
+vi.mock('../../../components/common', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../components/common')>()),
+  useConfirm: () => async () => true,
+}));
+vi.mock('../../../components/admin/AdminAuthenticatedImage', () => ({ AdminAuthenticatedImage: () => null }));
+vi.mock('../renderer', () => ({
+  EditRenderer: class {
+    backend = 'webgl2';
+    width = 600;
+    height = 400;
+    linear = false;
+    canvas = document.createElement('canvas');
+    render() { return { width: 600, height: 400, crop: { left: 0, top: 0, width: 600, height: 400 } }; }
+    toneStats() { return { p005: -8, p10: -6, p50: -3, p99: -0.5, p995: -0.2, mean: -3, clipped: 0 }; }
+    dispose() {}
+  },
+}));
+
+import PhotoEditor from '../PhotoEditor';
+import { BatchCopyDialog } from '../BatchCopyDialog';
+import { DEFAULT_PARAMS } from '../editMath';
+
+const photos = [1, 2].map((id) => ({ id, filename: `p${id}.cr3`, media_type: 'image', mime_type: 'image/x-canon-cr3' })) as any;
+const state = (id: number, params: unknown = null) => ({ photo_id: id, raw: true, source_version: 'abc', params, edit_rev: 0, edit_applied_rev: 0, width: 600, height: 400 });
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  (globalThis as any).createImageBitmap = vi.fn().mockResolvedValue({ width: 600, height: 400 });
+  (globalThis as any).ResizeObserver = class { observe() {} disconnect() {} };
+  service.get.mockImplementation(async (_e: number, id: number) => state(id));
+  service.developPreview.mockResolvedValue({ width: 600, height: 400, data: new Uint16Array(600 * 400 * 3), exposureBias: 0 });
+  service.listPresets.mockResolvedValue([]);
+  service.settings.mockResolvedValue({ auto_develop_raw: false });
+});
+
+const open = async () => {
+  render(<PhotoEditor eventId={1} photos={photos} initialPhotoId={1} onClose={vi.fn()} onChanged={vi.fn()} />);
+  await waitFor(() => expect(screen.getByLabelText('Edited preview')).toHaveAttribute('data-backend', 'webgl2'));
+};
+
+describe('saving', () => {
+  it('takes the normalised edit a RAW is saved with, so nothing stays unsaved', async () => {
+    service.save.mockImplementation(async (_e: number, id: number, params: any) => state(id, params));
+    await open();
+    fireEvent.change(screen.getByLabelText('photoEditor.sliders.exposure'), { target: { value: '1' } });
+    expect(screen.getByText('Not saved')).toBeInTheDocument();
+    await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0]);
+    await waitFor(() => expect(service.save).toHaveBeenCalled());
+    expect(service.save.mock.calls[0][2]).toMatchObject({ exposure: 1, develop: true });
+    await waitFor(() => expect(screen.queryByText('Not saved')).toBeNull());
+  });
+
+  it('moves to the next photo only once a save on its way has landed', async () => {
+    let finish: (value: unknown) => void = () => {};
+    service.save.mockImplementation((_e: number, id: number, params: any) => new Promise((resolve) => { finish = () => resolve(state(id, params)); }));
+    await open();
+    fireEvent.change(screen.getByLabelText('photoEditor.sliders.exposure'), { target: { value: '0.5' } });
+    await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0]);
+    await userEvent.click(screen.getByRole('button', { name: 'Next photo' }));
+    expect(service.get).toHaveBeenCalledTimes(1);
+    await act(async () => { finish(undefined); });
+    await waitFor(() => expect(service.get).toHaveBeenCalledWith(1, 2));
+    expect(service.save).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('while the next photo loads', () => {
+  it('nothing can be changed or saved, and a late answer does not touch the photo shown', async () => {
+    const { EditRenderer } = await import('../renderer');
+    const dispose = vi.spyOn(EditRenderer.prototype as any, 'dispose');
+    let release: () => void = () => {};
+    service.get.mockImplementation(async (_e: number, id: number) => {
+      if (id === 2) await new Promise<void>((resolve) => { release = resolve; });
+      return state(id);
+    });
+    await open();
+    await userEvent.click(screen.getByRole('button', { name: 'Next photo' }));
+    await waitFor(() => expect(service.get).toHaveBeenCalledWith(1, 2));
+    // Photo 2's state is not here: the sliders and Save are off, Ctrl+S does nothing.
+    expect(screen.getByLabelText('photoEditor.sliders.exposure')).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('photoEditor.sliders.exposure'), { target: { value: '1' } });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    expect(service.save).not.toHaveBeenCalled();
+    // Back to photo 1 before photo 2 answered; its late answer must not
+    // dispose the renderer photo 1 now has.
+    await userEvent.click(screen.getByRole('button', { name: 'Previous photo' }));
+    await waitFor(() => expect(screen.getByLabelText('photoEditor.sliders.exposure')).not.toBeDisabled());
+    const disposedBefore = dispose.mock.calls.length;
+    await act(async () => { release(); });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(dispose.mock.calls.length).toBe(disposedBefore);
+    dispose.mockRestore();
+  });
+});
+
+describe('background progress', () => {
+  it('reads it from the photo rows: pending and failed apart, failed ones offered a retry', async () => {
+    service.retry.mockResolvedValue({ retried: 2 });
+    const onChanged = vi.fn();
+    const rows = [
+      ...photos,
+      { id: 3, filename: 'a.jpg', media_type: 'image', edit_rev: 2, edit_applied_rev: 1, edit_failed: false },
+      { id: 4, filename: 'b.jpg', media_type: 'image', edit_rev: 1, edit_applied_rev: 0, edit_failed: true },
+      { id: 5, filename: 'c.jpg', media_type: 'image', edit_rev: 3, edit_applied_rev: 1, edit_failed: true },
+      { id: 6, filename: 'd.jpg', media_type: 'image', edit_rev: 1, edit_applied_rev: 1, edit_failed: false },
+    ] as any;
+    render(<PhotoEditor eventId={1} photos={rows} initialPhotoId={1} onClose={vi.fn()} onChanged={onChanged} />);
+    await waitFor(() => expect(screen.getByLabelText('Edited preview')).toHaveAttribute('data-backend', 'webgl2'));
+    expect(screen.getByText(/for 1 photos/)).toBeInTheDocument();
+    expect(screen.getByText(/2 photos could not be updated/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(service.retry).toHaveBeenCalledWith(1, [4, 5]));
+    expect(onChanged).toHaveBeenCalled();
+  });
+});
+
+describe('the photo list changing under the editor', () => {
+  it('stays on the same photo with its unsaved change when the list is refreshed or reordered', async () => {
+    const view = render(<PhotoEditor eventId={1} photos={photos} initialPhotoId={1} onClose={vi.fn()} onChanged={vi.fn()} />);
+    await waitFor(() => expect(screen.getByLabelText('Edited preview')).toHaveAttribute('data-backend', 'webgl2'));
+    fireEvent.change(screen.getByLabelText('photoEditor.sliders.exposure'), { target: { value: '1' } });
+    const fresh = { id: 0, filename: 'new.cr3', media_type: 'image', mime_type: 'image/x-canon-cr3' };
+    view.rerender(<PhotoEditor eventId={1} photos={[fresh, ...photos] as any} initialPhotoId={1} onClose={vi.fn()} onChanged={vi.fn()} />);
+    expect(screen.getByText('p1.cr3')).toBeInTheDocument();
+    expect(screen.getByText('Not saved')).toBeInTheDocument();
+    expect(service.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a photo that left the list, with its unsaved change, and says so', async () => {
+    const view = render(<PhotoEditor eventId={1} photos={photos} initialPhotoId={1} onClose={vi.fn()} onChanged={vi.fn()} />);
+    await waitFor(() => expect(screen.getByLabelText('Edited preview')).toHaveAttribute('data-backend', 'webgl2'));
+    fireEvent.change(screen.getByLabelText('photoEditor.sliders.exposure'), { target: { value: '1' } });
+    view.rerender(<PhotoEditor eventId={1} photos={[photos[1]]} initialPhotoId={1} onClose={vi.fn()} onChanged={vi.fn()} />);
+    expect(screen.getByText('p1.cr3')).toBeInTheDocument();
+    expect(screen.getByText('Not saved')).toBeInTheDocument();
+    expect(screen.getByText(/no longer in the list/)).toHaveAttribute('role', 'status');
+    expect(service.get).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('develop all RAWs', () => {
+  it('takes the developed state of the open photo when it has no unsaved change', async () => {
+    service.developRaw.mockResolvedValue({ queued: 2, photo_ids: [1, 2] });
+    await open();
+    expect(screen.getByRole('button', { name: 'Reset to original' })).toBeDisabled();
+    service.get.mockImplementation(async (_e: number, id: number) => state(id, { ...DEFAULT_PARAMS, develop: true }));
+    await userEvent.click(screen.getByRole('button', { name: 'Develop all unedited RAW photos' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reset to original' })).toBeEnabled());
+    expect(screen.queryByText('Not saved')).toBeNull();
+  });
+
+  it('keeps an unsaved change and takes only the saved state', async () => {
+    service.developRaw.mockResolvedValue({ queued: 2, photo_ids: [1, 2] });
+    await open();
+    fireEvent.change(screen.getByLabelText('photoEditor.sliders.exposure'), { target: { value: '1' } });
+    service.get.mockImplementation(async (_e: number, id: number) => state(id, { ...DEFAULT_PARAMS, develop: true }));
+    await userEvent.click(screen.getByRole('button', { name: 'Develop all unedited RAW photos' }));
+    await waitFor(() => expect(service.get).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText('photoEditor.sliders.exposure')).toHaveValue('1');
+    expect(screen.getByText('Not saved')).toBeInTheDocument();
+  });
+});
+
+describe('layout', () => {
+  it('bounds the adjustments panel stacked under the photo, so it scrolls instead of running off-screen', async () => {
+    await open();
+    const panel = screen.getByRole('complementary', { name: 'Adjustments' });
+    const classes = panel.className.split(/\s+/);
+    expect(classes).toEqual(expect.arrayContaining(['overflow-y-auto', 'min-h-0']));
+    expect(classes.some((c) => /^max-h-/.test(c))).toBe(true);
+    // Side by side from lg on, it takes the full height.
+    expect(classes).toContain('lg:max-h-none');
+  });
+});
+
+describe('copy to photos', () => {
+  it('sends more than a request takes in parts and adds up the result', async () => {
+    const many = Array.from({ length: 1500 }, (_, i) => ({ id: i + 10, filename: `x${i}.jpg`, media_type: 'image' })) as any;
+    service.copyTo.mockImplementation(async (_e: number, ids: number[]) => ({ queued: ids.length, skipped: [] }));
+    const onQueued = vi.fn();
+    render(<BatchCopyDialog open onClose={vi.fn()} eventId={1} photos={many} sourceId={1} params={{ ...DEFAULT_PARAMS, exposure: 1 }} onQueued={onQueued} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Select all' }));
+    await userEvent.click(screen.getByRole('button', { name: /Copy to 1500 photos/ }));
+    await waitFor(() => expect(onQueued).toHaveBeenCalled());
+    expect(service.copyTo.mock.calls.map((call) => call[1].length)).toEqual([1000, 500]);
+    expect(onQueued.mock.calls[0][0]).toHaveLength(1500);
+  // 1500 tiles take longer than the default 5 s in a loaded full run.
+  }, 20000);
+});
+
+describe('deleting a preset', () => {
+  const preset = { id: 7, name: 'Warm', params: { v: 1, exposure: 0.3 } };
+
+  it('keeps it in the list and shows the error when the delete fails', async () => {
+    service.listPresets.mockResolvedValue([preset]);
+    service.deletePreset.mockRejectedValue({ response: { data: { error: 'Preset is in use' } } });
+    await open();
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete Warm' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Preset is in use'));
+    expect(screen.getByRole('button', { name: 'Delete Warm' })).toBeInTheDocument();
+  });
+
+  it('takes it off the list once the delete went through', async () => {
+    service.listPresets.mockResolvedValue([preset]);
+    service.deletePreset.mockResolvedValue(undefined);
+    await open();
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete Warm' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Delete Warm' })).toBeNull());
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+});

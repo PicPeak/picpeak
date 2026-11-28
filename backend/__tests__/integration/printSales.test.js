@@ -1416,3 +1416,30 @@ sdkTest('S3 SDK cancellation during multipart completion leaves neither parts no
     expect(await db('print_sales_assets').where({ order_id: q.id })).toHaveLength(0);
   });
 }, 120000);
+test('prints the revision the buyer cropped on: the applied edit, not one still pending (issue 2619)', async () => {
+  const crop = JSON.stringify({ v: 1, crop: { x: 0, y: 0, w: 0.5, h: 1 } });
+  // A crop saved but not applied: the gallery's previews, and the crop editor, show the unedited photo.
+  await db('photos').where({ id: photoId }).update({ edit_params: crop, edit_rev: 1, edit_applied_rev: 0 });
+  const q = await quoted();
+  const row = await db('print_sales_orders').where({ id: q.id }).first();
+  expect(P.parse(row.snapshot).items[0].source).toMatchObject({ sha256: V.hash(sourceBytes), width: 400, height: 600 });
+  // Another save still pending changes nothing the buyer saw.
+  await db('photos').where({ id: photoId }).update({ edit_rev: 2 });
+  await expect(orders.accept(event.id, customerId, 'client', q.id, { snapshotHash: q.snapshotHash, acknowledgeSelection: true }))
+    .resolves.toBeTruthy();
+  // The crop applied before a confirmation: that quotation shows what is no longer the photo.
+  const second = await quoted();
+  await db('photos').where({ id: photoId }).update({ edit_rev: 2, edit_applied_rev: 2, edit_applied_params: crop });
+  await expect(orders.accept(event.id, customerId, 'client', second.id, { snapshotHash: second.snapshotHash, acknowledgeSelection: true }))
+    .rejects.toThrow('changed');
+});
+test('a photo withheld for a failing crop is neither quoted nor confirmed (issue 2619)', async () => {
+  const q = await quoted();
+  // The crop fails to render: guests are kept from the uncropped picture.
+  await db('photos').where({ id: photoId }).update({
+    edit_params: JSON.stringify({ v: 1, crop: { x: 0, y: 0, w: 0.5, h: 1 } }), edit_rev: 1, edit_applied_rev: 0, edit_failed_rev: 1,
+  });
+  await expect(orders.quote(event.id, customerId, 'client', payload())).rejects.toThrow(/being updated/);
+  await expect(orders.accept(event.id, customerId, 'client', q.id, { snapshotHash: q.snapshotHash, acknowledgeSelection: true }))
+    .rejects.toThrow(/being updated/);
+});

@@ -110,7 +110,8 @@ function collect(entry, child, writes) {
   child.stdin.on('error', () => {});
   child.stdout.on('data', chunk => {
     state.stdoutBytes += chunk.length;
-    if (state.stdoutBytes > entry.outputBytes) return entry.fail(errorFor(entry, 'Native output exceeds the processing budget', 'OUTPUT_LIMIT'));
+    // In memory the output budget holds; written to stdoutPath, the file budget does.
+    if (state.stdoutBytes > (entry.stdoutPath ? entry.fileBytes : entry.outputBytes)) return entry.fail(errorFor(entry, 'Native output exceeds the processing budget', 'OUTPUT_LIMIT'));
     if (entry.stdoutPath) {
       child.stdout.pause();
       const write = Promise.all(writes).then(() => state.output.writeFile(chunk)).then(() => child.stdout.resume());

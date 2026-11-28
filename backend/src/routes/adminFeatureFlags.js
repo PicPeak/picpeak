@@ -141,6 +141,9 @@ const KNOWN_FLAGS = [
   // without a password on another site. Strictly opt-in: while off, every
   // embed link answers 404 and no page is frameable.
   'embed',
+  // Photo editor (migration 380, issue 2619). Hides the editor and refuses
+  // its API while off; edits already saved keep applying to what guests see.
+  'photoEditor',
 ];
 
 // Spec defaults for any flag that has no row in feature_flags.
@@ -181,6 +184,7 @@ const DEFAULT_FLAGS = {
   customerGifts: false,
   backupRestoreTest: false,
   embed: false,
+  photoEditor: false,
 };
 
 async function readAllFlags() {

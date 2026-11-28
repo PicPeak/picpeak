@@ -51,8 +51,9 @@ import { PhotoLightbox } from '../PhotoLightbox';
 
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
 
+// The first one edited (issue 2619): its URLs name the applied revision.
 const photos = [1, 2, 3].map((id) => ({
-  id, filename: `${id}.jpg`, url: `/api/gallery/g/photo/${id}`, thumbnail_url: `/t/${id}`, type: 'individual',
+  id, filename: `${id}.jpg`, url: `/api/gallery/g/photo/${id}${id === 1 ? '?e=3' : ''}`, thumbnail_url: `/t/${id}`, type: 'individual',
 })) as Photo[];
 
 const STORED = { v: 1, strokes: [{ t: 'arrow', c: 1, p: [[0.2, 0.2], [0.6, 0.7]] }] };
@@ -234,9 +235,25 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
       feedback_type: 'comment',
       comment_text: 'Crop here',
       annotation: { v: 1, strokes: [{ t: 'arrow', c: 0, p: [[0, 0], [1, 1]] }] },
+      // Drawn on the picture of the edit revision on screen (issue 2619).
+      annotation_rev: 3,
     }));
     // Sent: the draft is gone from the photo.
     await waitFor(() => expect(screen.queryByTestId('annotation-overlay')).toBeNull());
+  });
+
+  it('reads the comments again when the photo\'s edit revision changes (issue 2619)', async () => {
+    open();
+    await waitFor(() => expect(queryClient.getQueryState(['photo-feedback', 'g', '1', 3])?.status).toBe('success'));
+    // The gallery list was refetched after an edit was applied: the URLs name revision 4.
+    const edited = photos.map((p) => (p.id === 1 ? { ...p, url: '/api/gallery/g/photo/1?e=4' } : p)) as Photo[];
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PhotoLightbox photos={edited} initialIndex={0} onClose={onClose} slug="g" feedbackEnabled initialShowFeedback />
+      </QueryClientProvider>,
+    );
+    // Read again under the new revision, not served from the old one's cache.
+    await waitFor(() => expect(queryClient.getQueryState(['photo-feedback', 'g', '1', 4])?.status).toBe('success'));
   });
 
   it('shows a stored drawing on the photo from the comment list, and only a valid one', async () => {

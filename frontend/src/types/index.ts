@@ -247,8 +247,17 @@ export interface GalleryPerson {
   cover: {
     face_id: number;
     photo_id: number;
-    /** [x, y, w, h] in ORIGINAL image pixels — scale by the rendered size. */
+    /** [x, y, w, h] in the pixels of photo_width x photo_height — scale by the rendered size. */
     bbox: [number, number, number, number];
+    /**
+     * The size the box is measured in: the original's, or for an edited
+     * photo its applied edit's delivered image (issue 2619), which the
+     * listing's width/height may not be while a newer edit is applied.
+     */
+    photo_width?: number | null;
+    photo_height?: number | null;
+    /** The applied edit revision the box is placed in (issue 2619). */
+    edit_applied_rev?: number | null;
   } | null;
 }
 

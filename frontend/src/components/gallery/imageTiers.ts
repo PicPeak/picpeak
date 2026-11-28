@@ -185,22 +185,52 @@ export function lightboxImageLongEdge(photo: {
  * for any photo that has a face — faceProcessor calls ensurePreviewImage to
  * get something to scan — so this asks for a rendition that is already there.
  */
+/**
+ * The `e=` part (issue 2619) of the URLs the gallery listing gave a photo:
+ * its applied edit revision. A URL the frontend builds itself carries it
+ * too, or a copy the browser cached before the edit landed is reused.
+ * Empty for a photo never edited.
+ */
+export function guestEditQuery(photo: { url?: string | null; thumbnail_url?: string | null }): string {
+  for (const url of [photo.url, photo.thumbnail_url]) {
+    if (!url) continue;
+    const rev = new URLSearchParams(url.split('?')[1] || '').get('e');
+    if (rev) return `e=${encodeURIComponent(rev)}`;
+  }
+  return '';
+}
+
+/** The applied edit revision the photo's listed URLs name (issue 2619); 0 for none. */
+export function guestEditRevision(photo: { url?: string | null; thumbnail_url?: string | null }): number {
+  const query = guestEditQuery(photo);
+  return query ? Number(query.slice(2)) || 0 : 0;
+}
+
 export function facePreviewUrl(
   slug: string | undefined,
   photo: {
     id: number | string;
     preview_url?: string | null;
+    url?: string | null;
+    thumbnail_url?: string | null;
     width?: number | null;
     height?: number | null;
   } | null | undefined,
-  cover?: { bbox: number[] } | null,
+  cover?: { bbox: number[]; edit_applied_rev?: number | null } | null,
 ): string | null {
   if (!photo) return null;
   const width = faceTierWidth(photo, cover);
+  // The revision the cover's box is placed in (issue 2619): the people list
+  // is cached apart from the photos, so the photo's own revision can be newer
+  // than the box. The image is asked for under the box's revision; a newer
+  // photo has the people list refetched (staleFaceCovers).
+  const edit = cover?.edit_applied_rev != null
+    ? (Number(cover.edit_applied_rev) > 0 ? `e=${Number(cover.edit_applied_rev)}` : '')
+    : guestEditQuery(photo);
 
   // preview_url carries the watermark query when the server emitted one, so
   // prefer it; it is only absent when lightbox previews are off.
-  if (photo.preview_url) return withWidth(photo.preview_url, width);
+  if (photo.preview_url) return withWidth(withEditQuery(photo.preview_url, edit), width);
   if (!slug) return null;
 
   // Carry admin_preview through. verifyGalleryAccess only accepts the admin
@@ -212,7 +242,34 @@ export function facePreviewUrl(
     && new URLSearchParams(window.location.search).get('admin_preview') === '1'
     ? '&admin_preview=1'
     : '';
-  return `/api/gallery/${slug}/preview/${photo.id}?w=${width}${adminPreview}`;
+  return `/api/gallery/${slug}/preview/${photo.id}?w=${width}${edit ? `&${edit}` : ''}${adminPreview}`;
+}
+
+/** The URL with its `e=` set to the given one (`e=N`), or removed for ''. */
+function withEditQuery(url: string, edit: string): string {
+  const [base, query = ''] = url.split('?');
+  const params = new URLSearchParams(query);
+  if (edit) params.set('e', edit.slice(2));
+  else params.delete('e');
+  const rest = params.toString();
+  return rest ? `${base}?${rest}` : base;
+}
+
+/**
+ * Whether a person's cover box is older than the photo it is shown on
+ * (issue 2619): the photo's URLs name a newer applied revision than the box
+ * was placed in, so the people list is to be fetched again.
+ */
+export function staleFaceCovers(
+  people: Array<{ cover?: { photo_id: number; edit_applied_rev?: number | null } | null }>,
+  photosById: Map<number, { url?: string | null; thumbnail_url?: string | null }>,
+): boolean {
+  return people.some((person) => {
+    const cover = person.cover;
+    if (!cover || cover.edit_applied_rev == null) return false;
+    const photo = photosById.get(cover.photo_id);
+    return Boolean(photo) && guestEditRevision(photo!) > Number(cover.edit_applied_rev);
+  });
 }
 
 /**
@@ -242,15 +299,28 @@ function faceTierWidth(
   return smallestCovering(Math.round(avatarDevicePx / faceShareOfFrame), PREVIEW_WIDTHS);
 }
 
+/**
+ * The `e=` an admin preview URL carries (issue 2619): the photo's applied
+ * edit revision, as the admin listings give it. The preview route keeps an
+ * answer only under that revision, so a preview cut before an edit landed
+ * is never combined with the edit's face boxes or focal point. Empty for a
+ * photo never edited.
+ */
+export function adminPreviewEditQuery(editAppliedRev?: number | null): string {
+  return editAppliedRev && editAppliedRev > 0 ? `e=${editAppliedRev}` : '';
+}
+
 /** Admin equivalent — the admin API has its own preview route. */
 export function adminFacePreviewUrl(
   eventId: number | string,
   photoId: number | string,
   photo?: { width?: number | null; height?: number | null },
   cover?: { bbox: number[] } | null,
+  editAppliedRev?: number | null,
 ): string {
   const width = photo ? faceTierWidth(photo, cover) : FACE_CROP_WIDTH;
-  return `/api/admin/photos/${eventId}/preview/${photoId}?w=${width}`;
+  const edit = adminPreviewEditQuery(editAppliedRev);
+  return `/api/admin/photos/${eventId}/preview/${photoId}?w=${width}${edit ? `&${edit}` : ''}`;
 }
 
 /**
@@ -342,7 +412,9 @@ export function adminPhotoPreviewUrl(
   eventId: number | string,
   photoId: number | string,
   width: number = PREVIEW_WIDTHS[PREVIEW_WIDTHS.length - 1],
+  editAppliedRev?: number | null,
 ): string {
-  return `/api/admin/photos/${eventId}/preview/${photoId}?w=${width}`;
+  const edit = adminPreviewEditQuery(editAppliedRev);
+  return `/api/admin/photos/${eventId}/preview/${photoId}?w=${width}${edit ? `&${edit}` : ''}`;
 }
 

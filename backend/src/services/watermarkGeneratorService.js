@@ -63,13 +63,8 @@ class WatermarkGeneratorService {
         return { success: false, error: 'Videos do not support watermarks' };
       }
 
-      // Skip RAW/DNG (experimental, #821). The watermark path opens the original
-      // with sharp, which can't decode RAW — proceeding would fall back to the
-      // original bytes and falsely record the copy as watermarked. Skipping keeps
-      // the watermark state honest until RAW watermarking is properly supported.
-      if (isRawFilename(photo.filename)) {
-        return { success: false, error: 'RAW/DNG files are not watermarked yet' };
-      }
+      const { source, error: skipped } = await this.markedSource(photo);
+      if (skipped) return { success: false, error: skipped };
 
       // Get watermark settings
       const settings = await watermarkService.getWatermarkSettings();
@@ -80,7 +75,7 @@ class WatermarkGeneratorService {
       // Resolve the source via the storage backend (managed) or local disk
       // (external reference mode). watermarkService needs a local file path.
       const event = { slug: photo.slug, source_mode: photo.source_mode, external_path: photo.external_path };
-      const storageKey = resolvePhotoStorageKey(event, photo);
+      const storageKey = resolvePhotoStorageKey(event, source);
       const result = await this.limit(async () => {
         // Revalidate inside the limited slot: a long queue (bulk upload)
         // can hold this job for minutes, during which an admin may disable
@@ -96,9 +91,9 @@ class WatermarkGeneratorService {
         const forGallery = watermarkService.forEvent(fresh, gallery);
         return storageKey
           ? withLocalCopy(storageKey, (lp) =>
-            watermarkService.generateAndSaveWatermark(photo, lp, forGallery)
+            watermarkService.generateAndSaveWatermark(source, lp, forGallery)
           )
-          : watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), forGallery);
+          : watermarkService.generateAndSaveWatermark(source, resolvePhotoFilePath(event, source), forGallery);
       });
 
       if (result.success) {
@@ -127,6 +122,23 @@ class WatermarkGeneratorService {
   }
 
   /**
+   * What a photo's watermarked copy is cut from, for one photo and for the
+   * batches alike: an edited photo (issue 2619) from its edited render, a
+   * JPEG whatever the original was, under a key naming the revision. `error`
+   * names why a photo gets none: one withheld from guests while a crop or
+   * turn fails to render, and RAW/DNG (experimental, #821), which sharp
+   * cannot decode — proceeding would fall back to the original bytes and
+   * falsely record the copy as watermarked.
+   */
+  async markedSource(photo) {
+    const photoEdits = require('./photoEdits');
+    if (await photoEdits.withheldFromGuests(photo)) return { error: 'The photo is being updated' };
+    const source = await photoEdits.deliveredPhoto(photo);
+    if (isRawFilename(source.filename)) return { error: 'RAW/DNG files are not watermarked yet' };
+    return { source };
+  }
+
+  /**
    * Record a watermark cut outside a media attempt, fenced on the file it was
    * cut from: a job that read the photo before a replacement must not hand
    * the new picture the old one's watermark. Its file is then nobody's.
@@ -135,6 +147,8 @@ class WatermarkGeneratorService {
     // An external file edited in place keeps its name: its version is what
     // tells the old picture's watermark from the new one's.
     const fence = { id: photo.id, filename: photo.filename };
+    // Nor one of an earlier edit revision (issue 2619).
+    if (photo.edit_rev !== undefined) fence.edit_rev = photo.edit_rev;
     if (photo.source_origin === 'external' || photo.source_origin === 'reference') {
       for (const column of ['size_bytes', 'source_mtime_ms']) {
         if (photo[column] !== undefined) fence[column] = photo[column];
@@ -265,8 +279,10 @@ class WatermarkGeneratorService {
    */
   async processPhotoWatermark(photo, settings) {
     try {
+      const { source, error: skipped } = await this.markedSource(photo);
+      if (skipped) return { success: false, photoId: photo.id, error: skipped };
       const event = { slug: photo.slug, source_mode: photo.source_mode, external_path: photo.external_path };
-      const storageKey = resolvePhotoStorageKey(event, photo);
+      const storageKey = resolvePhotoStorageKey(event, source);
       const result = await this.limit(async () => {
         // Same revalidation as generateForPhoto: batch jobs queue for a
         // long time, and a disable mid-run must not recreate files after
@@ -282,9 +298,9 @@ class WatermarkGeneratorService {
         const forGallery = watermarkService.forEvent(settings, gallery);
         return storageKey
           ? withLocalCopy(storageKey, (lp) =>
-            watermarkService.generateAndSaveWatermark(photo, lp, forGallery)
+            watermarkService.generateAndSaveWatermark(source, lp, forGallery)
           )
-          : watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), forGallery);
+          : watermarkService.generateAndSaveWatermark(source, resolvePhotoFilePath(event, source), forGallery);
       });
 
       return { ...(result.success ? await this.recordWatermark(photo, result) : result), photoId: photo.id };

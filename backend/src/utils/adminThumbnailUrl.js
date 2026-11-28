@@ -13,7 +13,7 @@
  *
  * Every admin payload that hands out a thumbnail URL builds it here, from a
  * row carrying `processing_error`, `poster_offset_seconds` and the focal
- * point (issue 2276).
+ * point (issue 2276), and the applied edit revision (issue 2619).
  */
 const { focalQuery } = require('./focalPoint');
 
@@ -23,6 +23,8 @@ function adminThumbnailVersion(photo) {
     photo.processing_error ? 'note' : null,
     photo.poster_offset_seconds != null ? `p${photo.poster_offset_seconds}` : null,
     focalQuery(photo) ? focalQuery(photo).replace('fp=', 'f') : null,
+    // A photo edit (issue 2619), once its renditions are rebuilt.
+    Number(photo.edit_applied_rev) > 0 ? `e${photo.edit_applied_rev}` : null,
   ].filter(Boolean).join('-');
 }
 
@@ -33,6 +35,6 @@ function adminThumbnailUrl(eventId, photo) {
 }
 
 /** The photos columns adminThumbnailVersion reads. */
-const ADMIN_THUMBNAIL_COLUMNS = ['photos.processing_error', 'photos.poster_offset_seconds', 'photos.focal_x', 'photos.focal_y'];
+const ADMIN_THUMBNAIL_COLUMNS = ['photos.processing_error', 'photos.poster_offset_seconds', 'photos.focal_x', 'photos.focal_y', 'photos.edit_applied_rev'];
 
 module.exports = { adminThumbnailVersion, adminThumbnailUrl, ADMIN_THUMBNAIL_COLUMNS };

@@ -412,6 +412,9 @@ async function buildArchive(event, lease) {
           // every guest sees.
           'photos.external_relpath',
           'photos.selection_hidden',
+          // A photo edit (issue 2619): only its parameters; the edited file
+          // is rendered again from the restored original.
+          'photos.edit_params',
         );
       // The folder a photo lives in, as a path ("Saturday/Activity B"):
       // folder ids do not survive a restore into a fresh database, names do.
@@ -758,6 +761,17 @@ async function buildArchive(event, lease) {
       if (photo.watermark_path) {
         await storage.delete(photo.watermark_path).catch(() => {});
       }
+      // The edit's cache files (issue 2619) are derived as well: the edit
+      // stays on the row and is rendered again from the restored original.
+      // Removed for every photo: a RAW develop preview exists as soon as the
+      // editor was opened, without any render saved.
+      if (photo.edit_render_path) {
+        await db('photos').where({ id: photo.id, edit_render_path: photo.edit_render_path }).update({ edit_render_path: null });
+      }
+      if (photo.edit_applied_render_path) {
+        await db('photos').where({ id: photo.id, edit_applied_render_path: photo.edit_applied_render_path }).update({ edit_applied_render_path: null });
+      }
+      await require('./photoEdits').deleteEditedRender(photo);
     }
 
     // Purge face data (#1074). photo_faces cascades off photos, but archiving

@@ -45,14 +45,53 @@ function placeOn(length, side, from, to) {
   return clamp(lowest <= highest ? Math.min(highest, Math.max(lowest, centred)) : centred);
 }
 
-/** `{ x, y }` fractions from a photo's faces, or null without any. Never throws. */
-async function faceFocalPoint(photoId) {
+/**
+ * The share of a face's box an edit's crop has to leave for guests to see the
+ * person in the photo (issue 2619): in its people membership, counts and
+ * cover. Less is an edge of a head, not a picture of the person.
+ */
+const FACE_VISIBLE_SHARE = 0.5;
+
+/**
+ * Face boxes of the upright original, in the pixels of its edit; those the
+ * crop left out are dropped, and with `minShare` those of which less than
+ * that share of the box is left.
+ */
+function facesInEdit(edit, width, height, faces, { minShare = 0 } = {}) {
+  const math = require('../utils/photoEditMath');
+  const size = math.outputSize(edit, width, height);
+  const moved = [];
+  for (const face of faces) {
+    const corners = [[face.x, face.y], [face.x + face.w, face.y], [face.x, face.y + face.h], [face.x + face.w, face.y + face.h]]
+      .map(([x, y]) => math.mapPointToEdited(edit, width, height, { x: x / width, y: y / height }));
+    const xs = corners.map((p) => p.x);
+    const ys = corners.map((p) => p.y);
+    const left = clamp(Math.min(...xs));
+    const right = clamp(Math.max(...xs));
+    const top = clamp(Math.min(...ys));
+    const bottom = clamp(Math.max(...ys));
+    if (right <= left || bottom <= top) continue;
+    const whole = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
+    if (minShare > 0 && (right - left) * (bottom - top) < minShare * whole) continue;
+    moved.push({ x: left * size.width, y: top * size.height, w: (right - left) * size.width, h: (bottom - top) * size.height });
+  }
+  return { faces: moved, width: size.width, height: size.height };
+}
+
+/**
+ * `{ x, y }` fractions from a photo's faces, or null without any. Never
+ * throws. `edit`: the edit of the picture the point is for, as a rendition
+ * is cut (the rendition's view: the applied edit while a newer one is
+ * pending, issue 2619); without it, the row's rendition view decides.
+ */
+async function faceFocalPoint(photoId, options = {}) {
   try {
-    const photo = await db('photos').where({ id: photoId }).first('width', 'height');
-    const width = Number(photo?.width);
-    const height = Number(photo?.height);
+    const photo = await db('photos').where({ id: photoId }).first('id', 'width', 'height', 'edit_params', 'edit_rev',
+      'edit_applied_rev', 'edit_applied_params', 'media_type', 'mime_type');
+    let width = Number(photo?.width);
+    let height = Number(photo?.height);
     if (!(width > 0) || !(height > 0)) return null;
-    const faces = (await db('photo_faces').where({ photo_id: photoId })
+    let faces = (await db('photo_faces').where({ photo_id: photoId })
       .select('bbox_x', 'bbox_y', 'bbox_w', 'bbox_h'))
       .map((face) => ({ x: Number(face.bbox_x), y: Number(face.bbox_y), w: Number(face.bbox_w), h: Number(face.bbox_h) }))
       .filter((face) => [face.x, face.y].every(Number.isFinite) && face.w > 0 && face.h > 0);
@@ -62,6 +101,15 @@ async function faceFocalPoint(photoId) {
     // the orientation repair fixes them and scans its faces again) has boxes
     // that do not fit it; sharp's guess stands in for those.
     if (faces.some((face) => face.x + face.w > width + 1 || face.y + face.h > height + 1)) return null;
+    // An edited photo's thumbnail is cut from the edit (issue 2619): the
+    // boxes move with its crop, turn and flip, and a face cropped away
+    // does not count.
+    const photoEdits = require('./photoEdits');
+    const edit = 'edit' in options ? options.edit : photoEdits.paramsOf(await photoEdits.renditionView(photo));
+    if (edit) {
+      ({ faces, width, height } = facesInEdit(edit, width, height, faces));
+      if (!faces.length) return null;
+    }
     const largest = Math.max(...faces.map((face) => face.w * face.h));
     const kept = faces.filter((face) => face.w * face.h >= largest * MIN_AREA_SHARE);
     const left = Math.min(...kept.map((face) => face.x));
@@ -102,4 +150,50 @@ async function refocusFromFaces(photo) {
   }
 }
 
-module.exports = { faceFocalPoint, refocusFromFaces };
+/**
+ * A face box as the photo's guests see it (issue 2619): `row` carries the
+ * box in original pixels (bbox_x..bbox_h), photo_width / photo_height and
+ * the photo's applied edit (edit_applied_params, edit_applied_width /
+ * edit_applied_height, edit_applied_rev). The box and the size it is
+ * measured against are those of the applied revision's delivered image,
+ * the one its previews show (smaller than the edit when the render is
+ * capped or a RAW was developed at half size): a newer save still being
+ * applied, or one whose render failed, changes nothing until it lands.
+ * Null when the edit cropped the face away. Unedited photos are returned
+ * as they are.
+ */
+function faceBoxForGuests(row, { minShare = 0 } = {}) {
+  // The applied revision names the preview the box is to be cut from (the
+  // admin preview URL's `e=`), so no older cached preview meets new boxes.
+  const version = { edit_applied_rev: Number(row.edit_applied_rev) || 0 };
+  const box = { bbox: [row.bbox_x, row.bbox_y, row.bbox_w, row.bbox_h], photo_width: row.photo_width ?? null, photo_height: row.photo_height ?? null, ...version };
+  const edit = require('./photoEdits').paramsOf({ edit_params: row.edit_applied_params });
+  const width = Number(row.photo_width);
+  const height = Number(row.photo_height);
+  if (!edit || !(width > 0) || !(height > 0)) return box;
+  const moved = facesInEdit(edit, width, height, [{ x: Number(row.bbox_x), y: Number(row.bbox_y), w: Number(row.bbox_w), h: Number(row.bbox_h) }], { minShare });
+  if (!moved.faces.length) return null;
+  const round = (v) => Math.round(v * 100) / 100;
+  const [face] = moved.faces;
+  const delivered = {
+    width: Number(row.edit_applied_width) || moved.width,
+    height: Number(row.edit_applied_height) || moved.height,
+  };
+  const sx = delivered.width / moved.width;
+  const sy = delivered.height / moved.height;
+  return {
+    bbox: [round(face.x * sx), round(face.y * sy), round(face.w * sx), round(face.h * sy)],
+    photo_width: delivered.width, photo_height: delivered.height, ...version,
+  };
+}
+
+/**
+ * Whether guests see the person of this face in its photo (issue 2619): no
+ * applied edit, or one whose crop leaves FACE_VISIBLE_SHARE of the box.
+ * `row` as faceBoxForGuests takes it.
+ */
+function faceShownToGuests(row) {
+  return faceBoxForGuests(row, { minShare: FACE_VISIBLE_SHARE }) !== null;
+}
+
+module.exports = { faceFocalPoint, refocusFromFaces, faceBoxForGuests, faceShownToGuests, FACE_VISIBLE_SHARE };

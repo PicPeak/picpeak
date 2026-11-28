@@ -158,6 +158,8 @@ describe('buildOgMetadata — share-image opt-in', () => {
     mockHeroPhoto({
       id: 42,
       thumbnail_path: 'thumbnails/thumb_birthday_42.jpg',
+      // The edit columns the query reads too (issue 2619): never edited.
+      edit_params: null, edit_rev: 0, edit_applied_rev: 0, edit_applied_params: null, edit_failed_rev: null,
     });
 
     const meta = await buildOgMetadata('birthday-2026', '/gallery/birthday-2026');

@@ -517,7 +517,10 @@ class WatermarkService {
     const version = require('./imageProcessor').sourceVersion(photo);
     const source = crypto.createHash('sha256')
       .update(String(photo.filename || '') + (version ? `\0${version}` : '')).digest('hex').slice(0, 12);
-    return `watermarks/${photo.id}_watermarked_${source}${textTag(settings)}${attempt ? `_${attempt.id}` : ''}${this.getFileExtension(photo.filename || '')}`;
+    // An edited photo's mark is cut from its edit of one revision (issue 2619,
+    // photoEdits.watermarkCopyCurrent reads this tag).
+    const edit = require('./photoResolver').deliveredKey(photo) ? `_e${photo.edit_rev}_` : '';
+    return `watermarks/${photo.id}_watermarked_${source}${edit}${textTag(settings)}${attempt ? `_${attempt.id}` : ''}${this.getFileExtension(photo.filename || '')}`;
   }
 
   /**

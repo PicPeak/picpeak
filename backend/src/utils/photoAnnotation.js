@@ -100,16 +100,140 @@ function parseStoredAnnotation(text) {
 
 /**
  * Replace a feedback row's raw `annotation` text with the parsed structure.
- * Only a comment carries one; any other row type gets null.
+ * Only a comment carries one; any other row type gets null. With `photo`
+ * ({ width, height, appliedParams }: the original's size and the applied
+ * edit), the drawing is moved from the geometry it was made on (the row's
+ * annotation_geometry) to the one shown now, and annotation_clipped says
+ * whether part of it is outside the current crop (issue 2619).
  */
-function withParsedAnnotation(row) {
-  return {
-    ...row,
-    annotation: row.feedback_type === 'comment' ? parseStoredAnnotation(row.annotation) : null,
+function withParsedAnnotation(row, photo = null) {
+  const { annotation_geometry: geometry, ...rest } = row;
+  if (rest.feedback_type !== 'comment') return { ...rest, annotation: null };
+  if (!photo) return { ...rest, annotation: parseStoredAnnotation(rest.annotation) };
+  const shown = displayAnnotation(rest.annotation, geometry, photo);
+  return { ...rest, annotation: shown.annotation, annotation_clipped: shown.clipped };
+}
+
+// ------------------------------------------------- the photo's edit (2619)
+//
+// A drawing's points are fractions of the image shown when it was made. A
+// photo edit (issue 2619) may turn, flip or crop that image later, so a
+// drawing is stored with the geometry of the edit applied when it was made
+// (photo_feedback.annotation_geometry, null: the unedited original) and is
+// moved to the geometry applied now when it is shown, through the original
+// image, as focal points and face boxes are. What a crop removed is left
+// out, and the result says so.
+
+/** The stored geometry of an applied edit (its params), or null when it does not move a pixel. */
+function annotationGeometry(appliedParams) {
+  const math = require('./photoEditMath');
+  if (!appliedParams) return null;
+  const geometry = Object.fromEntries(math.GEOMETRY_KEYS.map((key) => [key, appliedParams[key] ?? math.DEFAULT_PARAMS[key]]));
+  const unchanged = math.GEOMETRY_KEYS.every((key) => JSON.stringify(geometry[key]) === JSON.stringify(math.DEFAULT_PARAMS[key]));
+  return unchanged ? null : JSON.stringify(geometry);
+}
+
+function storedGeometry(text) {
+  if (typeof text !== 'string' || !text) return null;
+  try {
+    const math = require('./photoEditMath');
+    const { params, error } = math.validateEditParams({ v: 1, ...JSON.parse(text) });
+    return error ? null : annotationGeometry(params);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The part of the segment a..b inside the unit square (Liang-Barsky), as
+ * { from, to, t0, t1 } with t the position along it (0: a, 1: b); null when
+ * none of it is inside.
+ */
+function clipSegment(a, b) {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  let t0 = 0;
+  let t1 = 1;
+  const EPS = 1e-6;
+  for (const [p, q] of [[-dx, a[0] + EPS], [dx, 1 + EPS - a[0]], [-dy, a[1] + EPS], [dy, 1 + EPS - a[1]]]) {
+    if (p === 0) {
+      if (q < 0) return null;
+      continue;
+    }
+    const r = q / p;
+    if (p < 0) { if (r > t1) return null; if (r > t0) t0 = r; } else { if (r < t0) return null; if (r < t1) t1 = r; }
+  }
+  return { from: [a[0] + t0 * dx, a[1] + t0 * dy], to: [a[0] + t1 * dx, a[1] + t1 * dy], t0, t1 };
+}
+
+/**
+ * The stored drawing (`text`, made on `geometryText`) as it lies on the
+ * photo now: `photo` is { width, height } of the original and the applied
+ * edit's params. Returns { annotation, clipped }: clipped when part of the
+ * drawing is outside the current crop (and left out); annotation null when
+ * nothing of it is left, or nothing valid was stored.
+ */
+function displayAnnotation(text, geometryText, photo) {
+  const annotation = parseStoredAnnotation(text);
+  if (!annotation) return { annotation: null, clipped: false };
+  const from = storedGeometry(geometryText);
+  const to = annotationGeometry(photo.appliedParams || null);
+  const width = Number(photo.width);
+  const height = Number(photo.height);
+  if (from === to || !(width > 0) || !(height > 0)) return { annotation, clipped: false };
+  const math = require('./photoEditMath');
+  const full = (geometry) => (geometry ? { ...math.DEFAULT_PARAMS, ...JSON.parse(geometry) } : null);
+  const before = full(from);
+  const after = full(to);
+  // Where a point lies on the picture shown, outside 0..1 where a crop
+  // removed it. The geometry is affine, so a straight segment stays one.
+  const move = ([x, y]) => {
+    let point = { x, y };
+    if (before) point = math.mapPointFromEdited(before, width, height, point);
+    if (after) point = math.mapPointToEdited(after, width, height, point);
+    return [point.x, point.y];
   };
+  const round = (v) => Math.round(Math.min(1, Math.max(0, v)) * 10000) / 10000;
+  const shown = (point) => [round(point[0]), round(point[1])];
+  const inside = ([x, y]) => x >= -1e-6 && x <= 1 + 1e-6 && y >= -1e-6 && y <= 1 + 1e-6;
+  let clipped = false;
+  const strokes = [];
+  for (const stroke of annotation.strokes) {
+    const moved = stroke.p.map(move);
+    if (stroke.t === 'arrow') {
+      // An arrow cut short loses its head or its tail: all of it, or none.
+      if (moved.every(inside)) strokes.push({ ...stroke, p: moved.map(shown) });
+      else clipped = true;
+      continue;
+    }
+    // A line leaves the crop and may come back: each segment is cut at the
+    // crop's edges, and the parts inside it stay, a piece each.
+    let run = [];
+    const close = () => {
+      if (run.length >= 2) strokes.push({ ...stroke, p: run });
+      run = [];
+    };
+    for (let i = 1; i < moved.length; i++) {
+      const cut = clipSegment(moved[i - 1], moved[i]);
+      if (!cut) { clipped = true; close(); continue; }
+      if (cut.t0 > 0) { clipped = true; close(); }
+      if (!run.length) run.push(shown(cut.from));
+      run.push(shown(cut.to));
+      if (cut.t1 < 1) { clipped = true; close(); }
+    }
+    close();
+  }
+  if (strokes.length > ANNOTATION_MAX_STROKES) {
+    strokes.length = ANNOTATION_MAX_STROKES;
+    clipped = true;
+  }
+  const result = strokes.length ? normalizeAnnotation({ v: ANNOTATION_VERSION, strokes }) : null;
+  return { annotation: result, clipped: clipped || !result };
 }
 
 module.exports = {
+  annotationGeometry,
+  displayAnnotation,
   ANNOTATION_COLOR_COUNT,
   ANNOTATION_MAX_STROKES,
   ANNOTATION_MAX_POINTS,

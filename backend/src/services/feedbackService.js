@@ -10,7 +10,14 @@ const { applyPhotoVisibilityFilter, joinLivePhotos, livePhotos, wherePhotoLive, 
 const selectionSubmissions = require('./selectionSubmissions');
 const { scopeToViewer } = selectionSubmissions;
 const favoriteLists = require('./favoriteLists');
-const { serializeAnnotation, withParsedAnnotation } = require('../utils/photoAnnotation');
+const { serializeAnnotation, withParsedAnnotation, annotationGeometry } = require('../utils/photoAnnotation');
+
+/** The photo as drawings are shown on it (issue 2619): its original size and applied edit. */
+async function photoAsShown(photoId) {
+  const photo = await db('photos').where({ id: photoId }).first('width', 'height', 'edit_applied_params');
+  if (!photo) return null;
+  return { width: photo.width, height: photo.height, appliedParams: require('./photoEdits').paramsOf({ edit_params: photo.edit_applied_params }) };
+}
 const { feedbackTime, lastMutatedFirst } = require('./feedbackIntegrity');
 const { scopeColorLabelsToMode } = require('../utils/photoFilterBuilder');
 
@@ -567,7 +574,7 @@ class FeedbackService {
     // the write had a transaction. Inside it the aggregate would not see
     // another guest's like on the same photo that is still uncommitted (the
     // lock is per guest), and the two would each store a count of one.
-    if (!result.locked && !result.guest_missing && !result.limit_reached && !result.list_missing) {
+    if (!result.locked && !result.guest_missing && !result.limit_reached && !result.list_missing && !result.image_changed) {
       await this.updatePhotoFeedbackStats(photoId);
     }
     return result;
@@ -790,6 +797,20 @@ class FeedbackService {
       const storedAnnotation = feedback_type === 'comment' && feedbackData.annotation
         ? serializeAnnotation(feedbackData.annotation)
         : null;
+      // Drawn on the photo as it was shown: the client names the edit
+      // revision it displayed (annotation_rev; an older client none, taken as
+      // the one applied now). The applied revision's geometry is recorded
+      // (issue 2619), so the drawing follows a later turn or crop; one drawn
+      // on another revision than the applied one is refused, not misplaced.
+      let annotationGeometryText = null;
+      if (storedAnnotation) {
+        const shown = await executor('photos').where({ id: photoId }).first('edit_applied_rev', 'edit_applied_params');
+        const drawnOn = feedbackData.annotation_rev;
+        if (drawnOn !== undefined && drawnOn !== null && Number(drawnOn) !== (Number(shown?.edit_applied_rev) || 0)) {
+          return { image_changed: true };
+        }
+        annotationGeometryText = annotationGeometry(require('./photoEdits').paramsOf({ edit_params: shown?.edit_applied_params }));
+      }
 
       // Insert new feedback
       const insertFeedback = (executor) => executor('photo_feedback').insert({
@@ -807,7 +828,7 @@ class FeedbackService {
         ...(favoriteListId ? { favorite_list_id: favoriteListId } : {}),
         // A drawing belongs to a comment (issue 1733). Re-serialised from the
         // validated structure here, whatever the caller handed over.
-        ...(storedAnnotation ? { annotation: storedAnnotation } : {}),
+        ...(storedAnnotation ? { annotation: storedAnnotation, annotation_geometry: annotationGeometryText } : {}),
         guest_name,
         guest_email,
         guest_identifier: guestIdentifier,
@@ -979,7 +1000,7 @@ class FeedbackService {
       // Newest first; the id breaks a same-second tie.
       const feedback = await query
         .orderBy([{ column: 'created_at', order: 'desc' }, { column: 'id', order: 'desc' }])
-        .select('id', 'feedback_type', 'rating', 'comment_text', 'reaction', 'color_label', 'decision', 'annotation', 'guest_name', 'created_at', 'updated_at', 'is_approved', 'is_hidden',
+        .select('id', 'feedback_type', 'rating', 'comment_text', 'reaction', 'color_label', 'decision', 'annotation', 'annotation_geometry', 'guest_name', 'created_at', 'updated_at', 'is_approved', 'is_hidden',
           // The viewer's own lists only (issue 2303): another guest's list
           // ids are nobody else's business.
           ...(options.with_favorite_list ? ['favorite_list_id'] : []));
@@ -991,13 +1012,15 @@ class FeedbackService {
       // type, comments above all, keeps the created_at order; updated_at is
       // only the sort key and does not leave this method.
       const rows = Array.from(feedback);
+      const shownPhoto = await photoAsShown(photoId);
       const ratings = rows.filter((row) => row.feedback_type === 'rating').sort(lastMutatedFirst);
       let nextRating = 0;
       return rows.map((row) => {
         const { updated_at: _updatedAt, ...rest } = row.feedback_type === 'rating' ? ratings[nextRating++] : row;
         // The drawing rides on its comment row (issue 1733), so every gate a
-        // caller applies to the row applies to it; parsed, never raw.
-        return withParsedAnnotation(rest);
+        // caller applies to the row applies to it; parsed, never raw, and
+        // moved onto the photo as its applied edit shows it (issue 2619).
+        return withParsedAnnotation(rest, shownPhoto);
       });
     } catch (error) {
       logger.error('Error getting photo feedback:', error);

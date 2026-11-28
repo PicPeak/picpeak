@@ -122,6 +122,8 @@ export interface PhotoFeedback {
    * only ever drawn after parseAnnotation (utils/photoAnnotation.ts).
    */
   annotation?: unknown;
+  /** Part of the drawing is outside the photo's current crop (issue 2619). */
+  annotation_clipped?: boolean;
   guest_name?: string;
   guest_email?: string;
   is_approved: boolean;
@@ -133,6 +135,8 @@ export interface PhotoFeedback {
   photo_filename?: string;
   /** The admin list's tile URL, versioned like the photo grid's. */
   thumbnail_url?: string;
+  /** The photo's applied edit revision (issue 2619): admin preview URLs name it. */
+  edit_applied_rev?: number;
   is_mine?: boolean;
 }
 
@@ -396,6 +400,8 @@ class FeedbackService {
     decision?: PhotoDecision;
     /** Only with feedback_type 'comment' (issue 1733). */
     annotation?: PhotoAnnotation;
+    /** The edit revision of the picture the annotation was drawn on (issue 2619). */
+    annotation_rev?: number;
     /** Only with feedback_type 'favorite' (issue 2303): null = default list. */
     favorite_list_id?: number | null;
     guest_name?: string;

@@ -365,6 +365,14 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         });
       }
 
+      // A RAW is developed with the default look when the studio turned that
+      // on (issue 2619), as processPhoto does for the rows it finishes.
+      if (!isVideo) {
+        await require('./photoEdits').afterUpload(photoId).catch((err) => {
+          logger.warn(`processUploadedPhotos: RAW auto develop failed for photo ${photoId}`, { error: err.message });
+        });
+      }
+
       uploadedPhotos.push({
         id: photoId,
         filename: newFilename,
@@ -848,6 +856,14 @@ async function processPhoto(photoId) {
     await require('./downloadZipService').invalidateIfBuilt(photo.event_id);
   } catch (err) {
     logger.warn(`processPhoto: zip invalidate failed for ${photoId}`, { error: err.message });
+  }
+
+  // A RAW upload is developed with the default look when the studio turned
+  // that on (issue 2619); queued, the render runs in the background.
+  if (!isVideo) {
+    await require('./photoEdits').afterUpload(photoId).catch((err) => {
+      logger.warn(`processPhoto: RAW auto develop failed for ${photoId}`, { error: err.message });
+    });
   }
 
   // A transfer created while all its photos were processing held its "ready"

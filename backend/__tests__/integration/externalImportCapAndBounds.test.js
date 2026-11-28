@@ -123,6 +123,20 @@ describe('external import: photo cap and walk bounds', () => {
     expect(result.truncated).toBe(false);
   });
 
+  it('runs the upload completion hook for each new photo (RAW auto develop, issue 2619)', async () => {
+    const photoEdits = require('../../src/services/photoEdits');
+    const hook = jest.spyOn(photoEdits, 'afterUpload').mockResolvedValue(undefined);
+    try {
+      await touch('hooked/a.jpg');
+      const eventId = await seedEvent();
+      await importExternalFolder({ actor: { type: 'admin', id: 1 }, eventId, externalPath: 'hooked', recursive: true });
+      const row = await db('photos').where({ event_id: eventId }).first();
+      expect(hook).toHaveBeenCalledWith(row.id);
+    } finally {
+      hook.mockRestore();
+    }
+  });
+
   it('stops the walk at its depth bound and reports it', async () => {
     const deep = Array.from({ length: 20 }, (_, i) => `d${i}`).join('/');
     await touch('deep/top.jpg');

@@ -32,6 +32,7 @@ const { adminThumbnailUrl, ADMIN_THUMBNAIL_COLUMNS } = require('../utils/adminTh
 const { formatBoolean } = require('../utils/dbCompat');
 const { getAppSetting } = require('../utils/appSettings');
 const { getStorage } = require('./storage');
+const photoEdits = require('./photoEdits');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
 const { sanitizeForZipEntry, buildContentDisposition } = require('../utils/filenameSanitizer');
@@ -815,6 +816,8 @@ async function loadTransferPhotos(transferId) {
  * Returns the number of files successfully appended.
  */
 async function streamTransferArchive(transfer, res) {
+  // Edited photos (issue 2619) go out as their edited render, drawn with
+  // their entry below so a missing one never holds back the first bytes.
   const photos = await loadTransferPhotos(transfer.id);
 
   // Left while the rows were being read: 'close' has fired already and will
@@ -856,13 +859,15 @@ async function streamTransferArchive(transfer, res) {
 
   const storage = getStorage();
   const useOriginal = await getUseOriginalFilenames();
-  const entryNames = getZipEntryNames(photos, useOriginal);
+  const entryNames = getZipEntryNames(photos.map(photoEdits.namedAsDelivered), useOriginal);
   const multiEvent = new Set(photos.map((p) => p.event_id)).size > 1;
 
   let appended = 0;
   for (let i = 0; i < photos.length; i += 1) {
     if (stopped) break;
-    const photo = photos[i];
+    // One that cannot be rendered is skipped below, never shipped as its original.
+    const photo = await photoEdits.deliveredPhoto(photos[i], { unavailableOnFailure: true });
+    if (stopped) break;
     const event = {
       id: photo.event_id,
       slug: photo.event_slug,
@@ -1153,7 +1158,10 @@ async function streamTransferFile(transfer, rawFileId, res, { beforeStream = nul
       'events.source_mode as event_source_mode',
       'events.external_path as event_external_path',
     )
-    .first();
+    .first()
+    // An edited photo (issue 2619) goes out as its edited render.
+    // A HEAD request never starts a render.
+    .then((found) => photoEdits.deliveredPhoto(found, { headOnly: res.req?.method === 'HEAD' }));
   if (!row) return false;
 
   const event = {

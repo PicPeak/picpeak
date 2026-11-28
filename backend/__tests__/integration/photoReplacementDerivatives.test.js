@@ -132,6 +132,41 @@ describe('Photo replacement and derived files', () => {
     expect(channels[2].mean).toBeGreaterThan(channels[0].mean);
   }, 30000);
 
+  it('resets the live edit state, not the snapshot it started from (issue 2619)', async () => {
+    const event = await makeEvent();
+    // An edit saved while the replacement decoded and uploaded: the caller's
+    // snapshot is from before it.
+    const fresh = await addPhoto(event);
+    const freshSnapshot = await db('photos').where({ id: fresh }).first();
+    const liveRender = `edits/edit_p${fresh}_r1_s0123456789_0123456789ab.jpg`;
+    await writeKey(liveRender, orangeJpeg);
+    await db('photos').where({ id: fresh }).update({
+      edit_params: JSON.stringify({ v: 1, crop: { x: 0, y: 0, w: 0.5, h: 1 } }), edit_rev: 1,
+      edit_render_path: liveRender, edit_width: 30, edit_height: 40,
+    });
+    const moved = await addPhoto(event, { edit_params: JSON.stringify({ v: 1, rotate: 90 }), edit_rev: 3, edit_applied_rev: 3 });
+    const movedSnapshot = await db('photos').where({ id: moved }).first();
+    await db('photos').where({ id: moved }).update({
+      edit_params: JSON.stringify({ v: 1, rotate: 180 }), edit_rev: 5, edit_failed_rev: 5, edit_error: 'render failed',
+    });
+
+    expect((await replace(freshSnapshot, event)).success).toBe(true);
+    expect((await replace(movedSnapshot, event)).success).toBe(true);
+
+    const a = await db('photos').where({ id: fresh }).first();
+    expect(a).toMatchObject({ edit_params: null, edit_rev: 2, edit_applied_rev: 2, edit_render_path: null, edit_width: null, edit_height: null });
+    expect(exists(liveRender)).toBe(false);
+    const b = await db('photos').where({ id: moved }).first();
+    expect(b).toMatchObject({ edit_params: null, edit_rev: 6, edit_applied_rev: 6, edit_applied_params: null, edit_failed_rev: null, edit_error: null });
+  }, 30000);
+
+  it('leaves a photo never edited at revision 0 (issue 2619)', async () => {
+    const event = await makeEvent();
+    const id = await addPhoto(event);
+    expect((await replace(await db('photos').where({ id }).first(), event)).success).toBe(true);
+    expect(await db('photos').where({ id }).first()).toMatchObject({ edit_rev: 0, edit_applied_rev: 0, edit_params: null });
+  }, 30000);
+
   it('keeps a preview another photo still points at', async () => {
     const event = await makeEvent();
     const id = await addPhoto(event, { preview_path: 'previews/shared-preview.jpg' });

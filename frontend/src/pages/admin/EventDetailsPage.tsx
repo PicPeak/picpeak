@@ -17,7 +17,7 @@ import { photosService, AdminPhoto, type PhotoFilters as PhotoFilterParams, type
 import { feedbackService, type FeedbackSettings } from '../../services/feedback.service';
 import type { Event } from '../../types';
 import type { ThemeConfig } from '../../types/theme.types';
-import { safeParseDate, eventHasGuests } from './event-details/utils';
+import { safeParseDate, eventHasGuests, photoListPollInterval } from './event-details/utils';
 import type { EventDetailsTab } from './event-details/types';
 import { EventDetailsHeader } from './event-details/EventDetailsHeader';
 import { EventTabs } from './event-details/EventTabs';
@@ -210,19 +210,12 @@ export const EventDetailsPage: React.FC = () => {
   }), [photoFilters, feedbackFilters, favoriteListFilter]);
 
   // Photos for the Photos tab and the Settings hero picker. Polls every 2s
-  // while any photo is still being processed.
+  // while any photo is still being processed or its edit applied.
   const { data: photos = [], isLoading: photosLoading, isError: photosError, refetch: refetchPhotos } = useQuery({
     queryKey: ['admin-event-photos', id, combinedPhotoFilters],
     queryFn: () => photosService.getEventPhotos(parseInt(id!), combinedPhotoFilters),
     enabled: !!id && (activeTab === 'photos' || activeTab === 'settings'),
-    refetchInterval: (query) => {
-      const data = query.state.data as AdminPhoto[] | undefined;
-      if (!Array.isArray(data)) return false;
-      const inFlight = data.some(
-        (p: any) => p.processing_status === 'pending' || p.processing_status === 'processing'
-      );
-      return inFlight ? 2000 : false;
-    },
+    refetchInterval: (query) => photoListPollInterval(query.state.data as AdminPhoto[] | undefined),
   });
 
   const { data: filterSummary } = useQuery({

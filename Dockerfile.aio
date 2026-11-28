@@ -88,8 +88,11 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 # its connection test spawn `rsync -e ssh` and `ssh`. Without them an rsync
 # backup fails with ENOENT, and operators had to build their own image, which
 # every update then replaced.
+# libraw-tools: LibRaw's dcraw_emu and raw-identify, which develop camera RAW
+# photos in the photo editor (issue 2619). LibRaw is LGPL-2.1/CDDL and is only
+# ever run as this separate program, never linked or bundled. About 3 MiB.
 RUN apk add --no-cache dumb-init postgresql-client sqlite ffmpeg su-exec \
-    fontconfig ttf-dejavu ttf-liberation poppler-utils exiftool rsync openssh-client && \
+    fontconfig ttf-dejavu ttf-liberation poppler-utils exiftool rsync openssh-client libraw-tools && \
     fc-cache -f
 
 RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001

@@ -3769,6 +3769,10 @@
         "title": "Customer gifts",
         "description": "Suggest gifts at customer milestones, track gift stock and record who received what. Every gift is confirmed by an admin.",
         "sidebar": "Gifts"
+      },
+      "photoEditor": {
+        "title": "Photo editor",
+        "description": "Quick, non-destructive corrections in the photo viewer: crop, straighten, exposure, white balance and colour, with presets and copying settings to other photos. Guests see and download the edited photo; the original stays untouched and can still be downloaded by admins. Turning this off hides the editor; saved edits stay applied."
       }
     },
     "customerSurface": {
@@ -7414,7 +7418,10 @@
       "clear": "Clear",
       "done": "Done",
       "limitReached": "A drawing can have up to {{max}} strokes.",
-      "overlayLabel": "Drawing on the photo"
+      "overlayLabel": "Drawing on the photo",
+      "outsideCrop": "Part of the drawing is outside the current crop.",
+      "imageChanged": "The photo has changed since you drew on it. Reload the gallery and draw again.",
+      "photoUpdated": "The photo was updated. Please draw again."
     }
   },
   "filter": {
@@ -13112,5 +13119,152 @@
     "reachedOn": "Reached {{date}}",
     "lowStock_one": "{{count}} gift due, {{stock}} in stock.",
     "lowStock_other": "{{count}} gifts due, {{stock}} in stock."
+  },
+  "photoEditor": {
+    "title": "Edit photo",
+    "panel": "Adjustments",
+    "loading": "Loading photo…",
+    "loadError": "The photo could not be loaded for editing.",
+    "position": "{{current}} of {{total}}",
+    "unsaved": "Not saved",
+    "gone": "This photo is no longer in the list; save or close to discard your changes.",
+    "detailNoPreview": "This browser shows clarity and sharpening only in the saved photo.",
+    "actions": {
+      "auto": "Auto",
+      "beforeAfter": "Before / after",
+      "close": "Close",
+      "copy": "Copy settings",
+      "copyTo": "Copy to photos…",
+      "next": "Next photo",
+      "paste": "Paste settings",
+      "previous": "Previous photo",
+      "reset": "Reset to original",
+      "save": "Save",
+      "shortcuts": "Keyboard shortcuts"
+    },
+    "batch": {
+      "title": "Copy settings to photos",
+      "description": "The chosen settings replace those parts of each photo’s edit. Previews update in the background.",
+      "tone": "Light, colour and detail",
+      "geometry": "Crop and rotation",
+      "geometryNote": "The crop is copied as a share of each photo, so photos of another shape are cropped differently.",
+      "parts": "Settings to copy",
+      "photos": "Photos",
+      "selectAll": "Select all",
+      "selectNone": "Select none",
+      "selected_one": "{{count}} selected",
+      "selected_other": "{{count}} selected",
+      "submit_one": "Copy to {{count}} photo",
+      "submit_other": "Copy to {{count}} photos",
+      "queued_one": "Settings copied to {{count}} photo",
+      "queued_other": "Settings copied to {{count}} photos",
+      "progress": "Copying… {{done}} of {{total}}"
+    },
+    "canvas": {
+      "before": "Original",
+      "after": "Edited preview"
+    },
+    "close": {
+      "title": "Save the edit?",
+      "message": "This photo has changes that are not saved yet.",
+      "save": "Save",
+      "discard": "Discard"
+    },
+    "crop": {
+      "aspect": "Aspect ratio",
+      "clear": "Clear crop",
+      "done": "Done",
+      "start": "Crop",
+      "flipH": "Flip horizontally",
+      "flipV": "Flip vertically",
+      "frame": "Crop frame",
+      "free": "Free",
+      "original": "Original",
+      "rotateLeft": "Rotate left",
+      "rotateRight": "Rotate right"
+    },
+    "presets": {
+      "confirmDelete": "Delete the preset “{{name}}”?",
+      "delete": "Delete {{name}}",
+      "empty": "No presets yet. Save the current settings as one.",
+      "namePlaceholder": "Preset name",
+      "save": "Save",
+      "saved": "Preset saved"
+    },
+    "sections": {
+      "colour": "Colour",
+      "crop": "Crop and rotate",
+      "detail": "Detail",
+      "light": "Light",
+      "presets": "Presets",
+      "raw": "Camera RAW"
+    },
+    "shortcuts": {
+      "previous": "Previous / next photo",
+      "next": "Next photo",
+      "beforeAfter": "Before / after",
+      "crop": "Crop",
+      "rotateLeft": "Rotate left / right",
+      "rotateRight": "Rotate right",
+      "auto": "Auto tone",
+      "reset": "Reset to original",
+      "copy": "Copy settings",
+      "paste": "Paste settings",
+      "save": "Save",
+      "close": "Close",
+      "shortcuts": "Show shortcuts"
+    },
+    "sliders": {
+      "exposure": "Exposure",
+      "contrast": "Contrast",
+      "highlights": "Highlights",
+      "shadows": "Shadows",
+      "whites": "Whites",
+      "blacks": "Blacks",
+      "temperature": "Temperature",
+      "tint": "Tint",
+      "vibrance": "Vibrance",
+      "saturation": "Saturation",
+      "clarity": "Clarity",
+      "sharpen": "Sharpening",
+      "bw": "Black & white",
+      "straighten": "Straighten",
+      "nr": "Noise reduction"
+    },
+    "status": {
+      "idle": "Guests see the saved edit; the original file stays untouched.",
+      "pending_one": "Updating previews and downloads for {{count}} photo…",
+      "pending_other": "Updating previews and downloads for {{count}} photos…",
+      "failed_one": "{{count}} photo could not be updated.",
+      "failed_other": "{{count}} photos could not be updated.",
+      "retry": "Retry",
+      "backend": {
+        "webgl2": "Preview: GPU (WebGL 2)",
+        "webgl": "Preview: GPU (WebGL)",
+        "canvas": "Preview: processor (no WebGL)"
+      }
+    },
+    "toast": {
+      "copied": "Settings copied",
+      "pasted": "Light, colour and detail pasted",
+      "reset": "Original restored",
+      "saved": "Edit saved",
+      "saveFailed": "The edit could not be saved"
+    },
+    "viewer": {
+      "downloadEdited": "Edited",
+      "downloadOriginal": "Original",
+      "edit": "Edit photo",
+      "editAgain": "Edit photo (edited)",
+      "shortcut": "Shortcut: E"
+    },
+    "raw": {
+      "nrNote": "Noise reduction is applied in the saved photo; the preview approximates it by leaving it out.",
+      "developAll": "Develop all unedited RAW photos",
+      "queued_one": "{{count}} RAW photo is being developed",
+      "queued_other": "{{count}} RAW photos are being developed",
+      "auto": "Develop new RAW uploads automatically",
+      "autoNote": "Uses server CPU for every RAW upload. Until a RAW is developed, guests see the camera’s own preview."
+    }
   }
 }

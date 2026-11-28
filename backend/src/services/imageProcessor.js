@@ -65,7 +65,12 @@ const sizeVersion = photo => (isExternalSource(photo) && photo.size_bytes != nul
 // size-only version its tiers were named with.
 const sourceVersion = photo => (sizeVersion(photo) && photo.source_mtime_ms != null
   ? `${sizeVersion(photo)}m${photo.source_mtime_ms}` : sizeVersion(photo));
-const versionTag = photo => (sourceVersion(photo) ? `v${sourceVersion(photo)}_` : '');
+// The edit revision a rendition shows (issue 2619), 0 for the original. It is
+// in the tier keys and the flight keys, and the source guard checks it, so a
+// rendition of one revision is never found or recorded for another.
+const editRev = photo => (require('./photoEdits').isEdited(photo) ? Number(photo.edit_rev) || 0 : 0);
+const editTag = photo => (editRev(photo) ? `e${editRev(photo)}_` : '');
+const versionTag = photo => `${sourceVersion(photo) ? `v${sourceVersion(photo)}_` : ''}${editTag(photo)}`;
 // A thumbnail tier is cut around the row's focal point (issue 2377), so the
 // point is in its key: the listing names a moved point in the URL as soon as
 // the row has it, and a tier of the old point must not be found under it.
@@ -74,7 +79,8 @@ const focalTag = photo => (focalQuery(photo) ? `${focalQuery(photo).replace('fp=
 // (before the version), and the size alone (before the mtime). Still found
 // for cleanup; see the lookups for which of them they trust.
 const legacyVersionTags = photo => {
-  if (!sourceVersion(photo)) return [];
+  // An edited photo's tiers never had another scheme; the original's are not its.
+  if (!sourceVersion(photo) || editRev(photo)) return [];
   return sourceVersion(photo) === sizeVersion(photo) ? [''] : ['', `v${sizeVersion(photo)}_`];
 };
 const slowDecode = name => isRawFilename(name) || isHeifFilename(name);
@@ -85,11 +91,20 @@ const derivativeCacheId = photo => crypto.createHash('sha256')
     // Only when known: an external row without a size keeps the id it had
     // before the version existed, so its tiers stay found and cleaned up.
     ...(sourceVersion(photo) ? [sourceVersion(photo)] : []),
+    ...(editRev(photo) ? [`e${editRev(photo)}`] : []),
   ])).digest('hex').slice(0, 24);
 // Callers hand in rows from many selects. An external row without its size
 // or mtime would derive other keys and skip them in its guard, so they are
 // read here once rather than trusting every select to carry them.
 async function withSourceVersion(photo) {
+  // A row as guests receive it (photoEdits.deliveredPhoto, issue 2619) names
+  // the edited file in place of the original; renditions are built from the
+  // row itself, which the source guard compares against.
+  if (photo && photo.edit_delivery_key !== undefined) photo = (await db('photos').where({ id: photo.id }).first()) || photo;
+  // The edit columns too: they name and guard the renditions. While a newer
+  // edit is being applied, renditions show the applied revision, the one the
+  // URLs and face boxes name (photoEdits.renditionView).
+  photo = await require('./photoEdits').renditionView(await require('./photoEdits').withEditColumns(photo));
   if (!photo || !isExternalSource(photo) || photo.id == null
       || (photo.size_bytes !== undefined && photo.source_mtime_ms !== undefined)) return photo;
   const row = await db('photos').where({ id: photo.id }).first('size_bytes', 'source_mtime_ms');
@@ -119,6 +134,8 @@ function sourceGuard(photo) {
   for (const field of derivativeSourceFields) if (photo[field] !== undefined) match[field] = photo[field];
   if (isExternalSource(photo) && photo.size_bytes !== undefined) match.size_bytes = photo.size_bytes;
   if (isExternalSource(photo) && photo.source_mtime_ms !== undefined) match.source_mtime_ms = photo.source_mtime_ms;
+  // The revision it shows: the applied one for an applied view.
+  if (photo.edit_rev !== undefined) match[photo.edit_view === 'applied' ? 'edit_applied_rev' : 'edit_rev'] = photo.edit_rev;
   return db('photos').where(match);
 }
 function withLazyDerivative(photo, callback) {
@@ -139,6 +156,19 @@ function derivativeBasename(name, { cache = false } = {}) {
 // describes the old file, so the caller treats it as nothing generated.
 // `narrow` adds conditions to the source guard (a video poster's frame pick).
 async function publishPhotoDerivative(photo, key, values, narrow = (query) => query) {
+  // Staged (the photo edit pass, issue 2619): the rendition of a revision not
+  // applied yet is built beside the live one and recorded later, together
+  // with that revision (photoEdits.applyPhoto). Only the source is checked.
+  if (photo.edit_stage) {
+    // The source only: the row's focal point and poster pick are fenced by
+    // that later write, which records the staged point with the renditions.
+    if (await sourceGuard(photo).first('id')) {
+      Object.assign(photo.edit_stage.values, values);
+      return true;
+    }
+    await getStorage().delete(key).catch(() => {});
+    return false;
+  }
   const scope = derivativeContext.getStore();
   if (!scope) {
     if (await narrow(sourceGuard(photo)).update(values) === 1) return true;
@@ -348,6 +378,51 @@ async function withRawContainerTags(rawPath, jpeg) {
       `Could not copy the metadata of ${path.basename(rawPath)} onto its download: `
       + `${err.message}. It ships without its EXIF, XMP and IPTC.`
     );
+    return jpeg;
+  } finally {
+    await removeTempDir(dir);
+  }
+}
+
+/**
+ * The metadata an edited photo (issue 2619) carries of its source: an
+ * allowlist. Camera, lens and exposure, the capture date, the author,
+ * copyright, title and description, in EXIF, XMP (dc) and IPTC. Nothing
+ * else: no face regions, people, keywords, GPS, maker notes or embedded
+ * images (thumbnails, previews, Google depth or image data), any of which
+ * can show or name what the edit cropped away. No orientation either: the
+ * render is upright.
+ */
+const EDIT_METADATA_TAGS = [
+  'EXIF:Make', 'EXIF:Model', 'EXIF:LensMake', 'EXIF:LensModel',
+  'EXIF:ExposureTime', 'EXIF:FNumber', 'EXIF:ISO', 'EXIF:FocalLength', 'EXIF:FocalLengthIn35mmFormat',
+  'EXIF:ExposureProgram', 'EXIF:ExposureCompensation', 'EXIF:MeteringMode', 'EXIF:Flash', 'EXIF:WhiteBalance',
+  'EXIF:DateTimeOriginal', 'EXIF:CreateDate', 'EXIF:OffsetTime', 'EXIF:OffsetTimeOriginal', 'EXIF:OffsetTimeDigitized',
+  'EXIF:SubSecTimeOriginal', 'EXIF:Artist', 'EXIF:Copyright', 'EXIF:ImageDescription',
+  'XMP-dc:Creator', 'XMP-dc:Rights', 'XMP-dc:Title', 'XMP-dc:Description',
+  'IPTC:By-line', 'IPTC:CopyrightNotice', 'IPTC:Caption-Abstract',
+];
+
+/**
+ * `jpeg` (an edited render, no metadata of its own) with the allowlisted
+ * metadata of the file at `sourcePath`, a JPEG, HEIC or camera RAW. When
+ * exiftool cannot copy it the render goes out without metadata, never with
+ * more.
+ */
+async function withAllowedMetadata(sourcePath, jpeg) {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-edittags-'));
+  const target = path.join(dir, 'edited.jpg');
+  try {
+    await fsp.writeFile(target, jpeg);
+    // A link under a fixed name: exiftool reads %d, %f and %e in a
+    // -TagsFromFile name as a format (see withRawContainerTags).
+    const source = path.join(dir, `source${path.extname(sourcePath)}`);
+    await fsp.symlink(path.resolve(sourcePath), source);
+    await runExiftool(['-m', '-TagsFromFile', source, ...EDIT_METADATA_TAGS.map((tag) => `-${tag}`), '-overwrite_original', target]);
+    return await fsp.readFile(target);
+  } catch (err) {
+    if (isResourceError(err)) throw err;
+    logger.warn(`Could not copy the metadata of ${path.basename(sourcePath)} onto its edit: ${err.message}. It ships without metadata.`);
     return jpeg;
   } finally {
     await removeTempDir(dir);
@@ -1181,7 +1256,7 @@ function flightKey(rendition, photo, width) {
   const source = (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || '';
   // The version too: a request for the edited file must not join a flight
   // still rendering the old bytes and be handed that rendition.
-  return `${rendition}:${photo.id}:${source}:${sourceVersion(photo) ?? ''}${width ? `:w${width}` : ''}`;
+  return `${rendition}:${photo.id}:${source}:${sourceVersion(photo) ?? ''}:e${editRev(photo)}${width ? `:w${width}` : ''}`;
 }
 
 function singleFlight(key, fn, { force = false } = {}) {
@@ -1207,6 +1282,17 @@ function singleFlight(key, fn, { force = false } = {}) {
  */
 function isVideoPhoto(photo) {
   return photo.media_type === 'video' || String(photo.mime_type || '').startsWith('video/');
+}
+
+/**
+ * The file a rendition is cut from when the photo has an edit (issue 2619):
+ * the edited render, in managed storage whatever the original's source.
+ * Null for the original. Throws when the render fails: no rendition is
+ * better than one of the original, which the edit may crop.
+ */
+async function editedSourceKey(photo) {
+  if (isVideoPhoto(photo)) return null;
+  return require('./photoEdits').ensureEditedSource(photo);
 }
 
 /**
@@ -1497,7 +1583,8 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   // Faces the scan found are where the subject is: their middle is the
   // point, and sharp's guess only stands in for a photo without any.
   if (focal === undefined && stored) {
-    const fromFaces = await require('./faceFocalPoint').faceFocalPoint(photo.id);
+    // For the picture this rendition is cut from (the view's edit).
+    const fromFaces = await require('./faceFocalPoint').faceFocalPoint(photo.id, { edit: require('./photoEdits').paramsOf(photo) });
     if (fromFaces) {
       focal = fromFaces;
       meta.focal = fromFaces;
@@ -1510,7 +1597,9 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   // The render is kept only while the row still has the point it read: a
   // point saved meanwhile (another replica, or the admin) renders its own
   // crop, and this one must not overwrite that thumbnail or land on the row.
-  const focalCurrent = stored && (async () => {
+  // Staged (the photo edit pass): the point it cuts around is the one the
+  // pass records with it, so the row's is not compared here.
+  const focalCurrent = stored && !photo.edit_stage && (async () => {
     try {
       const current = await db('photos').where('id', photo.id).first(FOCAL_COLUMNS);
       if (!current || sameFocalColumns(current, stored)) return true;
@@ -1525,6 +1614,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   const stillCurrent = (settingsCurrent || focalCurrent) && (async () => (
     (!settingsCurrent || await settingsCurrent()) && (!focalCurrent || await focalCurrent())
   ));
+  const editedKey = await editedSourceKey(photo);
   if (isVideoPhoto(photo)) {
     // A video's thumbnail is a poster frame, not a Sharp resize of the stored
     // file (#1414). Without this branch the generic path below hands the mp4
@@ -1541,7 +1631,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
       const { posterFrameError } = require('./videoProcessor');
       posterNote = video.placeholder ? posterFrameError(video.thumbnailError) : null;
     }
-  } else if (isExternal) {
+  } else if (isExternal && !editedKey) {
     // External: source is on a local mount path. No withLocalCopy needed
     // (storage-backend abstraction doesn't apply — this is a direct fs
     // read). Use a per-photo unique outputBasename so two events both
@@ -1569,7 +1659,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   } else {
     let sourceKey;
     try {
-      sourceKey = resolvePhotoStorageKey(event, photo);
+      sourceKey = editedKey || resolvePhotoStorageKey(event, photo);
     } catch (e) {
       logger.error(`Failed to resolve original key for thumbnail (photo ${photo.id}): ${e.message}`);
       return null;
@@ -2002,7 +2092,8 @@ async function regenerateHeroImage(photo, anchor) {
   // ensurePreviewImage and nobody carried it across; it only became visible
   // when the Story hero started asking for hero_url instead of the original
   // (#1166), which on a reference-mode gallery quietly changed nothing.
-  const isExternal = isExternalSource(photo);
+  const editedKey = await editedSourceKey(photo);
+  const isExternal = isExternalSource(photo) && !editedKey;
 
   let newHeroPath;
   if (isExternal) {
@@ -2031,7 +2122,7 @@ async function regenerateHeroImage(photo, anchor) {
 
   let sourceKey;
   try {
-    sourceKey = resolvePhotoStorageKey(event, photo);
+    sourceKey = editedKey || resolvePhotoStorageKey(event, photo);
     logger.info(`Ensuring hero image for photo ${photo.id} from key: ${sourceKey}`);
   } catch (e) {
     const msg = (e && e.message) ? e.message : String(e);
@@ -2348,7 +2439,9 @@ function thumbnailTierKeys(photo) {
 async function keepTierIfCurrent(photo, key, keysOf, shapeIsCurrent) {
   if (!key) return key;
   try {
-    const current = await db('photos').where({ id: photo.id }).first();
+    // As its renditions show it: the applied revision while a newer edit is
+    // pending (issue 2619), which is what a tier cut for guests shows.
+    const current = await require('./photoEdits').renditionView(await db('photos').where({ id: photo.id }).first());
     // The version too, not only the key: the keys of a row include the names
     // its tiers had under an earlier version, and a tier cut while the row
     // still had that version may be of bytes since replaced (issue 2059).
@@ -2492,7 +2585,8 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
     // Without the flag the write is a plain put: LocalFsStorage stages to a
     // temp file and renames, which is atomic, so a concurrent reader sees
     // either the old file or the new one and never a hole.
-    if (isExternal) {
+    const editedKey = await editedSourceKey(photo);
+    if (isExternal && !editedKey) {
       const localPath = resolvePhotoFilePath(event, photo);
       // Through the RAW extraction, like the managed branch below. Without it
       // a RAW on a NAS mount can never have a thumbnail at this width: sharp
@@ -2506,7 +2600,7 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
         await proc.cleanup();
       }
     }
-    const sourceKey = resolvePhotoStorageKey(event, photo);
+    const sourceKey = editedKey || resolvePhotoStorageKey(event, photo);
     if (!sourceKey) return null;
     return await keepTierIfCurrent(photo, await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
@@ -2578,14 +2672,15 @@ async function ensurePreviewImageAtWidthUnguarded(photo, width) {
   }
 
   try {
-    if (isExternal) {
+    const editedKey = await editedSourceKey(photo);
+    if (isExternal && !editedKey) {
       const localPath = resolvePhotoFilePath(event, photo);
       const sourceName = photo.external_relpath || photo.filename;
       return await keepTierIfCurrent(photo, await renderExternal(localPath, sourceName, source => generatePreviewImage(source, {
         regenerate: true, outputBasename, longEdge: width, interactive: true,
       })), previewTierKeys);
     }
-    const sourceKey = resolvePhotoStorageKey(event, photo);
+    const sourceKey = editedKey || resolvePhotoStorageKey(event, photo);
     if (!sourceKey) return null;
     return await keepTierIfCurrent(photo, await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
@@ -2650,7 +2745,8 @@ async function regeneratePreviewImage(photo) {
     return null;
   }
 
-  const isExternal = isExternalSource(photo);
+  const editedKey = await editedSourceKey(photo);
+  const isExternal = isExternalSource(photo) && !editedKey;
 
   let newPreviewPath;
   if (isExternal) {
@@ -2672,7 +2768,7 @@ async function regeneratePreviewImage(photo) {
   } else {
     let sourceKey;
     try {
-      sourceKey = resolvePhotoStorageKey(event, photo);
+      sourceKey = editedKey || resolvePhotoStorageKey(event, photo);
     } catch (e) {
       const msg = (e && e.message) ? e.message : String(e);
       logger.error(`Failed to resolve original key for preview (photo ${photo.id}): ${msg}`);
@@ -2951,6 +3047,8 @@ module.exports = {
   extractRawPreview,
   withProcessableImage,
   withRawContainerTags,
+  withAllowedMetadata,
+  withSourceMetadata,
   heifStandIn,
   prefixedBasename,
   RAW_EXTENSIONS,

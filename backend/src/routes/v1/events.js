@@ -79,7 +79,8 @@ const { Readable } = require('stream');
 const { getStorage } = require('../../services/storage');
 const { isStorageNotFoundError } = require('../../services/storage/storageErrors');
 const { requireCapability } = require('../../middleware/requireCapability');
-const { resolvePhotoStorageKey, resolvePhotoFilePath, isManagedOriginalKey } = require('../../services/photoResolver');
+const { resolvePhotoStorageKey, resolvePhotoFilePath, isManagedOriginalKey, deliveredKey } = require('../../services/photoResolver');
+const photoEdits = require('../../services/photoEdits');
 const { pickRawDownloadName } = require('../../services/downloadFilenameService');
 const { buildContentDisposition, sanitizeForZipEntry } = require('../../utils/filenameSanitizer');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
@@ -831,6 +832,10 @@ async function handleV1PhotoUpload(req, res) {
       } catch (e) {
         logger.warn(`v1 upload: tag enqueue failed for photo ${id}`, { error: e.message });
       }
+      // A RAW's default develop when the studio turned it on (issue 2619).
+      await require('../../services/photoEdits').afterUpload(id).catch((e) => {
+        logger.warn(`v1 upload: RAW auto develop failed for photo ${id}`, { error: e.message });
+      });
     }
 
     await logActivity('photo_uploaded', { via: 'api_v1', filename: finalName }, event.id, {
@@ -1068,6 +1073,8 @@ function buildPhotoFilters(req) {
  *                           Recorded size of the stored original. Null means UNKNOWN, not
  *                           zero — such a row is still sized from storage and still counts
  *                           against the ZIP size cap, so do not sum these to predict it.
+ *                           For an edited photo, the size of its edited JPEG; null until the
+ *                           saved revision is rendered.
  *                       media_type:
  *                         type: string
  *                         nullable: true
@@ -1160,15 +1167,27 @@ router.get(
       // statements above.
       const mediaRows = pageIds.length
         ? await livePhotos(db).where('event_id', eventId).whereIn('id', pageIds)
-          .select('id', 'media_type', 'mime_type', 'processing_status', 'moderation_status')
+          .select('id', 'media_type', 'mime_type', 'processing_status', 'moderation_status', ...photoEdits.EDIT_COLUMNS, ...photoEdits.SOURCE_COLUMNS)
         : [];
       const mediaById = new Map(mediaRows.map((r) => [r.id, r]));
+      // An edited photo (issue 2619) is listed as the file its download
+      // serves: the edited JPEG, its size and dimensions (null until rendered).
+      // The size only of a render of the saved revision and the current
+      // original: one left from the save before is not what goes out.
+      const edited = new Map();
+      for (const row of mediaRows) {
+        if (!photoEdits.isEdited(row)) continue;
+        const stat = photoEdits.isRenderKeyOf(row, row.edit_render_path, row.edit_rev)
+          ? await getStorage().stat(row.edit_render_path).catch(() => null) : null;
+        edited.set(row.id, { width: row.edit_width || null, height: row.edit_height || null, size_bytes: stat ? stat.size : null });
+      }
 
       const filtered = parseInt(countResult[0]?.count, 10) || 0;
 
       res.json({
         photos: photos.map(photo => {
           const merged = mergeMarks(photo, markSource);
+          const delivered = edited.get(photo.id);
           return {
             id: photo.id,
             filename: photo.filename,
@@ -1196,15 +1215,15 @@ router.get(
             my_color_label: photo.my_color_label || null,
             color_label: merged.color_label,
             rating: merged.rating,
-            width: photo.width || null,
-            height: photo.height || null,
-            size_bytes: Number(photo.size_bytes) > 0 ? Number(photo.size_bytes) : null,
+            width: delivered ? delivered.width : photo.width || null,
+            height: delivered ? delivered.height : photo.height || null,
+            size_bytes: delivered ? delivered.size_bytes : Number(photo.size_bytes) > 0 ? Number(photo.size_bytes) : null,
             // ?? rather than ||: this is a second round trip over the same
             // rows, so a photo deleted between them is absent here. Reporting
             // null says "unknown", where defaulting would advertise a video as
             // a resizable image.
             media_type: mediaById.get(photo.id)?.media_type ?? null,
-            mime_type: mediaById.get(photo.id)?.mime_type ?? null,
+            mime_type: delivered ? 'image/jpeg' : mediaById.get(photo.id)?.mime_type ?? null,
             // 'complete' unless the async worker is still on it. The preview
             // and download routes answer 503/422 for the other states.
             processing_status: mediaById.get(photo.id)?.processing_status ?? null,
@@ -1316,7 +1335,8 @@ function locateOriginal(event, photo) {
   try {
     const key = resolvePhotoStorageKey(event, photo);
     if (key) {
-      return isManagedOriginalKey(key) ? { key } : null;
+      // An edited photo's render (issue 2619) lives under edits/.
+      return isManagedOriginalKey(key) || deliveredKey(photo) ? { key } : null;
     }
     return { filePath: resolvePhotoFilePath(event, photo) };
   } catch {
@@ -1733,6 +1753,11 @@ router.get(
         else zipsInFlight.delete(tokenId);
       });
 
+      // Edited photos go out as their edit (issue 2619), like a gallery
+      // download, rendered with their entry below so a missing render never
+      // holds back the first bytes. The preflight above counted their
+      // originals' sizes, which stand in for the edited files here; the bytes
+      // actually streamed are capped as they go out.
       const photos = await selection().applySorting('filename', 'asc').getQuery().select('photos.*');
       if (!photos.length) {
         return res.status(404).json({ error: 'No photos found', code: 'NO_PHOTOS' });
@@ -1759,7 +1784,7 @@ router.get(
       // The manifest is named last, so a photo uploaded as MISSING_FILES.txt
       // keeps its name and the manifest becomes MISSING_FILES_1.txt.
       const entryNames = zipEntryNames([
-        ...photos.map((p) => pickRawDownloadName(p, true)),
+        ...photos.map((p) => pickRawDownloadName(photoEdits.namedAsDelivered(p), true)),
         MISSING_MANIFEST_NAME
       ]);
       const manifestName = entryNames.pop();
@@ -1819,6 +1844,9 @@ router.get(
       for (let i = 0; i < photos.length; i += 1) {
         if (!await pacer.room()) break;
         if (!await guard.acquire()) break;
+        // An edited photo as its render, drawn here when missing; one that
+        // cannot be rendered is listed as missing, never sent as its original.
+        const photo = await photoEdits.deliveredPhoto(photos[i], { unavailableOnFailure: true });
         // Rendered entries are buffers, appended whole — the same shape the
         // gallery's own cached zip builder uses. Only the stored-bytes path
         // needs a tracked stream. A render that fails on a photo is treated
@@ -1826,12 +1854,12 @@ router.get(
         let rendered = null;
         if (box) {
           try {
-            rendered = await renderPhotoAtBox(event, photos[i], box);
+            rendered = await renderPhotoAtBox(event, photo, box);
           } catch (err) {
             logger.warn('v1 zip rendition failed, skipping photo', {
-              eventId: event.id, photoId: photos[i].id, error: errorClass(err)
+              eventId: event.id, photoId: photo.id, error: errorClass(err)
             });
-            missingIds.push(photos[i].id);
+            missingIds.push(photo.id);
             continue;
           }
         }
@@ -1844,9 +1872,9 @@ router.get(
           continue;
         }
 
-        const source = await openOriginal(event, photos[i], { needSize: false });
+        const source = await openOriginal(event, photo, { needSize: false });
         if (!source) {
-          missingIds.push(photos[i].id);
+          missingIds.push(photo.id);
           continue;
         }
         pacer.append(guard.track(source.stream), { name: entryNames[i] });
@@ -1996,9 +2024,11 @@ router.get(
       const event = await loadDownloadableEvent(req, res);
       if (!event) return;
 
-      // One answer for unknown, malformed and other-event ids.
+      // One answer for unknown, malformed and other-event ids. An edited
+      // photo goes out as its edit (issue 2619), like a gallery download.
       const photo = isRowId(req.params.photoId)
-        ? await livePhotos(db).where({ id: Number(req.params.photoId), event_id: event.id }).first()
+        ? await photoEdits.deliveredPhoto(await livePhotos(db).where({ id: Number(req.params.photoId), event_id: event.id }).first(),
+          { headOnly: req.method === 'HEAD' })
         : null;
       if (!photo) return res.status(404).json({ error: 'Photo not found' });
 

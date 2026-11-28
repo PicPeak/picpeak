@@ -132,6 +132,23 @@ describe('face scan attempt guard (issue 2069)', () => {
 
   afterAll(async () => { if (cleanup) await cleanup(); });
 
+  it('scans the unedited original of a photo with any edit, also while a reset is pending (issue 2619)', async () => {
+    const photoEdits = require('../../src/services/photoEdits');
+    const original = jest.spyOn(photoEdits, 'originalPreviewJpeg').mockResolvedValue(mockPreviewBuffer);
+    try {
+      const { photoId } = await seedPendingPhoto();
+      // The edit was reset, not applied yet: the preview still shows the edit.
+      await db('photos').where({ id: photoId }).update({
+        edit_params: null, edit_rev: 2, edit_applied_rev: 1, edit_applied_params: JSON.stringify({ v: 1, rotate: 90 }),
+      });
+      const claimed = await faceQueue.claimNextPhoto();
+      await faceProcessor.processPhotoFaces(claimed);
+      expect(original).toHaveBeenCalled();
+    } finally {
+      original.mockRestore();
+    }
+  });
+
   it('commits the faces of a normal scan and clears the claim id', async () => {
     const { photoId } = await seedPendingPhoto();
     const claimed = await faceQueue.claimNextPhoto();

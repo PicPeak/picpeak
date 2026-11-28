@@ -135,6 +135,15 @@ describe('running without the guard (item 3, 4)', () => {
     expect(await fsp.readFile(target, 'utf8')).toBe('to-file');
   });
 
+  test('output written to a file is capped by the file budget, not the in-memory one', async () => {
+    // A RAW develop writes far more than the 1 MiB pipe budget to its file.
+    const big = path.join(dir, 'big-file');
+    await runner.run('/bin/sh', ['-c', 'head -c 3000000 /dev/zero'], { stdoutPath: big, outputBytes: 1024 * 1024, fileBytes: 4 * 1024 * 1024 });
+    expect((await fsp.stat(big)).size).toBe(3000000);
+    await expect(runner.run('/bin/sh', ['-c', 'head -c 3000000 /dev/zero'], { stdoutPath: path.join(dir, 'too-big'), fileBytes: 2 * 1024 * 1024 }))
+      .rejects.toMatchObject({ code: 'MEDIA_OUTPUT_LIMIT' });
+  });
+
   test('a timeout ends the whole process group: SIGTERM, then SIGKILL', async () => {
     const pidFile = path.join(dir, 'grandchild.pid');
     // The shell ignores SIGTERM and leaves a grandchild in its group.

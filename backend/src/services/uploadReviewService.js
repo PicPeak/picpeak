@@ -138,6 +138,14 @@ async function moderatePhotos(eventId, photoIds, action) {
       .select('id', 'filename', 'original_filename', 'size_bytes', 'processing_status');
     const updated = await rows.update({ visibility: 'visible', moderation_status: null });
     if (updated > 0) await announceApproved(eventId, approving);
+    // A RAW held for review gets the default develop it skipped (issue 2619),
+    // when the studio turned that on; one still processing gets it from the
+    // worker when it completes.
+    for (const photo of approving.filter((p) => !p.processing_status || p.processing_status === 'complete')) {
+      await require('./photoEdits').afterUpload(photo.id).catch((err) => {
+        logger.warn(`upload review: RAW auto develop after approval failed for photo ${photo.id}`, { error: err.message });
+      });
+    }
     return { updated, photoIds: approving.map((p) => Number(p.id)) };
   }
   rows.whereNot('moderation_status', 'rejected');

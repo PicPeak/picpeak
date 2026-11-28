@@ -209,7 +209,14 @@ async function processPhotoFaces(claimed) {
   }
 
   const storage = getStorage();
-  const buffer = await streamToBuffer(await storage.get(previewKey));
+  // A photo that has had an edit (issue 2619) may show it in its preview,
+  // maybe cropped or turned: the applied one, also while a newer save (a
+  // reset included) is pending. Faces are always found on the original, in
+  // its pixels, as before.
+  const photoEdits = require('./photoEdits');
+  const buffer = Number((await photoEdits.withEditColumns(photo)).edit_rev) > 0
+    ? await photoEdits.originalPreviewJpeg(photo)
+    : await streamToBuffer(await storage.get(previewKey));
 
   // Throws SidecarUnavailableError upward on a down sidecar — deliberately
   // not caught here, so the queue can distinguish "retry" from "failed".

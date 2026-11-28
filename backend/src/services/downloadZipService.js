@@ -309,6 +309,10 @@ class DownloadZipService {
       // PIN-clients bypass this cache and stream a full archive instead.
       // Photos still processing (or failed) are not in the gallery list either.
       // The selection only (issue 2356), as an ordinary guest sees it.
+      // Edited photos (issue 2619) go in as their edited render, drawn with
+      // their entry below; saving an edit invalidates this archive
+      // (photoEdits.applyPhoto).
+      const photoEdits = require('./photoEdits');
       const photos = await applyPhotoVisibilityFilter(wherePhotoProcessed(livePhotos(db))
         .where({ event_id: eventId }), 'guest')
         .select('*')
@@ -335,7 +339,7 @@ class DownloadZipService {
       // #493: resolve display filenames (with collision suffix) before the
       // streaming starts so the loop just indexes the precomputed array.
       const useOriginal = await getUseOriginalFilenames();
-      const entryNames = getZipEntryNames(photos, useOriginal);
+      const entryNames = getZipEntryNames(photos.map(photoEdits.namedAsDelivered), useOriginal);
       // A converted entry takes the new format's extension, which can give it
       // the name of another entry: uniquify the final names as they ship.
       const finalNames = new Map();
@@ -380,20 +384,50 @@ class DownloadZipService {
 
         const addPhotos = async () => {
           for (let i = 0; i < photos.length; i += 1) {
-            const photo = photos[i];
             // Check if build was invalidated
             if (cancelled) return;
             if (this.versions.get(eventId) !== version) {
               return failBuild(new Error('Build invalidated'));
             }
-
+            const listed = photos[i];
             const entryName = entryNames[i];
-            const archiveName = zipEntryPath(photo, entryName, hasMultipleTypes);
+            const archiveName = zipEntryPath(listed, entryName, hasMultipleTypes);
+
+            // Photo sales: before the checkout every photo of a priced
+            // gallery ships only as the watermarked low-quality preview, of
+            // the applied revision; free photos and non-priced galleries keep
+            // the historical build unchanged. Videos have no preview tier.
+            if (isGalleryPriced(event) && !isVideo(listed)) {
+              try {
+                const photoSettings = await resolveForcedWatermarkSettingsForPhoto(event, listed);
+                const preview = await renderPreviewForDownload(listed, photoSettings);
+                // No preview means no photo: the original must never stand in.
+                if (!preview) throw new Error('No sales preview of this photo');
+                archive.append(preview.buffer, {
+                  name: finalName(previewDownloadName(archiveName, preview.extension)),
+                });
+              } catch (err) {
+                logger.warn('Skipping photo in pre-zip', { photoId: listed.id, error: err.message });
+              }
+              continue;
+            }
+
+            // An edited photo as its render, drawn here when missing; one that
+            // cannot be rendered is skipped below, never shipped as its original.
+            const photo = await photoEdits.deliveredPhoto(listed, { unavailableOnFailure: true });
 
             // External-mode photos still live on local disk; managed photos go
             // through the storage backend. resolvePhotoStorageKey returns null
             // for external, in which case fall back to resolvePhotoFilePath.
             const storageKey = resolvePhotoStorageKey(event, photo);
+            // A file that is not there is skipped, like a source that cannot
+            // be rendered: a lazy local read would fail the whole archive
+            // after it started (an edited photo whose render failed, issue
+            // 2619, is delivered under a key with no file).
+            if (storageKey && storage.kind() === 'local' && !(await storage.stat(storageKey).catch(() => null))) {
+              logger.warn('Skipping photo in pre-zip', { photoId: photo.id, error: 'missing in storage' });
+              continue;
+            }
 
             // Resize to the gallery's standard resolution (#858) and/or
             // watermark. Returns null when neither applies, so an
@@ -401,23 +435,7 @@ class DownloadZipService {
             // from storage with nothing buffered.
             let rendered = null;
             try {
-              // Photo sales: before the checkout every
-              // photo of a priced gallery ships only as the watermarked
-              // low-quality preview; free photos and non-priced galleries
-              // keep the historical build unchanged. Videos have no preview
-              // tier and stay untouched.
-              let photoSettings = effectiveSettings;
-              if (isGalleryPriced(event) && !isVideo(photo)) {
-                photoSettings = await resolveForcedWatermarkSettingsForPhoto(event, photo);
-                const preview = await renderPreviewForDownload(photo, photoSettings);
-                // No preview means no photo: the original must never stand in.
-                if (!preview) throw new Error('No sales preview of this photo');
-                archive.append(preview.buffer, {
-                  name: finalName(previewDownloadName(archiveName, preview.extension)),
-                });
-                continue;
-              }
-              rendered = await renderPhotoForDownload(event, photo, standardBox, photoSettings);
+              rendered = await renderPhotoForDownload(event, photo, standardBox, effectiveSettings);
             } catch (err) {
               logger.warn('Skipping photo in pre-zip', { photoId: photo.id, error: err.message });
               continue;

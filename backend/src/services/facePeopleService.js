@@ -83,7 +83,7 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, fullVie
 
   // Cover faces, also scoped: the stored cover_face_id may point at a face in
   // a photo this audience cannot see. Pick the best VISIBLE face instead.
-  const covers = await applyVisibilityScope(
+  const rawCovers = await applyVisibilityScope(
     db('photo_faces')
       .modify(joinLivePhotos, 'photos.id', 'photo_faces.photo_id')
       .where('photo_faces.event_id', eventId)
@@ -104,8 +104,30 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, fullVie
       // admin manager was scaling an original-space box by a THUMBNAIL's
       // natural size and rendering the wrong region entirely.
       'photos.width as photo_width',
-      'photos.height as photo_height'
+      'photos.height as photo_height',
+      // An edited photo's preview shows the edit (issue 2619): the box is
+      // carried into the edited image below.
+      'photos.edit_applied_params', 'photos.edit_applied_width', 'photos.edit_applied_height', 'photos.edit_applied_rev'
     );
+  // Boxes in the image the avatar is cut from; a face an edit cropped away
+  // is no cover (the next best one is). For guests, nor is a face of which
+  // less than FACE_VISIBLE_SHARE is left, and such a face does not count
+  // its photo either (issue 2619): the person is not in the picture they
+  // see. The admin keeps counting every face.
+  const { faceBoxForGuests, FACE_VISIBLE_SHARE } = require('./faceFocalPoint');
+  const covers = [];
+  const shownPhotos = new Map();
+  for (const row of rawCovers) {
+    const box = faceBoxForGuests(row, { minShare: forAdmin ? 0 : FACE_VISIBLE_SHARE });
+    if (!box) continue;
+    covers.push({ ...row, box });
+    if (!shownPhotos.has(row.person_id)) shownPhotos.set(row.person_id, new Set());
+    shownPhotos.get(row.person_id).add(row.photo_id);
+  }
+  if (!forAdmin) {
+    countByPerson.clear();
+    for (const [personId, photoIds] of shownPhotos) countByPerson.set(personId, photoIds.size);
+  }
 
   // The photographer's explicit pick wins whenever this audience can see it
   // (#1096). Without this the stored cover_face_id was loaded and discarded —
@@ -146,9 +168,7 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, fullVie
         ? {
           face_id: cover.id,
           photo_id: cover.photo_id,
-          bbox: [cover.bbox_x, cover.bbox_y, cover.bbox_w, cover.bbox_h],
-          photo_width: cover.photo_width ?? null,
-          photo_height: cover.photo_height ?? null,
+          ...cover.box,
         }
         : null,
     };
@@ -179,6 +199,7 @@ async function getPersonIdsByPhoto(eventId, photoIds, { forAdmin = false } = {})
 
   const rows = await db('photo_faces')
     .join('event_people', 'event_people.id', 'photo_faces.person_id')
+    .modify(joinLivePhotos, 'photos.id', 'photo_faces.photo_id')
     .where('photo_faces.event_id', eventId)
     .whereIn('photo_faces.photo_id', photoIds)
     .whereNotNull('photo_faces.person_id')
@@ -187,10 +208,16 @@ async function getPersonIdsByPhoto(eventId, photoIds, { forAdmin = false } = {})
         q.where('event_people.is_hidden', false).where('event_people.is_ignored', false);
       }
     })
-    .select('photo_faces.photo_id', 'photo_faces.person_id');
+    .select('photo_faces.photo_id', 'photo_faces.person_id',
+      'photo_faces.bbox_x', 'photo_faces.bbox_y', 'photo_faces.bbox_w', 'photo_faces.bbox_h',
+      'photos.width as photo_width', 'photos.height as photo_height', 'photos.edit_applied_params');
 
+  // A face an applied edit's crop (nearly) removed does not put its person
+  // in the photo the gallery shows (issue 2619; faceShownToGuests).
+  const { faceShownToGuests } = require('./faceFocalPoint');
   const map = new Map();
   for (const row of rows) {
+    if (!faceShownToGuests(row)) continue;
     if (!map.has(row.photo_id)) map.set(row.photo_id, []);
     const list = map.get(row.photo_id);
     if (!list.includes(row.person_id)) list.push(row.person_id);

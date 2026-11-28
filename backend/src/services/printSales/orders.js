@@ -11,9 +11,14 @@ const work = require('../activeApplicationWork');
 const { formatBoolean } = require('../../utils/dbCompat');
 const { MAX_SOURCE_BYTES, MAX_ORDER_SOURCE_BYTES, MAX_IMAGE_BYTES, MAX_ORDER_ARTWORK_BYTES, MAX_PACK_BYTES, MAX_SHEET_BYTES,
   QUOTE_TTL_MS, preparationBudget, budgetOf } = require('./limits');
-const { isManagedOriginalKey, resolvePhotoStorageKey } = require('../photoResolver');
+const { isManagedOriginalKey, resolvePhotoStorageKey, deliveredKey } = require('../photoResolver');
 const now = () => new Date().toISOString();
-const fingerprint = p => V.hash({ id: p.id, path: p.path, sha: p.content_sha256 || null, filename: p.original_filename });
+// A photo edit (issue 2619) changes what is printed: the applied revision,
+// whose previews the buyer saw and cropped on (a save still pending is not
+// shown yet). Its number is part of the photo's identity, so a quotation is
+// refused once another revision is applied; absent for a photo never edited.
+const fingerprint = p => V.hash({ id: p.id, path: p.path, sha: p.content_sha256 || null, filename: p.original_filename,
+  ...(Number(p.edit_applied_rev) > 0 ? { edit: Number(p.edit_applied_rev) } : {}) });
 const ACTIVE = ['capturing', 'quoted', 'accepted'];
 
 async function read(storage, key, max = MAX_SOURCE_BYTES, options) {
@@ -67,6 +72,9 @@ function createService({ db, storage, sharp }) {
     const p = await wherePhotoProcessed(livePhotos(tx)).where({ id, event_id: eventId }).first();
     if (!p || isPhotoHiddenFromViewer(p, accessLevel) || p.media_type === 'video' || p.mime_type?.startsWith('video/'))
       throw new NotFoundError('Photograph');
+    // Withheld from guests while a crop or turn fails to render (issue
+    // 2619): not quoted, and an earlier quotation is not confirmed.
+    if (await require('../photoEdits').withheldFromGuests(p)) throw new ConflictError('This photograph is being updated; try again later');
     return p;
   }
   async function asset(orderId, kind, bytes, claim = null, extension = 'bin', options = {}) {
@@ -210,16 +218,21 @@ function createService({ db, storage, sharp }) {
     // Record the version, without transferring original image bytes in the request.
     for (const item of plan.items) {
       if (!sources.has(item.photoId)) {
-        const p = await photo(db, eventId, item.photoId, accessLevel), key = resolvePhotoStorageKey(event, p);
-        if (!key || !isManagedOriginalKey(key)) throw new AppError('Print ordering currently requires managed originals', 400);
+        // An edited photo is printed from the render of its applied
+        // revision, the image the customer saw and cropped.
+        const photoEdits = require('../photoEdits');
+        const row = await photo(db, eventId, item.photoId, accessLevel),
+          p = await photoEdits.deliveredPhoto(await photoEdits.renditionView(row)),
+          key = resolvePhotoStorageKey(event, p);
+        if (!key || !(isManagedOriginalKey(key) || deliveredKey(p))) throw new AppError('Print ordering currently requires managed originals', 400);
         const stat = await storage.stat(key);
         if (!stat || !Number.isSafeInteger(stat.size) || stat.size < 1 || stat.size > MAX_SOURCE_BYTES)
           throw new AppError('Original is missing or too large for print ordering', 400);
         sourceBytes += stat.size;
         if (sourceBytes > MAX_ORDER_SOURCE_BYTES) throw new AppError('Choose fewer photographs per order', 400);
         sources.set(item.photoId, { pending: { key, size: stat.size, mtime: String(stat.mtime),
-          etag: stat.etag ?? null, versionId: stat.versionId ?? null, contentHash: p.content_sha256 || null },
-        fingerprint: fingerprint(p), filename: p.source_filename || p.original_filename || p.filename });
+          etag: stat.etag ?? null, versionId: stat.versionId ?? null, contentHash: deliveredKey(p) ? null : p.content_sha256 || null },
+        fingerprint: fingerprint(row), filename: p.source_filename || p.original_filename || p.filename });
       }
       item.source = sources.get(item.photoId);
     }

@@ -20,6 +20,7 @@ const { resolveEventDownloadPolicy } = require('../utils/downloadResolutions');
 const { resolveHeroLogoVisible, originalNeedsPreview } = require('./galleryModel');
 const { heroAnchorQuery } = require('../utils/heroAnchor');
 const { focalPointOf, focalQuery } = require('../utils/focalPoint');
+const photoEdits = require('./photoEdits');
 const { applyFeedbackFilter } = require('./galleryPhotoQuery');
 const { isPinEntryEnabled } = require('./galleryPinEntryService');
 const { scopeToViewer } = require('./selectionSubmissions');
@@ -220,6 +221,12 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   const total = Number(countRow.total);
   if (limit) photosQuery.limit(limit).offset((page - 1) * limit);
   const photos = hiddenForGuest ? [] : await photosQuery;
+  // Photos withheld while a crop or turn fails to render (issue 2619): their
+  // blurred placeholder is of the picture the crop was meant to change.
+  const withheldIds = new Set();
+  for (const photo of photos) {
+    if (photo.edit_failed_rev != null && await photoEdits.withheldFromGuests(photo)) withheldIds.add(photo.id);
+  }
 
   // Then get comment counts separately
   const commentCounts = await db('photo_feedback')
@@ -820,10 +827,13 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // same-origin). A slideshow session's images name its own cookie the
       // same way (issue 2438): it lives apart from the guest cookie, and an
       // <img> has no other way to say which one it means.
+      // An edited photo (issue 2619) names its edit revision in every image
+      // URL: the renditions are rebuilt under keys the routes cache by URL.
       const imgQuery = [
         wmVersion,
         adminPreview ? 'admin_preview=1' : '',
         accessLevel === 'slideshow' ? `${SLIDESHOW_QUERY_PARAM}=1` : '',
+        photoEdits.editQuery(photo),
       ].filter(Boolean).join('&');
       const wmQuery = imgQuery ? `?${imgQuery}` : '';
       // The thumbnail route caches for half an hour and a rebuilt poster
@@ -946,10 +956,10 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // Timeline layout's parseISO() crashes on those (#485 class).
         uploaded_at: toIso(photo.uploaded_at),
         // Image dimensions for layout calculations
-        width: photo.width || null,
-        height: photo.height || null,
+        // The edited size for an edited photo (issue 2619).
+        ...photoEdits.deliveredDimensions(photo),
         // Blurred tile placeholder (issue 1733): a base64 ThumbHash, or null.
-        thumb_hash: photo.thumb_hash || null,
+        thumb_hash: withheldIds.has(photo.id) ? null : photo.thumb_hash || null,
         // Where a crop keeps the photo's subject (issue 2377), as fractions
         // of the image; null: the centre. The layouts apply it as CSS
         // object-position to any rendition (utils/focalPoint says why the

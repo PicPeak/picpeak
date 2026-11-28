@@ -174,6 +174,8 @@ async function deletePhotoForGood(event, photo, { strict = false } = {}) {
   await imageProcessor.deletePreviewTiers(photo);
   await imageProcessor.deleteThumbnailTiers(photo);
   if (photo.watermark_path) await require('./watermarkService').deleteWatermarkFile(photo.watermark_path);
+  // The edited render (issue 2619); the edit itself goes with the row.
+  await require('./photoEdits').deleteEditedRender(photo);
 
   // Face data (#1074): the FK cascade is inert on SQLite, and cannot fix up
   // event_people counts anyway. See faceProcessor.purgePhotoFaces.

@@ -25,7 +25,7 @@ const resources = [
   ['./webhookDeliveryWorker', 'stopWebhookDeliveryWorker', 'startWebhookDeliveryWorker'], ['./s3AutoImporter', 'stopS3AutoImporter', 'startS3AutoImporter'],
   ['./backupService', 'stopBackupService', 'startBackupService'], ['./databaseBackup', 'stopScheduledBackups', 'startScheduledBackups'],
   ['./backupVerificationService', 'stopVerificationSchedule', 'startVerificationSchedule'],
-  ['./backgroundProcessor', 'stop', 'start'], ['./faceQueue', 'stop', 'start'], ['./tagQueue', 'stop', 'start'], ['./videoRenditionQueue', 'stop', 'start'], ['./videoHlsQueue', 'stop', 'start'], ['./renditionRefresh', 'stop', 'start'], ['./focalPointBackfill', 'stop', 'start'],
+  ['./backgroundProcessor', 'stop', 'start'], ['./faceQueue', 'stop', 'start'], ['./tagQueue', 'stop', 'start'], ['./videoRenditionQueue', 'stop', 'start'], ['./videoHlsQueue', 'stop', 'start'], ['./renditionRefresh', 'stop', 'start'], ['./focalPointBackfill', 'stop', 'start'], ['./photoEdits', 'stop', 'start'],
   ['./mediaProcessService', 'stop', 'start'], ['./nativeProcessRunner', 'stop', 'start'],
   ['./imageProcessor', 'stopVideoThumbnailQueue', 'startVideoThumbnailQueue'],
   ['../utils/authSecurity', 'stopCleanupJob', 'initializeCleanupJob'], ['../utils/tokenRevocation', 'stopRevocationCleanup'],

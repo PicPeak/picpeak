@@ -417,6 +417,10 @@ async function processNewPhoto(filePath) {
     } catch (err) {
       logger.warn(`Could not queue ${relativePath} for tagging: ${err.message}`);
     }
+    // A RAW's default develop when the studio turned it on (issue 2619).
+    await require('./photoEdits').afterUpload(photoId).catch((err) => {
+      logger.warn(`Could not queue ${relativePath} for its RAW develop: ${err.message}`);
+    });
   }
 
   // Webhook (#327) — auto-import path. Only fires in local mode since

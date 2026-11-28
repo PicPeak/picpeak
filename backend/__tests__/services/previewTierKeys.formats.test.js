@@ -71,7 +71,11 @@ describe('preview tier keys follow the encoded extension', () => {
     if (/\.png$/i.test(name)) await pipeline.png().toFile(abs);
     else if (/\.webp$/i.test(name)) await pipeline.webp().toFile(abs);
     else await pipeline.jpeg().toFile(abs);
-    return { id, event_id: EVENT.id, source_origin: 'managed', path: rel, filename: name };
+    // With its edit columns (issue 2619), none: a row without them is read for them.
+    return {
+      id, event_id: EVENT.id, source_origin: 'managed', path: rel, filename: name,
+      edit_params: null, edit_rev: 0, edit_applied_rev: 0, edit_render_path: null, edit_width: null, edit_height: null,
+    };
   }
 
   it.each([

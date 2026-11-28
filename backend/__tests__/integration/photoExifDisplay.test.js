@@ -233,6 +233,53 @@ describe('camera details (issue 1733, D1)', () => {
     expect(await stored({ filename: 'bucket.jpg' })).toEqual(expected);
   }, 30000);
 
+  it('the paths that complete a row without the worker run the upload completion hook (RAW auto develop, issue 2619)', async () => {
+    const photoEdits = require('../../src/services/photoEdits');
+    const hook = jest.spyOn(photoEdits, 'afterUpload').mockResolvedValue(undefined);
+    try {
+      const { event } = await makeEvent();
+      const dir = path.join(process.env.STORAGE_PATH, 'events', 'active', event.slug);
+      const shot = await sharp({ create: { width: 32, height: 24, channels: 3, background: { r: 10, g: 120, b: 200 } } }).jpeg().toBuffer();
+      const idOf = async (where) => (await db('photos').where({ event_id: event.id, ...where }).first()).id;
+
+      const { processUploadedPhotos } = require('../../src/services/photoProcessor');
+      const temp = path.join(process.env.STORAGE_PATH, 'chunked-hook.jpg');
+      await fs.promises.writeFile(temp, shot);
+      mockThumbnail.skip = true;
+      let uploaded;
+      try {
+        [uploaded] = await processUploadedPhotos([{ path: temp, originalname: 'chunked.jpg', mimetype: 'image/jpeg', size: shot.length }], event.id);
+      } finally {
+        mockThumbnail.skip = false;
+      }
+      expect(hook).toHaveBeenCalledWith(uploaded.id);
+
+      const { generateApiToken } = require('../../src/middleware/apiTokenAuth');
+      const owner = await db('admin_users').where({ username: 'exif-admin' }).first();
+      const { plaintext, hashed } = generateApiToken();
+      await db('api_tokens').insert({ name: 'hook-token', hashed_token: hashed, scopes: 'admin', created_by: owner.id, created_at: new Date().toISOString() });
+      const v1 = await request(app).post(`/api/v1/events/${event.id}/photos`).set('Authorization', `Bearer ${plaintext}`).attach('photo', shot, 'v1hook.jpg');
+      expect(v1.status).toBe(201);
+      expect(hook).toHaveBeenCalledWith(await idOf({ original_filename: 'v1hook.jpg' }));
+
+      const { startFileWatcher, stopFileWatcher } = require('../../src/services/fileWatcher');
+      await fs.promises.writeFile(path.join(dir, 'watchedhook.jpg'), shot);
+      startFileWatcher();
+      await mockWatcherHandlers.add(path.join(dir, 'watchedhook.jpg'));
+      await stopFileWatcher();
+      expect(hook).toHaveBeenCalledWith(await idOf({ filename: 'watchedhook.jpg' }));
+
+      const { processEvent } = require('../../src/services/s3AutoImporter').__test;
+      await fs.promises.writeFile(path.join(dir, 'buckethook.jpg'), shot);
+      const bucket = { list: async () => [{ key: `events/active/${event.slug}/buckethook.jpg`, size: shot.length }] };
+      await processEvent(event, bucket);
+      await processEvent(event, bucket);
+      expect(hook).toHaveBeenCalledWith(await idOf({ filename: 'buckethook.jpg' }));
+    } finally {
+      hook.mockRestore();
+    }
+  }, 30000);
+
   it('backfills existing photos once and does not read them again', async () => {
     await db('photos').del();
     const { event } = await makeEvent();

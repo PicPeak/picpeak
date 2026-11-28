@@ -1,6 +1,7 @@
 const express = require('express');
 const { db, logActivity } = require('../../database/db');
 const { originalAssetDenial } = require('../../services/galleryAssetPolicy');
+const photoEdits = require('../../services/photoEdits');
 const archiver = require('archiver');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
 const { parsePositiveInt32 } = require('../../utils/parsers');
@@ -189,6 +190,16 @@ function notifySinglePhotoDownload(event, req) {
   logActivity('gallery_downloaded', { scope: 'single' }, event.id, galleryActor(req));
 }
 
+// Edited photos (issue 2619) go into an archive as their edited render, named
+// and typed as the JPEG it is (namedAsDelivered for the names worked out up
+// front). The render is drawn with its entry, behind the pacer, so a missing
+// one never holds back the archive's first bytes. One that cannot be
+// rendered is skipped by the archive loop like any other unreadable photo
+// (deliveredPhoto's unavailableOnFailure), never shipped as its original.
+function deliveredPhoto(row) {
+  return photoEdits.deliveredPhoto(row, { unavailableOnFailure: true });
+}
+
 router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, resolveGuest, guestDownloadGate, async (req, res) => {
   try {
     const { photoId } = req.params;
@@ -198,7 +209,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     if (denial) return res.status(403).json(denial);
 
     // Not one the gallery does not show yet (still processing, or failed).
-    const photo = await wherePhotoProcessed(livePhotos(db))
+    let photo = await wherePhotoProcessed(livePhotos(db))
       .where({ id: photoId, event_id: req.event.id })
       .first();
 
@@ -262,6 +273,9 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       });
       return res.send(preview.buffer);
     }
+
+    // An edited photo (issue 2619) downloads as its edited render.
+    photo = await photoEdits.deliveredPhoto(photo, { interactive: true, headOnly: req.method === 'HEAD' });
 
     // A HEAD is a metadata probe, not a download. Answering it below the
     // counters recorded every probe as a real download, and answering it below
@@ -909,7 +923,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // #493: resolve a unique display filename per photo up-front so collisions
     // get a deterministic `_1` suffix before the entries hit the archive.
     const useOriginalBulk = await getUseOriginalFilenames();
-    const bulkEntryNames = getZipEntryNames(photos, useOriginalBulk);
+    const bulkEntryNames = getZipEntryNames(photos.map(photoEdits.namedAsDelivered), useOriginalBulk);
     // A converted entry takes the new format's extension, which can give it
     // the name of another entry: uniquify the final names as they ship.
     const bulkFinalNames = new Map();
@@ -923,28 +937,13 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       if (cancelled) break;
       // Render the next entry only once archiver has written the earlier ones.
       if (!await pacer.room()) break;
-      const photo = photos[i];
-      const storageKey = resolvePhotoStorageKey(req.event, photo);
+      // The row as listed: a preview shows its applied revision. Only a
+      // full-size entry is the edit's render (issue 2619), resolved below.
+      let photo = photos[i];
       const entryName = bulkEntryNames[i];
       const archiveName = zipEntryPath(photo, entryName, hasMultipleTypes);
 
       try {
-        // Verify the source exists BEFORE appending — but only for local
-        // sources: fs.createReadStream is lazy, so its error fires outside
-        // this try/catch and the archive 'error' handler then kills the
-        // whole response instead of skipping one photo (#895 review). S3's
-        // get() awaits GetObject and rejects right here on a missing key,
-        // so a preflight HEAD per entry would just be a redundant serial
-        // round trip (500-photo zip = 500 extra HEADs).
-        if (storageKey && storage.kind() === 'local') {
-          const srcStat = await storage.stat(storageKey);
-          if (!srcStat) {
-            throw new Error(`Photo missing in storage: ${storageKey}`);
-          }
-        } else if (!storageKey && !fs.existsSync(resolvePhotoFilePath(req.event, photo))) {
-          throw new Error('Photo file missing on disk');
-        }
-
         if (previewOnly) {
           const preview = await renderPreviewForDownload(photo, effectiveSettings);
           if (!preview) throw new Error('No preview-size copy of this photo');
@@ -970,6 +969,24 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
           appendedIds.push(photo.id);
           releaseAll.appended(photo.id);
           continue;
+        }
+
+        photo = await deliveredPhoto(photo);
+        const storageKey = resolvePhotoStorageKey(req.event, photo);
+        // Verify the source exists BEFORE appending — but only for local
+        // sources: fs.createReadStream is lazy, so its error fires outside
+        // this try/catch and the archive 'error' handler then kills the
+        // whole response instead of skipping one photo (#895 review). S3's
+        // get() awaits GetObject and rejects right here on a missing key,
+        // so a preflight HEAD per entry would just be a redundant serial
+        // round trip (500-photo zip = 500 extra HEADs).
+        if (storageKey && storage.kind() === 'local') {
+          const srcStat = await storage.stat(storageKey);
+          if (!srcStat) {
+            throw new Error(`Photo missing in storage: ${storageKey}`);
+          }
+        } else if (!storageKey && !fs.existsSync(resolvePhotoFilePath(req.event, photo))) {
+          throw new Error('Photo file missing on disk');
         }
 
         // Resize to the gallery's standard resolution (#858) and/or watermark.
@@ -1151,7 +1168,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     const selectedStorage = getStorage();
     // #493: same display-name resolution as bulk download, with dedup.
     const useOriginalSelected = await getUseOriginalFilenames();
-    const selectedEntryNames = getZipEntryNames(photos, useOriginalSelected);
+    const selectedEntryNames = getZipEntryNames(photos.map(photoEdits.namedAsDelivered), useOriginalSelected);
     // Final names uniquified as they ship, as in download-all.
     const selectedFinalNames = new Map();
     const selectedName = (name) => uniquifyZipNames([name], selectedFinalNames)[0];
@@ -1161,23 +1178,11 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       // A cancelled download stops rendering; nothing appended now ships.
       if (selectedCancelled) break;
       if (!await pacer.room()) break;
-      const photo = photos[i];
+      // The row as listed: a preview shows its applied revision. Only a
+      // full-size entry is the edit's render (issue 2619), resolved below.
+      let photo = photos[i];
       const name = selectedEntryNames[i] || `photo-${photo.id}.jpg`;
-      const storageKey = resolvePhotoStorageKey(req.event, photo);
       try {
-        // Same pre-append source check as download-all (#895 review),
-        // local backend only: a lazy fs stream's async error would kill
-        // the response instead of skipping the photo; S3's get() rejects
-        // at the await below, so no redundant per-entry HEAD there.
-        if (storageKey && selectedStorage.kind() === 'local') {
-          const srcStat = await selectedStorage.stat(storageKey);
-          if (!srcStat) {
-            throw new Error(`Photo missing in storage: ${storageKey}`);
-          }
-        } else if (!storageKey && !fs.existsSync(resolvePhotoFilePath(req.event, photo))) {
-          throw new Error('Photo file missing on disk');
-        }
-
         if (selectedPreviewOnly) {
           const preview = await renderPreviewForDownload(photo, effectiveSettings);
           if (!preview) throw new Error('No preview-size copy of this photo');
@@ -1202,6 +1207,21 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
           appendedIds.push(photo.id);
           releaseSelected.appended(photo.id);
           continue;
+        }
+
+        photo = await deliveredPhoto(photo);
+        const storageKey = resolvePhotoStorageKey(req.event, photo);
+        // Same pre-append source check as download-all (#895 review),
+        // local backend only: a lazy fs stream's async error would kill
+        // the response instead of skipping the photo; S3's get() rejects
+        // at the await below, so no redundant per-entry HEAD there.
+        if (storageKey && selectedStorage.kind() === 'local') {
+          const srcStat = await selectedStorage.stat(storageKey);
+          if (!srcStat) {
+            throw new Error(`Photo missing in storage: ${storageKey}`);
+          }
+        } else if (!storageKey && !fs.existsSync(resolvePhotoFilePath(req.event, photo))) {
+          throw new Error('Photo file missing on disk');
         }
 
         // Resize (#858) and/or watermark. renderPhotoForDownload returns null

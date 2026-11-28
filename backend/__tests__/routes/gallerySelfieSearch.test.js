@@ -83,6 +83,12 @@ describe('selfie search (issue 2355)', () => {
       // reclustered.
       belowFloor: [{}, vec({ 0: 1 }), { bbox_w: 20, bbox_h: 20 }],
       otherModel: [{}, vec({ 0: 1 }), { model_version: 'other@2' }],
+      // An applied edit (issue 2619) cropped to the right half of a 600 x 400
+      // photo: the face at x 0..50 is not in the picture guests see.
+      croppedAway: [{
+        width: 600, height: 400, edit_params: '{"v":1,"crop":{"x":0.5,"y":0,"w":0.5,"h":1}}', edit_rev: 1, edit_applied_rev: 1,
+        edit_applied_params: '{"v":1,"crop":{"x":0.5,"y":0,"w":0.5,"h":1}}',
+      }, vec({ 0: 1 })],
     };
     for (const [name, [photo, embedding, extra = {}]] of Object.entries(fixtures)) {
       ids[name] = unwrap(await db('photos').insert({
@@ -133,6 +139,11 @@ describe('selfie search (issue 2355)', () => {
     expect(res.status).toBe(200);
     expect(res.headers['cache-control']).toMatch(/no-store/);
     expect(res.body).toEqual({ photo_ids: [ids.exact, ids.close] });
+  });
+
+  it('leaves out a photo whose applied crop removed the matching face (issue 2619)', async () => {
+    const res = await search();
+    expect(res.body.photo_ids).not.toContain(ids.croppedAway);
   });
 
   it('sends the sidecar a normalised JPEG, not the upload itself', async () => {

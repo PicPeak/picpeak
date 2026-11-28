@@ -399,6 +399,10 @@ router.post('/:slug/photos/:photoId/feedback',
         if (!annotation) {
           return res.status(400).json({ error: 'Invalid annotation', code: 'INVALID_ANNOTATION' });
         }
+        const drawnOn = req.body.annotation_rev;
+        if (drawnOn !== undefined && drawnOn !== null && !(Number.isInteger(drawnOn) && drawnOn >= 0)) {
+          return res.status(400).json({ error: 'Invalid annotation revision', code: 'INVALID_ANNOTATION' });
+        }
       }
 
       if (!(await viewablePhoto(req, photoId))) {
@@ -429,6 +433,11 @@ router.post('/:slug/photos/:photoId/feedback',
         color_label: req.body.color_label,
         decision: req.body.decision,
         annotation,
+        // The edit revision of the picture the drawing was made on (issue
+        // 2619): the e= of the guest's image URLs. Absent from an older
+        // client, which draws on the revision applied now.
+        annotation_rev: annotation && req.body.annotation_rev !== undefined && req.body.annotation_rev !== null
+          ? Number(req.body.annotation_rev) : undefined,
         favorite_list_id: favoriteListId,
         // The cap counts the picks this viewer can see (issue 2356).
         viewer: viewerOf(req),
@@ -496,6 +505,11 @@ router.post('/:slug/photos/:photoId/feedback',
       // Not one of this guest's lists in this gallery, or deleted meanwhile.
       if (result && result.list_missing) {
         return res.status(404).json({ error: 'Favorite list not found', code: 'FAVORITE_LIST_NOT_FOUND' });
+      }
+
+      // Drawn on a picture an edit has replaced since (issue 2619).
+      if (result && result.image_changed) {
+        return res.status(409).json({ error: 'The photo has changed since it was shown; reload it to draw on it', code: 'IMAGE_CHANGED' });
       }
 
       // Handed in: nothing was written.

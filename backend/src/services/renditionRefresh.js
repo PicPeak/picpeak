@@ -77,6 +77,8 @@ const PHOTO_COLUMNS = [
   'rendition_version',
   // A thumbnail tier's key names the focal point (issue 2377).
   'focal_x', 'focal_y', 'focal_source',
+  // And the edit revision (issue 2619).
+  'edit_params', 'edit_rev', 'edit_applied_rev', 'edit_render_path', 'edit_width', 'edit_height',
 ];
 
 const needsRefresh = (photo) => photo != null && photo.rendition_version != null
@@ -163,6 +165,12 @@ function createReferenceIndex() {
  */
 async function dropSuperseded(photo, column, oldKey, newKey, references) {
   if (!oldKey || !newKey || sameStorageKey(oldKey, newKey)) return;
+  // Staged renditions (photoEdits.applyPhoto): the old one is live until the
+  // new ones are recorded, and goes then.
+  if (photo.edit_stage) {
+    photo.edit_stage.drops.push([column, oldKey, newKey]);
+    return;
+  }
   if (!isPresentationRenditionKey(oldKey, RENDITION_KIND[column])) return;
   try {
     if (!(await references.moved(photo.id, oldKey, newKey))) return;
@@ -176,6 +184,8 @@ async function dropSuperseded(photo, column, oldKey, newKey, references) {
 /**
  * Rebuild the stored renditions of one photo. True when every rendition it
  * had was regenerated (or it had none); false leaves the row for a later pass.
+ * A row with edit_stage (photoEdits.applyPhoto) gets its renditions staged:
+ * built and collected there, not recorded, and the old ones kept.
  */
 async function refreshPhoto(photo, references = createReferenceIndex()) {
   // A video's thumbnail is an ffmpeg poster frame; it never carried the
@@ -504,6 +514,8 @@ module.exports = {
   JOB_NAME,
   needsRefresh,
   refreshPhoto,
+  createReferenceIndex,
+  dropSuperseded,
   refreshCover,
   runPass,
   invalidateRestoredRenditions,

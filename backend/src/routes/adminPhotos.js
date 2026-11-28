@@ -41,6 +41,7 @@ const { captureDateOrderSql } = require('../utils/captureDateSql');
 const { toIso, toServerWallClock, cameraWallClock } = require('../utils/dateNormalize');
 const { parseStoredExif } = require('../services/photoExif');
 const { originalNeedsPreview } = require('../utils/rawFormats');
+const photoEdits = require('../services/photoEdits');
 const { processUploadedPhotos } = require('../services/photoProcessor');
 const chunkedUpload = require('../services/chunkedUploadService');
 const { requireCapability } = require('../middleware/requireCapability');
@@ -1860,13 +1861,15 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
   try {
     const { eventId, photoId } = req.params;
     
-    const photo = await livePhotos(db)
+    const row = await livePhotos(db)
       .where({ id: photoId, event_id: eventId })
       .first();
     
-    if (!photo) {
+    if (!row) {
       return res.status(404).json({ error: 'Photo not found' });
     }
+    // The original, always, unless the edit (issue 2619) is asked for.
+    const photo = req.query.edited === '1' ? await photoEdits.deliveredPhoto(row, { interactive: true, headOnly: req.method === 'HEAD' }) : row;
     
     const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../services/photoResolver');
     const event = await db('events').where('id', eventId).first();
@@ -2134,6 +2137,12 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
       req.admin.id,
       photos.map(p => p.id),
     );
+
+    // What the viewer shows of an edited photo (issue 2619): its applied
+    // revision while a newer save is pending, as guests see it and as the
+    // annotations on it are placed. The row comes with every column, so this
+    // reads nothing more.
+    const shownRows = new Map(await Promise.all(photos.map(async (p) => [p.id, await photoEdits.renditionView(p)])));
     
     res.json({
       photos: photos.map(photo => ({
@@ -2145,9 +2154,13 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         // this URL is only ever an <img>/<video> src admin-side (downloads use
         // the /download route), and a browser cannot decode the original, so
         // the admin viewer showed nothing but a broken frame for those.
-        url: originalNeedsPreview(photo)
-          ? `/admin/photos/${eventId}/preview/${photo.id}`
-          : `/admin/photos/${eventId}/photo/${photo.id}`,
+        // An edited photo (issue 2619) is shown as its edit, a JPEG, under a
+        // URL naming its revision. The preview of a photo that has had an
+        // edit names the applied revision, a reset too: the preview is cut
+        // again when the revision lands, and the URL changes with it.
+        url: originalNeedsPreview(photo) && !photoEdits.isEdited(shownRows.get(photo.id))
+          ? `/admin/photos/${eventId}/preview/${photo.id}${photoEdits.editQuery(photo) ? `?${photoEdits.editQuery(photo)}` : ''}`
+          : `/admin/photos/${eventId}/photo/${photo.id}${photoEdits.isEdited(shownRows.get(photo.id)) ? `?e=${shownRows.get(photo.id).edit_rev}` : ''}`,
         // Always expose a thumbnail URL; backend will generate on demand if
         // missing. Versioned by adminThumbnailUrl, see there.
         thumbnail_url: adminThumbnailUrl(eventId, photo),
@@ -2191,8 +2204,15 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         // keeps playing (or not) as before.
         web_status: photo.web_status || null,
         web_error: photo.web_error || null,
-        width: photo.width || null,
-        height: photo.height || null,
+        // The edited size for an edited photo (issue 2619), as guests see it.
+        ...photoEdits.deliveredDimensions(photo),
+        // The photo editor (issue 2619): whether the photo has an edit, and
+        // whether its renditions are rebuilt for the latest save.
+        edited: photoEdits.isEdited(photo),
+        edit_rev: Number(photo.edit_rev) || 0,
+        edit_applied_rev: Number(photo.edit_applied_rev) || 0,
+        // Rebuilding them failed for that save (retried later, or on request).
+        edit_failed: photoEdits.hasFailed(photo),
         // Blurred tile placeholder (issue 1733): a base64 ThumbHash, or null.
         thumb_hash: photo.thumb_hash || null,
         // Where crops keep the subject (issue 2377), and whether an admin
@@ -2260,13 +2280,24 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
   try {
     const { eventId, photoId } = req.params;
 
-    const photo = await livePhotos(db)
+    const row = await livePhotos(db)
       .where({ id: photoId, event_id: eventId })
       .first();
 
-    if (!photo) {
+    if (!row) {
       return res.status(404).json({ error: 'Photo not found' });
     }
+    // An edited photo (issue 2619) shows its edit, as guests see it, unless
+    // the original is asked for: the applied revision while a newer save is
+    // pending, the picture the listing's size and the annotations drawn on
+    // it describe. The Edited download (/download?edited=1) gets the saved one.
+    const shown = req.query.original === '1' ? row : await photoEdits.renditionView(row);
+    const photo = req.query.original === '1' ? row : await photoEdits.deliveredPhoto(shown, { interactive: true, headOnly: req.method === 'HEAD' });
+    // Kept by the browser only under the URL the listing gives for what is
+    // served: the edit's revision for an edited photo, none for the
+    // original. A URL naming another revision is answered, never kept.
+    const cacheable = req.query.original === '1'
+      || String(typeof req.query.e === 'string' ? req.query.e : '') === (photoEdits.isEdited(shown) ? String(shown.edit_rev) : '');
 
     // Photos still in async processing don't have all metadata in the DB
     // yet; serving the original is fine, but downstream consumers (admin
@@ -2287,7 +2318,7 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
     const contentType = resolvePhotoContentType(photo);
     const stageFileHeaders = () => {
       res.setHeader('Content-Type', contentType);
-      res.setHeader('Cache-Control', 'private, max-age=3600');
+      res.setHeader('Cache-Control', cacheable ? 'private, max-age=3600' : 'no-store');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     };
 
@@ -2432,7 +2463,9 @@ router.get('/:eventId/preview/:photoId', adminAuth, requirePermission('photos.vi
       context: `admin preview for photo ${photoId}`,
       stageHeaders: (stat) => {
         res.setHeader('Content-Type', 'image/jpeg');
-        res.setHeader('Cache-Control', 'private, max-age=3600');
+        // Kept only under the applied edit revision it was cut for (issue
+        // 2619; the listing names it): a reset lands as a new URL.
+        res.setHeader('Cache-Control', photoEdits.editVersionStale(photo, req.query.e) ? 'no-store' : 'private, max-age=3600');
         res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
         res.setHeader('Content-Length', stat.size);
       },

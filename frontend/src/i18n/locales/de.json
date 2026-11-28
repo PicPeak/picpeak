@@ -4502,6 +4502,10 @@
         "title": "Kundengeschenke",
         "description": "Schlägt Geschenke zu Kundenjubiläen vor, führt den Geschenkbestand und hält fest, wer was erhalten hat. Jedes Geschenk bestätigt ein Admin.",
         "sidebar": "Geschenke"
+      },
+      "photoEditor": {
+        "title": "Fotobearbeitung",
+        "description": "Schnelle, nicht-destruktive Korrekturen im Fotobetrachter: Zuschnitt, Ausrichten, Belichtung, Weißabgleich und Farbe, mit Vorgaben und dem Übertragen von Einstellungen auf andere Fotos. Gäste sehen und laden das bearbeitete Foto; das Original bleibt unverändert und kann von Admins weiterhin heruntergeladen werden. Ausschalten blendet die Bearbeitung aus; gespeicherte Bearbeitungen bleiben wirksam."
       }
     },
     "customerSurface": {
@@ -7359,7 +7363,10 @@
       "clear": "Alles löschen",
       "done": "Fertig",
       "limitReached": "Eine Zeichnung kann höchstens {{max}} Striche enthalten.",
-      "overlayLabel": "Zeichnung auf dem Foto"
+      "overlayLabel": "Zeichnung auf dem Foto",
+      "outsideCrop": "Ein Teil der Zeichnung liegt außerhalb des aktuellen Zuschnitts.",
+      "imageChanged": "Das Foto hat sich geändert, seit du darauf gezeichnet hast. Lade die Galerie neu und zeichne erneut.",
+      "photoUpdated": "Das Foto wurde aktualisiert. Bitte zeichne erneut."
     }
   },
   "filter": {
@@ -13077,5 +13084,152 @@
     "reachedOn": "Erreicht am {{date}}",
     "lowStock_one": "{{count}} Geschenk fällig, {{stock}} auf Lager.",
     "lowStock_other": "{{count}} Geschenke fällig, {{stock}} auf Lager."
+  },
+  "photoEditor": {
+    "title": "Foto bearbeiten",
+    "panel": "Einstellungen",
+    "loading": "Foto wird geladen …",
+    "loadError": "Das Foto konnte nicht zum Bearbeiten geladen werden.",
+    "position": "{{current}} von {{total}}",
+    "unsaved": "Nicht gespeichert",
+    "gone": "Dieses Foto ist nicht mehr in der Liste; speichere oder schließe, um deine Änderungen zu verwerfen.",
+    "detailNoPreview": "Dieser Browser zeigt Klarheit und Schärfe erst im gespeicherten Foto.",
+    "actions": {
+      "auto": "Automatisch",
+      "beforeAfter": "Vorher / nachher",
+      "close": "Schließen",
+      "copy": "Einstellungen kopieren",
+      "copyTo": "Auf Fotos übertragen …",
+      "next": "Nächstes Foto",
+      "paste": "Einstellungen einfügen",
+      "previous": "Vorheriges Foto",
+      "reset": "Auf Original zurücksetzen",
+      "save": "Speichern",
+      "shortcuts": "Tastenkürzel"
+    },
+    "batch": {
+      "title": "Einstellungen auf Fotos übertragen",
+      "description": "Die gewählten Einstellungen ersetzen diese Teile der Bearbeitung jedes Fotos. Die Vorschauen werden im Hintergrund aktualisiert.",
+      "tone": "Licht, Farbe und Details",
+      "geometry": "Zuschnitt und Drehung",
+      "geometryNote": "Der Zuschnitt wird als Anteil jedes Fotos übertragen; Fotos in anderem Format werden daher anders beschnitten.",
+      "parts": "Zu übertragende Einstellungen",
+      "photos": "Fotos",
+      "selectAll": "Alle auswählen",
+      "selectNone": "Keine auswählen",
+      "selected_one": "{{count}} ausgewählt",
+      "selected_other": "{{count}} ausgewählt",
+      "submit_one": "Auf {{count}} Foto übertragen",
+      "submit_other": "Auf {{count}} Fotos übertragen",
+      "queued_one": "Einstellungen auf {{count}} Foto übertragen",
+      "queued_other": "Einstellungen auf {{count}} Fotos übertragen",
+      "progress": "Wird übertragen … {{done}} von {{total}}"
+    },
+    "canvas": {
+      "before": "Original",
+      "after": "Bearbeitete Vorschau"
+    },
+    "close": {
+      "title": "Bearbeitung speichern?",
+      "message": "Dieses Foto hat noch nicht gespeicherte Änderungen.",
+      "save": "Speichern",
+      "discard": "Verwerfen"
+    },
+    "crop": {
+      "aspect": "Seitenverhältnis",
+      "clear": "Zuschnitt entfernen",
+      "done": "Fertig",
+      "start": "Zuschneiden",
+      "flipH": "Horizontal spiegeln",
+      "flipV": "Vertikal spiegeln",
+      "frame": "Zuschnittrahmen",
+      "free": "Frei",
+      "original": "Original",
+      "rotateLeft": "Nach links drehen",
+      "rotateRight": "Nach rechts drehen"
+    },
+    "presets": {
+      "confirmDelete": "Die Vorgabe „{{name}}“ löschen?",
+      "delete": "{{name}} löschen",
+      "empty": "Noch keine Vorgaben. Speichere die aktuellen Einstellungen als Vorgabe.",
+      "namePlaceholder": "Name der Vorgabe",
+      "save": "Speichern",
+      "saved": "Vorgabe gespeichert"
+    },
+    "sections": {
+      "colour": "Farbe",
+      "crop": "Zuschneiden und drehen",
+      "detail": "Details",
+      "light": "Licht",
+      "presets": "Vorgaben",
+      "raw": "Kamera-RAW"
+    },
+    "shortcuts": {
+      "previous": "Vorheriges / nächstes Foto",
+      "next": "Nächstes Foto",
+      "beforeAfter": "Vorher / nachher",
+      "crop": "Zuschneiden",
+      "rotateLeft": "Nach links / rechts drehen",
+      "rotateRight": "Nach rechts drehen",
+      "auto": "Automatische Tonwerte",
+      "reset": "Auf Original zurücksetzen",
+      "copy": "Einstellungen kopieren",
+      "paste": "Einstellungen einfügen",
+      "save": "Speichern",
+      "close": "Schließen",
+      "shortcuts": "Tastenkürzel anzeigen"
+    },
+    "sliders": {
+      "exposure": "Belichtung",
+      "contrast": "Kontrast",
+      "highlights": "Lichter",
+      "shadows": "Tiefen",
+      "whites": "Weiß",
+      "blacks": "Schwarz",
+      "temperature": "Farbtemperatur",
+      "tint": "Tönung",
+      "vibrance": "Dynamik",
+      "saturation": "Sättigung",
+      "clarity": "Klarheit",
+      "sharpen": "Schärfen",
+      "bw": "Schwarzweiß",
+      "straighten": "Ausrichten",
+      "nr": "Rauschreduzierung"
+    },
+    "status": {
+      "idle": "Gäste sehen die gespeicherte Bearbeitung; die Originaldatei bleibt unverändert.",
+      "pending_one": "Vorschau und Downloads von {{count}} Foto werden aktualisiert …",
+      "pending_other": "Vorschauen und Downloads von {{count}} Fotos werden aktualisiert …",
+      "failed_one": "{{count}} Foto konnte nicht aktualisiert werden.",
+      "failed_other": "{{count}} Fotos konnten nicht aktualisiert werden.",
+      "retry": "Erneut versuchen",
+      "backend": {
+        "webgl2": "Vorschau: Grafikkarte (WebGL 2)",
+        "webgl": "Vorschau: Grafikkarte (WebGL)",
+        "canvas": "Vorschau: Prozessor (kein WebGL)"
+      }
+    },
+    "toast": {
+      "copied": "Einstellungen kopiert",
+      "pasted": "Licht, Farbe und Details eingefügt",
+      "reset": "Original wiederhergestellt",
+      "saved": "Bearbeitung gespeichert",
+      "saveFailed": "Die Bearbeitung konnte nicht gespeichert werden"
+    },
+    "viewer": {
+      "downloadEdited": "Bearbeitet",
+      "downloadOriginal": "Original",
+      "edit": "Foto bearbeiten",
+      "editAgain": "Foto bearbeiten (bearbeitet)",
+      "shortcut": "Tastenkürzel: E"
+    },
+    "raw": {
+      "nrNote": "Die Rauschreduzierung wirkt im gespeicherten Foto; die Vorschau lässt sie näherungsweise weg.",
+      "developAll": "Alle unbearbeiteten RAW-Fotos entwickeln",
+      "queued_one": "{{count}} RAW-Foto wird entwickelt",
+      "queued_other": "{{count}} RAW-Fotos werden entwickelt",
+      "auto": "Neue RAW-Uploads automatisch entwickeln",
+      "autoNote": "Kostet Rechenzeit auf dem Server für jeden RAW-Upload. Bis ein RAW entwickelt ist, sehen Gäste die Vorschau der Kamera."
+    }
   }
 }

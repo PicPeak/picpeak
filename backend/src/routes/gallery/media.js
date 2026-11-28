@@ -21,6 +21,10 @@ const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/ga
 // so the follow-up request is not decided by a cookie instead.
 const withPreview = (req, url) => {
   const join = (base, param) => `${base}${base.includes('?') ? '&' : '?'}${param}`;
+  // The edit revision the request named (issue 2619) goes along: the photo
+  // route keeps its answer only under the URL of the revision it shows, and
+  // an unversioned one would be kept with the picture from before an edit.
+  if (typeof req.query?.e === 'string' && /^\d{1,9}$/.test(req.query.e)) url = join(url, `e=${req.query.e}`);
   if (req.isAdminPreview) return join(url, 'admin_preview=1');
   if (req.embedToken) return join(url, `embed=${req.embedToken}`);
   return url;
@@ -42,6 +46,7 @@ function focalVersionStale(photo, asked) {
   if (isVideo(photo)) return false;
   return `fp=${typeof asked === 'string' ? asked : ''}` !== (focalQuery(photo) || 'fp=');
 }
+const photoEdits = require('../../services/photoEdits');
 const secureImageService = require('../../services/secureImageService');
 const logger = require('../../utils/logger');
 const { pipeStreamToResponse, answerVanished } = require('../../utils/streamResponse');
@@ -190,6 +195,14 @@ async function loadGalleryPhoto(req, res, { columns = [], sourceGrant = false } 
     res.status(403).json({ error: 'Photo not available' });
     return null;
   }
+  // A crop or turn that keeps failing to render (issue 2619): the picture it
+  // was meant to change is not handed out meanwhile, under any URL.
+  if (await photoEdits.withheldFromGuests(photo)) {
+    res.set('Cache-Control', 'no-store');
+    res.set('Retry-After', '60');
+    res.status(503).json({ error: 'This photo is being updated', code: 'EDIT_PENDING' });
+    return null;
+  }
   return photo;
 }
 
@@ -279,7 +292,7 @@ router.get('/:slug/photo/:photoId',
       const { photoId } = req.params;
 
       // Block guest access to hidden photos
-      const photo = await loadGalleryPhoto(req, res);
+      let photo = await loadGalleryPhoto(req, res);
       if (!photo) return;
 
       // Check if this is a video
@@ -336,6 +349,20 @@ router.get('/:slug/photo/:photoId',
           const query = queryAt === -1 ? '' : req.originalUrl.slice(queryAt);
           return res.redirect(`/api/gallery/${req.params.slug}/preview/${photoId}${query}`);
         }
+      }
+
+      // An edited photo (issue 2619) is its edited render from here on: the
+      // bytes, the type, the stored watermark copy of its revision. Of the
+      // applied revision, the one the listing describes (its size, the e= of
+      // this URL) and drawings are made on; only a download delivers the
+      // edit saved last.
+      // Kept by the browser only under the URL naming the revision shown, and
+      // not while a newer one is still being applied (editVersionStale).
+      let imageCache = 'private, max-age=1800';
+      if (!video) {
+        const editRow = await photoEdits.withEditColumns(photo);
+        if (photoEdits.editVersionStale(editRow, req.query.e)) imageCache = 'no-store';
+        photo = await photoEdits.deliveredPhoto(await photoEdits.renditionView(editRow), { interactive: true, headOnly: req.method === 'HEAD' });
       }
 
       // Resolve where to read the photo bytes from. For external/reference
@@ -576,7 +603,7 @@ router.get('/:slug/photo/:photoId',
         res.set({
           'Content-Type': view.contentType,
           'Content-Length': view.buffer.length,
-          'Cache-Control': 'private, max-age=1800',
+          'Cache-Control': imageCache,
           'ETag': etag,
           'X-Protection-Level': 'basic'
         });
@@ -597,7 +624,7 @@ router.get('/:slug/photo/:photoId',
                   'Content-Type': await sniffStoredImageType(storage, photo.watermark_path)
                     || resolvePhotoContentType(photo),
                   'Content-Length': wmStat.size,
-                  'Cache-Control': 'private, max-age=1800',
+                  'Cache-Control': imageCache,
                   'ETag': etag,
                   'X-Protection-Level': 'basic'
                 });
@@ -617,7 +644,7 @@ router.get('/:slug/photo/:photoId',
                 // applyWatermark encoded: JPEG for a HEIC/GIF/TIFF (issue 2178).
                 res.set({
                   'Content-Type': await sniffImageFileType(watermarkFilePath) || resolvePhotoContentType(photo),
-                  'Cache-Control': 'private, max-age=1800',
+                  'Cache-Control': imageCache,
                   'ETag': etag,
                   'X-Protection-Level': 'basic'
                 });
@@ -647,7 +674,7 @@ router.get('/:slug/photo/:photoId',
 
         res.set({
           'Content-Type': sniffImageType(watermarkedBuffer) || resolvePhotoContentType(photo),
-          'Cache-Control': 'private, max-age=1800',
+          'Cache-Control': imageCache,
           'ETag': etag,
           'X-Protection-Level': 'basic'
         });
@@ -655,7 +682,7 @@ router.get('/:slug/photo/:photoId',
         res.send(watermarkedBuffer);
       } else {
         res.set({
-          'Cache-Control': 'private, max-age=1800',
+          'Cache-Control': imageCache,
           'ETag': etag,
           'X-Protection-Level': 'basic'
         });
@@ -923,7 +950,10 @@ router.get('/:slug/thumbnail/:photoId',
         // naming another pick than the row's (an older photo list) gets the
         // current poster uncached, or that URL would show the wrong frame
         // once the pick came back to it.
+        // An edit the same (issue 2619): `e` names the revision, and while its
+        // renditions are still rebuilt the old crop is not cached under it.
         'Cache-Control': posterVersionStale(photo, req.query.poster) || focalVersionStale(photo, req.query.fp)
+          || photoEdits.editVersionStale(photo, req.query.e)
           ? 'no-store' : 'private, max-age=1800', // Reduced cache time
         'Cross-Origin-Resource-Policy': 'cross-origin',
         'X-Content-Type-Options': 'nosniff',
@@ -1026,7 +1056,9 @@ router.get('/:slug/hero/:photoId',
 
       res.set({
         'Content-Type': 'image/jpeg',
-        'Cache-Control': 'private, max-age=3600', // Cache for 1 hour
+        // Not under a URL naming another edit revision (issue 2619), or while
+        // this one's renditions are rebuilt.
+        'Cache-Control': photoEdits.editVersionStale(photo, req.query.e) ? 'no-store' : 'private, max-age=3600', // Cache for 1 hour
         'Cross-Origin-Resource-Policy': 'cross-origin',
         'X-Content-Type-Options': 'nosniff',
         'X-Hero-Image': 'true',
@@ -1192,8 +1224,9 @@ router.get('/:slug/preview/:photoId',
         'Content-Type': previewPath.endsWith('.webp') ? 'image/webp' : 'image/jpeg',
         // Cache aggressively — preview only changes on photo
         // re-upload (which generates a new preview key) or settings
-        // regenerate (which writes a new mtime + ETag).
-        'Cache-Control': 'private, max-age=3600',
+        // regenerate (which writes a new mtime + ETag). An edit (issue 2619)
+        // is a new `e` in the URL; not cached while its renditions are rebuilt.
+        'Cache-Control': photoEdits.editVersionStale(photo, req.query.e) ? 'no-store' : 'private, max-age=3600',
         'Cross-Origin-Resource-Policy': 'cross-origin',
         'X-Content-Type-Options': 'nosniff',
         'X-Preview-Image': 'true',
