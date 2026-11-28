@@ -1,9 +1,9 @@
 import React from 'react';
-import { useTranslation } from 'react-i18next';
 import { ClipboardList, Shield, Upload } from 'lucide-react';
 import { Button } from '../../common';
 import { BackToAccountLink } from '../BackToAccountLink';
 import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
+import { useFullPageLabels } from './fullPageNav';
 
 /**
  * The copyable filename list (issue 1733, A3d) where a full-page layout has
@@ -11,7 +11,7 @@ import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessa
  * nothing on screen must not take the favourites' list with it.
  */
 export const EmptyCopyFilenames: React.FC<{ onCopyFilenames?: () => void; count: number }> = ({ onCopyFilenames, count }) => {
-  const { t } = useTranslation();
+  const labels = useFullPageLabels({ copyFilenamesCount: count });
   if (!onCopyFilenames || count === 0) return null;
   return (
     <div className="mt-4 flex justify-center">
@@ -22,7 +22,7 @@ export const EmptyCopyFilenames: React.FC<{ onCopyFilenames?: () => void; count:
         onClick={onCopyFilenames}
         className="text-xs sm:text-sm"
       >
-        {t('gallery.copyFilenames.button', 'Copy filenames')} ({count})
+        {labels.copyFilenames}
       </Button>
     </div>
   );
@@ -63,7 +63,7 @@ export const FullPageEmptyState: React.FC<FullPageEmptyStateProps> = ({
   onCopyFilenames,
   copyFilenamesCount = 0,
 }) => {
-  const { t } = useTranslation();
+  const labels = useFullPageLabels({ isClient });
   return (
     <div className="text-center py-12">
       {toolbar && <div className={toolbarClassName}>{toolbar}</div>}
@@ -75,7 +75,7 @@ export const FullPageEmptyState: React.FC<FullPageEmptyStateProps> = ({
       )}
       {onManageGallery && <Button variant="outline" className="mb-4" onClick={onManageGallery} disabled={clientModeBusy}
         leftIcon={<Shield className="w-4 h-4" />}>
-        {isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}
+        {labels.manage}
       </Button>}
       {likedOnly
         ? <LikedOnlyEmptyMessage onShowAll={onToggleLikedOnly} />
@@ -90,7 +90,7 @@ export const FullPageEmptyState: React.FC<FullPageEmptyStateProps> = ({
           onClick={onUploadClick}
           data-gallery-focus="upload"
         >
-          {t('upload.uploadPhotos', 'Upload Photos')}
+          {labels.upload}
         </Button>
       )}
       <EmptyCopyFilenames onCopyFilenames={onCopyFilenames} count={copyFilenamesCount} />

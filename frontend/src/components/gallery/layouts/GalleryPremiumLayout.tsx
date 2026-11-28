@@ -40,6 +40,8 @@ import { useInputMode } from '../../../hooks/useInputMode';
 import { useViewerLikes } from './optimisticLikes';
 import { useDownloadAll } from './useDownloadAll';
 import { EmptyCopyFilenames, FullPageEmptyState } from './FullPageEmptyState';
+import { LikedNavButton } from './LikedNavButton';
+import { useFullPageLabels } from './fullPageNav';
 import { FeedbackIdentityModal } from '../FeedbackIdentityModal';
 import { galleryService } from '../../../services/gallery.service';
 import { analyticsService } from '../../../services/analytics.service';
@@ -778,7 +780,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     month: 'long',
     day: '2-digit'
   }) : null;
-  const uploadLabel = t('upload.uploadPhotos', 'Upload Photos');
+  const labels = useFullPageLabels({ isClient });
   const premiumCategories = (
     <div className="gallery-premium-nav-categories">
       <button
@@ -949,8 +951,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                 type="button"
                 className="gallery-premium-nav-btn"
                 onClick={onUploadClick}
-                aria-label={uploadLabel}
-                title={uploadLabel}
+                aria-label={labels.upload}
+                title={labels.upload}
                 data-testid="premium-nav-upload"
                 data-gallery-focus="upload"
               >
@@ -958,32 +960,24 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
               </button>
             )}
             {feedbackEnabled && feedbackOptions?.allowLikes && (
-              // The gallery's "Liked" filter, with the count Story shows.
-              <button
-                type="button"
-                className={`gallery-premium-nav-btn${likedOnly ? ' active' : ''}`}
-                onClick={onToggleLikedOnly}
-                aria-pressed={onToggleLikedOnly ? likedOnly : undefined}
-                aria-label={`${t('gallery.showLikedOnly', 'Show only photos I liked')}${likedPhotoIds.size > 0 ? ` (${likedPhotoIds.size})` : ''}`}
+              <LikedNavButton
+                className="gallery-premium-nav-btn"
+                activeClassName="active"
+                countClassName="gallery-premium-nav-count"
+                iconClassName="w-4 h-4"
                 title={t('gallery.favorites', 'Favorites')}
-                data-testid="premium-nav-liked"
-                // Focus moves to "Show all photos" when the filter empties the view.
-                data-gallery-focus="liked"
-              >
-                <Heart className="w-4 h-4" fill={likedOnly ? 'currentColor' : 'none'} />
-                {likedPhotoIds.size > 0 && (
-                  <span className="gallery-premium-nav-count">
-                    {likedPhotoIds.size > 9 ? '9+' : likedPhotoIds.size}
-                  </span>
-                )}
-              </button>
+                testId="premium-nav-liked"
+                likedOnly={likedOnly}
+                onToggleLikedOnly={onToggleLikedOnly}
+                likedCount={likedPhotoIds.size}
+              />
             )}
             {/* As Gallery Story's: the whole-gallery path alone is enough, so a
                 folder-only root (no photos in scope) still offers it. */}
             {canDownloadAll && (
               <button
                 className="gallery-premium-nav-btn"
-                title={t('common.downloadAll', 'Download All')}
+                title={labels.downloadAll}
                 onClick={handleDownloadAll}
               >
                 <DownloadIcon className="w-4 h-4" />
@@ -991,8 +985,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
             )}
             {onManageGallery && (
               <button className="gallery-premium-nav-btn" onClick={onManageGallery} disabled={clientModeBusy}
-                aria-label={isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}
-                title={isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}>
+                aria-label={labels.manage}
+                title={labels.manage}>
                 <Shield size={20} />
               </button>
             )}

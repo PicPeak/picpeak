@@ -24,6 +24,13 @@ export type FolioColumns = { mobile: number; desktop: number };
 
 export const FOLIO_STUDIO_LABEL_MAX = 60;
 
+/**
+ * From here up the nav row holds every action; below, the secondary ones
+ * move into its menu. The stylesheet switches at the same width
+ * (GalleryFolioLayout.css; the stylesheet test holds the two together).
+ */
+export const FOLIO_WIDE_NAV_QUERY = '(min-width: 640px)';
+
 /** Gap between photos in px. */
 export const FOLIO_GAPS: Record<FolioSpacing, number> = { compact: 4, regular: 12, airy: 28 };
 

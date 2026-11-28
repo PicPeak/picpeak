@@ -64,6 +64,7 @@ vi.mock('react-photo-album', () => ({
 }));
 
 import { GalleryFolioLayout } from '../GalleryFolioLayout';
+import { FOLIO_WIDE_NAV_QUERY } from '../folioSettings';
 import { GalleryTileBadgesProvider } from '../../GalleryTileBadges';
 
 const photos = [1, 2, 3].map((id) => ({
@@ -176,6 +177,9 @@ describe('Gallery Folio', () => {
     expect(feedback.submitFeedback).toHaveBeenCalledWith('demo', '1', expect.objectContaining({ feedback_type: 'like' }));
     expect(await screen.findByRole('button', { name: 'Unlike photo' })).toHaveAttribute('aria-pressed', 'true');
     const heart = nav().getByRole('button', { name: 'Show only photos I liked (1)' });
+    // Not "Favorites", as in Premium and Story: Folio's favourites are the
+    // lightbox's bookmarks, and this heart filters likes.
+    expect(heart).toHaveAttribute('title', 'Show only photos I liked');
     fireEvent.click(heart);
     expect(onToggleLikedOnly).toHaveBeenCalledTimes(1);
   });
@@ -235,7 +239,7 @@ describe('Gallery Folio', () => {
     // The stylesheet hides the row's upload button below 640 px; focus
     // handed to it there would drop to the page.
     const matchMedia = vi.fn((query: string) => ({
-      matches: wide && query === '(min-width: 640px)', media: query,
+      matches: wide && query === FOLIO_WIDE_NAV_QUERY, media: query,
       addEventListener: vi.fn(), removeEventListener: vi.fn(),
     }));
     vi.stubGlobal('matchMedia', matchMedia);

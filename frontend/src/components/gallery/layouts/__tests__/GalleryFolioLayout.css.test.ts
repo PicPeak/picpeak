@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
 import { contrastRatio } from '../../../../utils/contrast';
+import { FOLIO_WIDE_NAV_QUERY } from '../folioSettings';
 
 const css = fs.readFileSync(path.resolve(process.cwd(), 'src/components/gallery/layouts/GalleryFolioLayout.css'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '');
@@ -25,13 +26,22 @@ function declarations(selector: string, query?: string): string {
 }
 
 describe('Folio nav on a phone', () => {
-  it('hides the secondary actions below 640 px and shows them from 640 px', () => {
-    expect(declarations('.folio-nav-secondary')).toMatch(/display:\s*none/);
-    expect(declarations('.folio-nav-secondary', 'min-width: 640px')).toMatch(/display:\s*inline-flex/);
+  // The layout asks the same question in script (which control takes the
+  // upload focus role), so the stylesheet's breakpoint has to be that query.
+  const wide = FOLIO_WIDE_NAV_QUERY.slice(1, -1);
+
+  it('switches at the breakpoint the layout\'s script reads', () => {
+    expect(FOLIO_WIDE_NAV_QUERY).toBe('(min-width: 640px)');
+    expect(css).toContain(`@media ${FOLIO_WIDE_NAV_QUERY}`);
   });
 
-  it('shows the menu below 640 px only', () => {
-    expect(declarations('.folio-nav-more', 'min-width: 640px')).toMatch(/display:\s*none/);
+  it('hides the secondary actions below it and shows them from it', () => {
+    expect(declarations('.folio-nav-secondary')).toMatch(/display:\s*none/);
+    expect(declarations('.folio-nav-secondary', wide)).toMatch(/display:\s*inline-flex/);
+  });
+
+  it('shows the menu below it only', () => {
+    expect(declarations('.folio-nav-more', wide)).toMatch(/display:\s*none/);
   });
 
   it('keeps the way back to the account whole and lets the label give way', () => {

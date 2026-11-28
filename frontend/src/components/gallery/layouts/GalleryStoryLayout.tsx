@@ -35,6 +35,8 @@ import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
 import { useInputMode } from '../../../hooks/useInputMode';
 import { useDownloadAll } from './useDownloadAll';
 import { FullPageEmptyState } from './FullPageEmptyState';
+import { LikedNavButton } from './LikedNavButton';
+import { useFullPageLabels, useSelectionControls } from './fullPageNav';
 import { holdLike, likedFromPayload, markLikeSaved, type LikeHolds } from './optimisticLikes';
 
 import './GalleryStoryLayout.css';
@@ -462,19 +464,11 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const ratingsAllowed = feedbackEnabled && !!feedbackOptions?.allowRatings && !!slug;
   // The client's per-photo hide/show button (issue 1992); guests get none.
   const clientToggleVisibility = isClient ? onToggleVisibility : undefined;
-  const allVisibleSelected = visiblePhotos.length > 0 && visiblePhotos.every((photo) => selected.has(photo.id));
-
-  const handleToggleSelectionMode = useCallback(() => {
-    // Leaving selection mode clears the selection, so a later session does
-    // not start with invisible ticks.
-    if (isSelectionMode) onDeselectAll?.();
-    onToggleSelectionMode?.();
-  }, [isSelectionMode, onDeselectAll, onToggleSelectionMode]);
-
-  const handleSelectAllVisible = useCallback(() => {
-    if (allVisibleSelected) onDeselectAll?.();
-    else onSelectMany?.(visiblePhotos.map((photo) => photo.id));
-  }, [allVisibleSelected, onDeselectAll, onSelectMany, visiblePhotos]);
+  const {
+    allVisibleSelected,
+    toggleSelectionMode: handleToggleSelectionMode,
+    selectAllVisible: handleSelectAllVisible,
+  } = useSelectionControls({ visiblePhotos, selected, isSelectionMode, onDeselectAll, onToggleSelectionMode, onSelectMany });
 
   // Likes not yet set on the selection are added; a selection that is already
   // liked throughout is unliked instead, so the same control never un-likes
@@ -515,9 +509,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const { downloadAll: handleDownloadAll, canDownloadAll } = useDownloadAll({
     photos, slug, allowDownloads, onDownloadEverything, downloadChoices, onPickResolution,
   });
-  const downloadAllLabel = t('common.downloadAll', 'Download All');
+  const labels = useFullPageLabels({ isClient, hasVideos, isSelectionMode, copyFilenamesCount });
   const naturalGrid = storyGridMode === 'natural';
-  const uploadLabel = t('upload.uploadPhotos', 'Upload Photos');
   // The caption names the photo the way the lightbox does: the uploaded
   // filename when the gallery shows original filenames (#508).
   const caption = !storyShowFilenames ? 'none' : showOriginalFilename ? 'original' : 'filename';
@@ -577,8 +570,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               type="button"
               className="story-nav-btn"
               onClick={onUploadClick}
-              aria-label={uploadLabel}
-              title={uploadLabel}
+              aria-label={labels.upload}
+              title={labels.upload}
               data-testid="story-nav-upload"
               data-gallery-focus="upload"
             >
@@ -591,8 +584,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               className={`story-nav-btn${isSelectionMode ? ' active' : ''}`}
               onClick={handleToggleSelectionMode}
               aria-pressed={isSelectionMode}
-              aria-label={isSelectionMode ? t('gallery.cancelSelection', 'Cancel Selection') : selectLabel(t, hasVideos)}
-              title={isSelectionMode ? t('gallery.cancelSelection', 'Cancel Selection') : selectLabel(t, hasVideos)}
+              aria-label={labels.select}
+              title={labels.select}
               data-testid="story-nav-select"
             >
               <CheckSquare size={20} />
@@ -603,8 +596,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               type="button"
               className="story-nav-btn"
               onClick={handleDownloadAll}
-              aria-label={downloadAllLabel}
-              title={downloadAllLabel}
+              aria-label={labels.downloadAll}
+              title={labels.downloadAll}
               data-testid="story-nav-download-all"
             >
               <Download size={20} />
@@ -618,39 +611,30 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               type="button"
               className="story-nav-btn"
               onClick={onCopyFilenames}
-              aria-label={`${t('gallery.copyFilenames.button', 'Copy filenames')} (${copyFilenamesCount})`}
-              title={`${t('gallery.copyFilenames.button', 'Copy filenames')} (${copyFilenamesCount})`}
+              aria-label={labels.copyFilenames}
+              title={labels.copyFilenames}
               data-testid="story-nav-copy-filenames"
             >
               <ClipboardList size={20} />
             </button>
           )}
           {likesAllowed && (
-            // The gallery's "Liked" filter when the container offers it:
-            // only the photos this viewer liked, until clicked again.
-            <button
-              type="button"
-              className={`story-nav-btn${likedOnly ? ' active' : ''}`}
-              onClick={onToggleLikedOnly}
-              aria-pressed={onToggleLikedOnly ? likedOnly : undefined}
-              aria-label={`${t('gallery.showLikedOnly', 'Show only photos I liked')}${favorites.size > 0 ? ` (${favorites.size})` : ''}`}
+            <LikedNavButton
+              className="story-nav-btn"
+              activeClassName="active"
+              countClassName="story-nav-favorites-count"
+              iconClassName="w-5 h-5"
               title={t('gallery.favorites', 'Favorites')}
-              data-testid="story-nav-liked"
-              // Focus moves to "Show all photos" when the filter empties the view.
-              data-gallery-focus="liked"
-            >
-              <Heart size={20} fill={likedOnly ? 'currentColor' : 'none'} />
-              {favorites.size > 0 && (
-                <span className="story-nav-favorites-count">
-                  {favorites.size > 9 ? '9+' : favorites.size}
-                </span>
-              )}
-            </button>
+              testId="story-nav-liked"
+              likedOnly={likedOnly}
+              onToggleLikedOnly={onToggleLikedOnly}
+              likedCount={favorites.size}
+            />
           )}
           {onManageGallery && (
             <button className="story-nav-btn" onClick={onManageGallery} disabled={clientModeBusy}
-              aria-label={isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}
-              title={isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}>
+              aria-label={labels.manage}
+              title={labels.manage}>
               <Shield size={20} />
             </button>
           )}
