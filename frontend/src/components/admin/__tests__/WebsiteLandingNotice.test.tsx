@@ -23,8 +23,9 @@ vi.mock('../../../services/website.service', () => ({
 import { websiteService } from '../../../services/website.service';
 import WebsiteLandingNotice from '../WebsiteLandingNotice';
 
-const renderNotice = (path = '/admin/dashboard') => render(
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+const newClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
+const renderNotice = (path = '/admin/dashboard', client = newClient()) => render(
+  <QueryClientProvider client={client}>
     <MemoryRouter initialEntries={[path]}><WebsiteLandingNotice /></MemoryRouter>
   </QueryClientProvider>,
 );
@@ -45,8 +46,13 @@ describe('website landing notice', () => {
 
   it('leaves the Website page to its own banner, which says the same', async () => {
     vi.mocked(websiteService.getNotice).mockResolvedValue({ legacyLanding: true });
-    renderNotice('/admin/website');
-    await waitFor(() => expect(websiteService.getNotice).toHaveBeenCalled());
+    const client = newClient();
+    // Shown elsewhere in the admin...
+    const elsewhere = renderNotice('/admin/dashboard', client);
+    expect(await screen.findByText(/landing page now lives under Website/)).toBeInTheDocument();
+    elsewhere.unmount();
+    // ...and, with the same answer already at hand, not on the Website page.
+    renderNotice('/admin/website', client);
     expect(screen.queryByText(/landing page now lives under Website/)).toBeNull();
   });
 
