@@ -3,6 +3,7 @@ const path = require('path');
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 const { getStorage } = require('./storage');
+const { fileVersion } = require('../utils/fontVersion');
 
 /**
  * Filesystem-driven font scanner.
@@ -111,16 +112,6 @@ async function readFamilyMeta(folderAbs, folderName) {
     );
   }
   return DEFAULT_GENERIC;
-}
-
-/**
- * A file's version for its address (?v=): from its modification time and
- * size, so a replaced file gets a new address (browsers cache /fonts for a
- * week, and the object-store copy on each replica for minutes).
- */
-function fileVersion(mtime, size) {
-  const ms = mtime instanceof Date ? mtime.getTime() : Number(mtime);
-  return `${Number.isFinite(ms) ? Math.floor(ms).toString(36) : ''}${Number(size || 0).toString(36)}`;
 }
 
 /**

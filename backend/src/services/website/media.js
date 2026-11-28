@@ -20,6 +20,7 @@ const { isGalleryHidden } = require('../../utils/revealMode');
 const { capsFullSizeView, MAXIMUM_PROTECTION_CAP } = require('../galleryAssetPolicy');
 const { viewWatermarkSettings } = require('../galleryViewRendition');
 const { AppError } = require('../../utils/errors');
+const { ASSET_ID, ASSET_ID_PATTERN } = require('./validators');
 const {
   applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed, whereNotVideo,
 } = require('../../utils/photoVisibility');
@@ -115,6 +116,12 @@ function photoPreviewUrl(photo) {
   return `${editorBase({ source: 'photo', id: photo.id })}/640`;
 }
 
+// A photo id or an asset id, then the version (public) or the expiry
+// (editor), then the signature.
+const MEDIA_ID = `(${ASSET_ID}|[1-9][0-9]{0,15})`;
+const PUBLIC_TOKEN = new RegExp(`^([pa])${MEDIA_ID}(?:-([0-9a-f]{10}))?\\.([0-9a-f]{32})$`);
+const EDITOR_TOKEN = new RegExp(`^e([pa])${MEDIA_ID}-([0-9]{10})\\.([0-9a-f]{32})$`);
+
 /**
  * Parse `<kind><id>[-<version>].<sig>` (public) or
  * `e<kind><id>-<expiry>.<sig>` (editor) from the URL. Returns
@@ -122,21 +129,21 @@ function photoPreviewUrl(photo) {
  * URL has not expired), else null.
  */
 function parseMediaToken(token) {
-  const editor = /^e([pa])([0-9a-f]{24}|[1-9][0-9]{0,15})-([0-9]{10})\.([0-9a-f]{32})$/.exec(String(token || ''));
+  const editor = EDITOR_TOKEN.exec(String(token || ''));
   if (editor) {
     const [, kind, rawId, expires, signature] = editor;
     if (kind === 'p' && !/^[1-9][0-9]*$/.test(rawId)) return null;
-    if (kind === 'a' && !/^[0-9a-f]{24}$/.test(rawId)) return null;
+    if (kind === 'a' && !ASSET_ID_PATTERN.test(rawId)) return null;
     if (!verifyMedia(`e${kind}`, `${rawId}:${expires}`, signature)) return null;
     if (Number(expires) * 1000 <= Date.now()) return null;
     return { kind, id: kind === 'p' ? Number(rawId) : rawId, version: null, editor: true };
   }
-  const match = /^([pa])([0-9a-f]{24}|[1-9][0-9]{0,15})(?:-([0-9a-f]{10}))?\.([0-9a-f]{32})$/.exec(String(token || ''));
+  const match = PUBLIC_TOKEN.exec(String(token || ''));
   if (!match) return null;
   const [, kind, rawId, version, signature] = match;
   if (version && kind !== 'p') return null;
   if (kind === 'p' && !/^[1-9][0-9]*$/.test(rawId)) return null;
-  if (kind === 'a' && !/^[0-9a-f]{24}$/.test(rawId)) return null;
+  if (kind === 'a' && !ASSET_ID_PATTERN.test(rawId)) return null;
   const id = kind === 'p' ? Number(rawId) : rawId;
   if (!verifyMedia(kind, id, signature)) return null;
   return { kind, id, version: version || null };
@@ -208,7 +215,7 @@ async function loadEligiblePhotos(photoIds, { views: withViews = true } = {}) {
 }
 
 async function loadAssets(publicIds) {
-  const ids = (publicIds || []).filter((id) => typeof id === 'string' && /^[0-9a-f]{24}$/.test(id));
+  const ids = (publicIds || []).filter((id) => typeof id === 'string' && ASSET_ID_PATTERN.test(id));
   if (!ids.length) return new Map();
   const rows = await db('website_assets').whereIn('public_id', ids);
   return new Map(rows.map((row) => [row.public_id, row]));

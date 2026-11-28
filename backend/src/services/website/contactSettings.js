@@ -10,7 +10,7 @@ const { parseSettingValue } = require('../../utils/appSettings');
 const { createSecretBox } = require('../../utils/secretBox');
 const { AppError } = require('../../utils/errors');
 const { clearWebsiteCache } = require('./cache');
-const { EMAIL_PATTERN } = require('./contact');
+const { EMAIL_PATTERN } = require('./validators');
 
 const KEYS = {
   provider: 'website_captcha_provider',

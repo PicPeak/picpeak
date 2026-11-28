@@ -54,9 +54,9 @@ vi.mock('../../../components/admin/SettingsSaveBar', () => ({
     </>
   ),
 }));
-vi.mock('../../../services/cms.service', () => ({
+vi.mock('../../../services/cms.service', async (original) => ({
+  ...(await original<typeof import('../../../services/cms.service')>()),
   cmsService: { getPages: () => Promise.resolve([]) },
-  LEGAL_PAGE_SLUGS: ['impressum', 'datenschutz', 'agb'],
 }));
 vi.mock('../../../services/website.service', () => ({
   websiteService: {

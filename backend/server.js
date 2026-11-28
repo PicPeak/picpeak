@@ -943,7 +943,7 @@ app.use('/site-media', setCorsHeaders, require('./src/routes/publicWebsiteMedia'
 // on to the SPA routes below.
 // Paths the app owns (/health, /api, /admin, ...) pass by untouched.
 const compressWebsitePage = (req, res, next) => (ownedByApp(req.params[0]) ? next() : websiteCompression(req, res, next));
-app.get(/^\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/, compressWebsitePage, handleWebsitePageRequest);
+app.get(require('./src/services/website/validators').PAGE_PATH_PATTERN, compressWebsitePage, handleWebsitePageRequest);
 
 // Dynamic favicon endpoints. Browsers — notably Safari — request
 // /favicon.ico and /apple-touch-icon*.png directly at the site root and are

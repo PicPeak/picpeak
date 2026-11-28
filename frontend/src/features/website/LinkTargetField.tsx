@@ -7,13 +7,13 @@
 import React, { createContext, useContext, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockLabel } from './blocks';
+import { isLegalPageSlug, LEGAL_PAGE_SLUGS } from '../../services/cms.service';
 import { LinkField, labelClass } from './fields';
 import type { Block, LinkTarget, WebsiteDocument } from './types';
 
 export const WebsiteDocContext = createContext<WebsiteDocument | null>(null);
 
 const KINDS = ['page', 'anchor', 'booking', 'legal', 'url'] as const;
-const LEGAL = ['impressum', 'datenschutz', 'agb'] as const;
 
 const Select: React.FC<{ label: string; value: string; onChange: (value: string) => void; children: React.ReactNode }> = ({ label, value, onChange, children }) => {
   const id = useId();
@@ -58,7 +58,7 @@ export const LinkTargetField: React.FC<{
     case 'page': return onChange({ kind: 'page', pageId: firstPage });
     case 'anchor': return onChange({ kind: 'anchor', pageId: firstPage, blockId: '' });
     case 'booking': return onChange({ kind: 'booking' });
-    case 'legal': return onChange({ kind: 'legal', slug: 'impressum' });
+    case 'legal': return onChange({ kind: 'legal', slug: LEGAL_PAGE_SLUGS[0] });
     case 'url': return onChange({ kind: 'url', url: '' });
     default: return onChange(null);
     }
@@ -84,8 +84,8 @@ export const LinkTargetField: React.FC<{
         </Select>
       )}
       {value?.kind === 'legal' && (
-        <Select label={t('website.link.whichLegal', 'Legal page')} value={value.slug} onChange={(slug) => onChange({ kind: 'legal', slug: slug as (typeof LEGAL)[number] })}>
-          {LEGAL.map((slug) => <option key={slug} value={slug}>{t(`legal.${slug}`, slug)}</option>)}
+        <Select label={t('website.link.whichLegal', 'Legal page')} value={value.slug} onChange={(slug) => { if (isLegalPageSlug(slug)) onChange({ kind: 'legal', slug }); }}>
+          {LEGAL_PAGE_SLUGS.map((slug) => <option key={slug} value={slug}>{t(`legal.${slug}`, slug)}</option>)}
         </Select>
       )}
       {value?.kind === 'url' && (

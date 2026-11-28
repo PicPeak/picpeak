@@ -4,6 +4,8 @@
  * editor only has to produce this shape.
  */
 
+import type { LegalPageSlug } from '../../services/cms.service';
+
 export type ImageRef =
   | { source: 'photo'; id: number; alt?: string }
   | { source: 'asset'; id: string; alt?: string };
@@ -83,7 +85,7 @@ export type LinkTarget =
   | { kind: 'page'; pageId: string }
   | { kind: 'anchor'; pageId: string; blockId: string }
   | { kind: 'booking' }
-  | { kind: 'legal'; slug: 'impressum' | 'datenschutz' | 'agb' }
+  | { kind: 'legal'; slug: LegalPageSlug }
   | { kind: 'url'; url: string };
 // `answer`: sanitised HTML from the rich text editor.
 export interface FaqBlock extends BlockBase { type: 'faq'; heading: string; items: { id: string; question: string; answer: string }[] }

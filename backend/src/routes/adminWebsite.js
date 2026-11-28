@@ -28,6 +28,7 @@ const websiteService = require('../services/website/service');
 const actorOf = (req) => ({ type: 'admin', id: req.admin.id, name: req.admin.username });
 const assets = require('../services/website/assets');
 const media = require('../services/website/media');
+const { ASSET_ID_PATTERN } = require('../services/website/validators');
 const { requiresGalleryPassword } = require('../utils/galleryLifecycle');
 
 const router = express.Router();
@@ -309,7 +310,7 @@ router.post('/assets', canEdit, (req, res, next) => {
 }));
 
 router.delete('/assets/:id', canEdit, [
-  param('id').matches(/^[0-9a-f]{24}$/),
+  param('id').matches(ASSET_ID_PATTERN),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
   await assets.deleteAsset(req.params.id);

@@ -19,6 +19,7 @@ const { getStorage } = require('../services/storage');
 const secureStatic = require('./secureStatic');
 const { isPublicFontFile } = secureStatic;
 const logger = require('../utils/logger');
+const { FONT_VERSION_PATTERN } = require('../utils/fontVersion');
 
 /** What every /fonts mount serves with: fonts only, a week's cache, nosniff. */
 const fontStaticOpts = {
@@ -29,7 +30,6 @@ const fontStaticOpts = {
 
 const FONT_PATH = /^\/([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\/(\d{1,4}\.(?:woff2|woff|ttf))$/;
 const FRESH_MS = 10 * 60 * 1000;
-const VERSION = /^[a-z0-9]{1,40}$/;
 
 // Every cache folder in use, and the version (?v=) each local copy was
 // fetched for: a request naming another version fetches the file again.
@@ -55,7 +55,7 @@ function fontReadThrough({ cacheDir = path.join(os.tmpdir(), 'picpeak-font-cache
       if (!match) return next();
       const local = path.join(cacheDir, match[1], match[2]);
       const name = `${match[1]}/${match[2]}`;
-      const wanted = typeof req.query.v === 'string' && VERSION.test(req.query.v) ? req.query.v : null;
+      const wanted = typeof req.query.v === 'string' && FONT_VERSION_PATTERN.test(req.query.v) ? req.query.v : null;
       const cached = await fs.stat(local).catch(() => null);
       if (!cached || Date.now() - cached.mtimeMs > FRESH_MS || (wanted && copyVersions.get(name) !== wanted)) {
         const key = `fonts/${match[1]}/${match[2]}`;

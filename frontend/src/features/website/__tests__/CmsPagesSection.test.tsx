@@ -24,13 +24,13 @@ vi.mock('../../../components/admin/cms/CmsPageEditor', () => ({
 const confirmMock = vi.fn();
 vi.mock('../../../components/common/ConfirmDialog', () => ({ useConfirm: () => confirmMock }));
 const page = (slug: string, title: string) => ({ id: 1, slug, title_en: title, title_de: title, content_en: '', content_de: '', logo_url: null, use_external_url: false, external_url: null, updated_at: '' });
-vi.mock('../../../services/cms.service', () => ({
+vi.mock('../../../services/cms.service', async (original) => ({
+  ...(await original<typeof import('../../../services/cms.service')>()),
   cmsService: {
     getPages: () => Promise.resolve([
       page('agb', 'Terms'), page('datenschutz', 'Privacy'), page('gallery-not-found', 'Gallery not found'), page('impressum', 'Imprint'), page('not-found', 'Page not found'),
     ]),
   },
-  LEGAL_PAGE_SLUGS: ['impressum', 'datenschutz', 'agb'],
 }));
 
 import { CmsPagesSection } from '../CmsPagesSection';

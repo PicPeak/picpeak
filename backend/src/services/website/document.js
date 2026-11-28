@@ -35,7 +35,9 @@ const MAX_CUSTOM_CSS = MAX_CSS_SIZE + DEFAULT_PUBLIC_SITE_CSS.length + 2;
 // __tests__/services/websiteReservedSlugs.test.js holds to this file.
 const { SOCIAL_NETWORKS, STEP_ICONS } = require('./icons');
 const { sanitizeRichText, isEmptyRichText, richText } = require('./richText');
-const { MAX_URL_LENGTH, cleanText, safeUrl } = require('./validators');
+const {
+  MAX_URL_LENGTH, ASSET_ID_PATTERN, SLUG_PATTERN, FONT_NAME_PATTERN, EMAIL_PATTERN, cleanText, safeUrl,
+} = require('./validators');
 const RESERVED_SLUGS = new Set(require('./reservedSlugs.json'));
 // Reserved for pages, but the website renders them in its design while it
 // is live (the CMS legal pages); the app's own page otherwise.
@@ -49,17 +51,14 @@ const LEGAL_SLUGS = ['impressum', 'datenschutz', 'agb'];
 function ownedByApp(slug) {
   return RESERVED_SLUGS.has(slug) && !LEGAL_SLUGS.includes(slug);
 }
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_SLUG_LENGTH = 60;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
-const ASSET_ID_PATTERN = /^[a-f0-9]{24}$/;
 
 const BACKGROUNDS = ['default', 'light', 'dark', 'custom'];
 // A custom block background: an opaque hex colour, the only shape that is
 // both safe in a style attribute and has a contrast to compute.
 const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 const BUTTON_STYLES = ['solid', 'outline', 'pill'];
-const FONT_NAME_PATTERN = /^[A-Za-z0-9 ]{1,60}$/;
 
 const BLOCK_VARIANTS = {
   hero: ['overlay', 'split', 'minimal'],
@@ -139,7 +138,7 @@ function intInRange(value, min, max, fallback) {
 
 // A link field: refused over its length like any other text, then kept only
 // if a visitor may follow it (validators.js safeUrl).
-const link = (value) => safeUrl(str(value, MAX_URL_LENGTH, 'url'));
+const linkUrl = (value) => safeUrl(str(value, MAX_URL_LENGTH, 'url'));
 
 function newId() {
   return crypto.randomBytes(6).toString('hex');
@@ -207,7 +206,7 @@ function linkTarget(value) {
   case 'booking': return { kind: 'booking' };
   case 'legal': return LEGAL_SLUGS.includes(value.slug) ? { kind: 'legal', slug: value.slug } : null;
   case 'url': {
-    const url = link(value.url);
+    const url = linkUrl(value.url);
     return url ? { kind: 'url', url } : null;
   }
   default: return null;
@@ -225,9 +224,9 @@ function socialUrl(network, value) {
   const raw = str(value, 500, 'url');
   if (network === 'email') {
     const address = raw.replace(/^mailto:/i, '');
-    return /^[^\s@<>"']{1,64}@[^\s@<>"']{1,190}\.[a-z]{2,}$/i.test(address) ? `mailto:${address}` : '';
+    return address.length <= 254 && EMAIL_PATTERN.test(address) ? `mailto:${address}` : '';
   }
-  const url = link(raw);
+  const url = linkUrl(raw);
   return /^https?:\/\//i.test(url) ? url : '';
 }
 
@@ -337,7 +336,7 @@ const BLOCK_FIELDS = {
   instagram: (b) => ({
     heading: str(b.heading, 200, 'heading'),
     handle: str(b.handle, 60, 'handle').replace(/^@/, '').replace(/[^A-Za-z0-9._]/g, ''),
-    profileUrl: link(b.profileUrl),
+    profileUrl: linkUrl(b.profileUrl),
     images: imageList(b.images, 12),
   }),
   spacer: (b) => ({
@@ -375,7 +374,7 @@ const BLOCK_FIELDS = {
   logos: (b) => ({
     heading: str(b.heading, 200, 'heading'),
     grayscale: bool(b.grayscale),
-    items: objects(b.items, MAX_ITEMS, 'items').map((item) => ({ image: imageRef(item.image), url: link(item.url) })),
+    items: objects(b.items, MAX_ITEMS, 'items').map((item) => ({ image: imageRef(item.image), url: linkUrl(item.url) })),
   }),
   social: (b) => ({
     heading: str(b.heading, 200, 'heading'),
@@ -485,7 +484,7 @@ function normalizeFooterColumn(column) {
   if (kind === 'contact') {
     const email = str(column.email, 254, 'email');
     const phone = str(column.phone, 40, 'phone');
-    out.email = /^[^\s@<>"']{1,64}@[^\s@<>"']{1,190}\.[a-z]{2,}$/i.test(email) ? email : '';
+    out.email = EMAIL_PATTERN.test(email) ? email : '';
     out.phone = /^\+?[0-9 ()./-]{3,40}$/.test(phone) ? phone : '';
     out.address = str(column.address, 300, 'address');
   }

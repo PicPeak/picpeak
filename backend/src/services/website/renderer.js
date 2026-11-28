@@ -24,6 +24,7 @@ const { inline, richText, linkAttrs, isEmptyRichText } = require('./richText');
 const { icon, NETWORK_LABELS } = require('./icons');
 const { widgetHtml } = require('./captcha');
 const { brandCssVariables } = require('../../utils/brandCssVariables');
+const { FONT_VERSION_PATTERN } = require('../../utils/fontVersion');
 const { MEDIA_WIDTHS, mediaBase, editorBase, parseRenditionKeys, photoVersion } = require('./media');
 
 const esc = escapeHtml;
@@ -589,7 +590,7 @@ function fontFaces(fonts) {
       const folder = font.family.replace(/ /g, '-');
       const file = (font.formats && font.formats[weight]) || 'woff2';
       // The file's version: a replaced font gets a new address (fontsService).
-      const version = font.versions && /^[a-z0-9]{1,40}$/.test(font.versions[weight] || '') ? `?v=${font.versions[weight]}` : '';
+      const version = font.versions && FONT_VERSION_PATTERN.test(font.versions[weight] || '') ? `?v=${font.versions[weight]}` : '';
       faces.push(`@font-face{font-family:'${font.family}';font-style:normal;font-weight:${weight};font-display:swap;src:url('/fonts/${encodeURIComponent(folder)}/${weight}.${file}${version}') format('${CSS_FONT_FORMAT[file]}')}`);
     }
   }

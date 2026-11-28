@@ -19,9 +19,9 @@ const { toTimestamp } = require('../../utils/dateNormalize');
 const logger = require('../../utils/logger');
 const { publishedDocument } = require('./service');
 const { META_BYTES } = require('../mailRetentionService');
+const { DAY_MS, EMAIL_PATTERN } = require('./validators');
 
 const DAILY_CAP = Number(process.env.WEBSITE_CONTACT_DAILY_CAP || 1000);
-const EMAIL_PATTERN = /^[^\s@<>()[\]\\,;:"]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 const MESSAGE_ID_PREFIX = '<website-contact-';
 // Characters, as the form's maxlength counts them.
 const MESSAGE_MAX = 5000;
@@ -68,7 +68,7 @@ async function findForm(pageId, blockId) {
 }
 
 async function overDailyCap() {
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const since = new Date(Date.now() - DAY_MS).toISOString();
   const row = await db('received_emails')
     .where('message_id', 'like', `${MESSAGE_ID_PREFIX}%`)
     .where('received_at', '>=', since)
@@ -86,7 +86,7 @@ async function tellStudioCapReached() {
   // created_at is the database's default (SQLite: zone-less text), so it is
   // compared as a timestamp, not as a string.
   const last = await db('activity_logs').where({ activity_type: CAP_ACTIVITY }).orderBy('id', 'desc').first('created_at');
-  if (last && Date.now() - toTimestamp(last.created_at) < 24 * 60 * 60 * 1000) return;
+  if (last && Date.now() - toTimestamp(last.created_at) < DAY_MS) return;
   await logActivity(CAP_ACTIVITY, { cap: DAILY_CAP });
 }
 
@@ -133,7 +133,7 @@ async function storeSubmission(values, page) {
 }
 
 // At most one confirmation a day to an address, whatever the senders do.
-const CONFIRMATION_WINDOW_MS = 24 * 60 * 60 * 1000;
+const CONFIRMATION_WINDOW_MS = DAY_MS;
 
 // email_queue.created_at comes back as a Date (PostgreSQL) or epoch ms
 // (SQLite), so it is read with toMillis rather than compared in SQL.
@@ -157,7 +157,7 @@ async function reserveConfirmation(key) {
     .onConflict(['address_key', 'window_start']).ignore();
   const row = await db('website_contact_confirmations').where({ address_key: key, window_start: day }).first('claim');
   // Yesterday's rows still count above (confirmedRecently); older ones go.
-  const cutoff = new Date(now.getTime() - 2 * 86400000).toISOString().slice(0, 10);
+  const cutoff = new Date(now.getTime() - 2 * DAY_MS).toISOString().slice(0, 10);
   await db('website_contact_confirmations').where('window_start', '<', cutoff).del();
   return Boolean(row && row.claim === claim);
 }
@@ -216,4 +216,4 @@ async function sendMails(values, page, { captchaOn }) {
   }
 }
 
-module.exports = { validateSubmission, findForm, storeSubmission, sendMails, EMAIL_PATTERN, DAILY_CAP, MESSAGE_MAX, _internal: { reserveConfirmation } };
+module.exports = { validateSubmission, findForm, storeSubmission, sendMails, DAILY_CAP, MESSAGE_MAX, _internal: { reserveConfirmation } };

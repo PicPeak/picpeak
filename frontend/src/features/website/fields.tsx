@@ -212,6 +212,10 @@ export const BackgroundField: React.FC<{ block: Block; brandColors?: string[]; o
   );
 };
 
+// The backend's EMAIL_PATTERN (services/website/validators.js): what it keeps
+// as an e-mail address. A backend test holds this copy to it.
+export const EMAIL_PATTERN = /^[^\s@<>()[\]\\,;:"]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+
 /**
  * Same rule as the backend's safeUrl: http(s), mailto, tel, a path on this
  * site or an anchor. Anything else is dropped on save, so say so here.

@@ -29,14 +29,14 @@ vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureEnabled: () 
 const stored = { slug: 'impressum', title_en: 'Imprint', title_de: 'Impressum', content_en: '<p>x</p>', content_de: '<p>x</p>', logo_url: null as string | null };
 let current = { ...stored };
 let calls = 0;
-vi.mock('../../../services/cms.service', () => ({
+vi.mock('../../../services/cms.service', async (original) => ({
+  ...(await original<typeof import('../../../services/cms.service')>()),
   cmsService: {
     getPages: () => { calls += 1; return Promise.resolve([{ ...current }]); },
     updatePage: vi.fn(),
     uploadPageLogo: vi.fn(),
     clearPageLogo: vi.fn(),
   },
-  LEGAL_PAGE_SLUGS: ['impressum', 'datenschutz', 'agb'],
 }));
 
 import { CMSPage } from '../CMSPage';

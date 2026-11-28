@@ -21,6 +21,7 @@ const { getAppSetting } = require('../../utils/appSettings');
 const { parseBooleanInput } = require('../../utils/parsers');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const trackers = require('../trackers/forwardEvent');
+const { DAY_MS } = require('./validators');
 
 /** The referring site's domain; '' for none or the site's own pages. */
 function referrerDomain(referer, ownHost) {
@@ -119,7 +120,7 @@ let purgedOn = '';
 async function purgeOldRows(day) {
   if (purgedOn === day) return;
   purgedOn = day;
-  const cutoff = new Date(Date.now() - KEEP_DAYS * 86400000).toISOString().slice(0, 10);
+  const cutoff = new Date(Date.now() - KEEP_DAYS * DAY_MS).toISOString().slice(0, 10);
   await db('website_page_views').where('day', '<', cutoff).del();
 }
 
@@ -129,7 +130,7 @@ async function purgeOldRows(day) {
  * added up by the database.
  */
 async function pageViewStats(days) {
-  const since = new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10);
+  const since = new Date(Date.now() - (days - 1) * DAY_MS).toISOString().slice(0, 10);
   const scope = () => db('website_page_views').where('day', '>=', since);
   const [byDay, pages, referrers, devices] = await Promise.all([
     scope().select('day').sum({ views: 'views' }).groupBy('day'),
@@ -140,7 +141,7 @@ async function pageViewStats(days) {
   const perDay = new Map(byDay.map((r) => [r.day, Number(r.views)]));
   const chartData = [];
   for (let i = days - 1; i >= 0; i -= 1) {
-    const date = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    const date = new Date(Date.now() - i * DAY_MS).toISOString().slice(0, 10);
     chartData.push({ date, views: perDay.get(date) || 0 });
   }
   const total = byDay.reduce((n, r) => n + Number(r.views), 0);

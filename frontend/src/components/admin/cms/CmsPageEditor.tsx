@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, Input, Notice } from '../../common';
 import { CMSEditor } from '../CMSEditor';
 import { SettingsSaveBar } from '../SettingsSaveBar';
-import { cmsService, LEGAL_PAGE_SLUGS, type CMSPage } from '../../../services/cms.service';
+import { cmsService, isLegalPageSlug, type CMSPage } from '../../../services/cms.service';
 import { useCmsPageTitle } from './cmsPageTitle';
 import { buildResourceUrl } from '../../../utils/url';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
@@ -146,7 +146,7 @@ export const CmsPageEditor: React.FC<CmsPageEditorProps> = ({ slug, saveMode = '
   // address and a place in the gallery footer; the website shows its
   // not-found page under its own header, so that page has no logo either.
   const inDialog = saveMode === 'inline';
-  const legalPage = LEGAL_PAGE_SLUGS.includes(slug);
+  const legalPage = isLegalPageSlug(slug);
   const showLegalOptions = !inDialog || legalPage;
   const showLogo = !inDialog || slug !== 'not-found';
 

@@ -14,11 +14,11 @@ import { FileWarning, Scale } from 'lucide-react';
 import { Modal, useConfirm } from '../../components/common';
 import { CmsPageEditor } from '../../components/admin/cms/CmsPageEditor';
 import { useCmsPageTitle } from '../../components/admin/cms/cmsPageTitle';
-import { cmsService, LEGAL_PAGE_SLUGS, type CMSPage } from '../../services/cms.service';
+import { cmsService, isLegalPageSlug, LEGAL_PAGE_SLUGS, type CMSPage } from '../../services/cms.service';
 
 // The order an operator thinks of them in, not the CMS's alphabetical one.
 const SYSTEM_ORDER = ['not-found', 'gallery-not-found'];
-const byOrder = (order: string[]) => (a: CMSPage, b: CMSPage) => {
+const byOrder = (order: readonly string[]) => (a: CMSPage, b: CMSPage) => {
   const rank = (slug: string) => (order.includes(slug) ? order.indexOf(slug) : order.length);
   return rank(a.slug) - rank(b.slug) || a.slug.localeCompare(b.slug);
 };
@@ -30,8 +30,8 @@ export const CmsPagesSection: React.FC<{ readOnly: boolean }> = ({ readOnly }) =
   const [editing, setEditing] = useState<string | null>(searchParams.get('cms'));
   const [dirty, setDirty] = useState(false);
   const { data: pages = [] } = useQuery({ queryKey: ['cms-pages'], queryFn: cmsService.getPages });
-  const legal = pages.filter((p) => LEGAL_PAGE_SLUGS.includes(p.slug)).sort(byOrder(LEGAL_PAGE_SLUGS));
-  const system = pages.filter((p) => !LEGAL_PAGE_SLUGS.includes(p.slug)).sort(byOrder(SYSTEM_ORDER));
+  const legal = pages.filter((p) => isLegalPageSlug(p.slug)).sort(byOrder(LEGAL_PAGE_SLUGS));
+  const system = pages.filter((p) => !isLegalPageSlug(p.slug)).sort(byOrder(SYSTEM_ORDER));
   const pageTitle = useCmsPageTitle();
   const title = (slug: string) => pageTitle(slug, pages.find((p) => p.slug === slug));
   const open = editing && pages.some((p) => p.slug === editing) ? editing : null;

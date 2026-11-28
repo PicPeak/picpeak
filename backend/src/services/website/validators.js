@@ -5,6 +5,24 @@
  */
 
 const MAX_URL_LENGTH = 500;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// An uploaded image's or video's public id, alone and inside a media token.
+const ASSET_ID = '[0-9a-f]{24}';
+const ASSET_ID_PATTERN = new RegExp(`^${ASSET_ID}$`);
+
+// A page's address, and the path it is reached at: one segment of that
+// shape (frontend/nginx.conf's website location takes the same).
+const SLUG = '[a-z0-9]+(?:-[a-z0-9]+)*';
+const SLUG_PATTERN = new RegExp(`^${SLUG}$`);
+const PAGE_PATH_PATTERN = new RegExp(`^/(${SLUG})/?$`);
+
+// A font family as the branding stores it.
+const FONT_NAME_PATTERN = /^[A-Za-z0-9 ]{1,60}$/;
+
+// An e-mail address the website writes to or shows: a visitor's, a
+// recipient's, the footer's and a social link's.
+const EMAIL_PATTERN = /^[^\s@<>()[\]\\,;:"]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 
 /** Text as a field takes it: a string, trimmed, without control characters other than tab and newline. */
 function cleanText(value) {
@@ -42,4 +60,7 @@ function safeUrl(value) {
   return '';
 }
 
-module.exports = { MAX_URL_LENGTH, cleanText, safeUrl };
+module.exports = {
+  MAX_URL_LENGTH, DAY_MS, ASSET_ID, ASSET_ID_PATTERN, SLUG_PATTERN, PAGE_PATH_PATTERN, FONT_NAME_PATTERN, EMAIL_PATTERN,
+  cleanText, safeUrl,
+};

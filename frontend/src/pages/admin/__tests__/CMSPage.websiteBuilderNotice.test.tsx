@@ -21,9 +21,9 @@ vi.mock('../../../hooks/useLocalizedDate', () => ({
   useLocalizedDate: () => ({ format: String, formatDateTime: String, formatTime: String }),
 }));
 vi.mock('../../../components/admin/CMSEditor', () => ({ CMSEditor: () => <div>editor</div> }));
-vi.mock('../../../services/cms.service', () => ({
+vi.mock('../../../services/cms.service', async (original) => ({
+  ...(await original<typeof import('../../../services/cms.service')>()),
   cmsService: { getPages: () => Promise.resolve(PAGES), updatePage: vi.fn(), uploadPageLogo: vi.fn(), clearPageLogo: vi.fn() },
-  LEGAL_PAGE_SLUGS: ['impressum', 'datenschutz', 'agb'],
 }));
 const SLUGS = ['impressum', 'datenschutz', 'agb', 'not-found', 'gallery-not-found'];
 const page = (slug: string) => ({ id: slug.length, slug, title_en: `Title ${slug}`, title_de: slug, content_en: '', content_de: '', logo_url: null, use_external_url: false, external_url: null, updated_at: '' });

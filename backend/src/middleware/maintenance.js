@@ -69,9 +69,8 @@ async function checkMaintenanceMode() {
 // routes to the builder: one slug-shaped segment the app does not own itself
 // (a page, a legal page, the not-found page for any other address), while
 // the builder is on. ownedByApp is server.js's own decision.
-const WEBSITE_PAGE_PATH = /^\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/;
 async function isWebsitePagePath(requestPath) {
-  const match = WEBSITE_PAGE_PATH.exec(requestPath);
+  const match = require('../services/website/validators').PAGE_PATH_PATTERN.exec(requestPath);
   if (!match || require('../services/website/document').ownedByApp(match[1])) return false;
   return require('./requireFeatureFlag').isFeatureEnabled('websiteBuilder').catch(() => false);
 }

@@ -25,7 +25,7 @@ const media = require('./media');
 const { livePhotos } = require('../../utils/photoVisibility');
 const { renderPage, renderSystemPage, renderedImages, pageHref, legalPageName } = require('./renderer');
 const { sanitizeCmsHtml } = require('./richText');
-const { safeUrl } = require('./validators');
+const { FONT_NAME_PATTERN, safeUrl } = require('./validators');
 const { cacheGeneration, getCached, setCached, clearWebsiteCache } = require('./cache');
 
 const FLAG = 'websiteBuilder';
@@ -427,7 +427,7 @@ async function resolveTheme(docTheme) {
   ]);
   // Family names go into the page's CSS; a folder name an operator dropped
   // into STORAGE_PATH/fonts is only used when it is a plain name.
-  const byName = new Map(fonts.filter((f) => /^[A-Za-z0-9 ]{1,60}$/.test(f.family)).map((f) => [f.family.toLowerCase(), f]));
+  const byName = new Map(fonts.filter((f) => FONT_NAME_PATTERN.test(f.family)).map((f) => [f.family.toLowerCase(), f]));
   const findFont = (name) => (name ? byName.get(name.toLowerCase()) || null : null);
   const body = findFont(docTheme.bodyFont) || findFont(firstFamily(themeConfig.fontFamily));
   const heading = findFont(docTheme.headingFont)

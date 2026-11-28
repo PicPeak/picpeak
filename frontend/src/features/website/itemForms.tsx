@@ -6,7 +6,7 @@ import React, { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '../../components/common';
-import { ImageField, LinkField, RichTextField, TextArea, TextField, labelClass } from './fields';
+import { EMAIL_PATTERN, ImageField, LinkField, RichTextField, TextArea, TextField, labelClass } from './fields';
 import { LinkTargetField } from './LinkTargetField';
 import { newId } from './blocks';
 import type { CtaBlock, FaqBlock, LogosBlock, SocialBlock, SocialNetwork, StepIcon, StepsBlock } from './types';
@@ -154,7 +154,7 @@ export const LogosField: React.FC<{ value: LogosBlock['items']; onChange: (value
 function socialUrlProblem(network: SocialNetwork, url: string): boolean {
   const value = url.trim();
   if (!value) return false;
-  if (network === 'email') return !/^(mailto:)?[^\s@<>"']{1,64}@[^\s@<>"']{1,190}\.[a-z]{2,}$/i.test(value);
+  if (network === 'email') return !EMAIL_PATTERN.test(value.replace(/^mailto:/i, ''));
   try { return !/^https?:\/\//i.test(value) || !new URL(value).hostname; } catch { return true; }
 }
 
