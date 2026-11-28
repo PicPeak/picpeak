@@ -471,10 +471,13 @@ function sendWebsitePage(req, res, page, slug) {
     return;
   }
   // Counted server-side (no cookie, no script); a revalidation is a view too.
-  // Legal and not-found pages are not the website's own pages: not counted.
-  if (req.method === 'GET' && !page.system) {
-    require('./src/services/website/pageViews').recordPageView({
-      slug, userAgent: req.get('user-agent'), referer: req.get('referer'), host: req.get('host'),
+  // A published page by its slug; every address with no page in one bucket
+  // (pageViews.NOT_FOUND_PAGE), so made-up addresses add no rows; the legal
+  // pages are not the website's own and not counted.
+  if (req.method === 'GET' && (!page.system || page.notFound)) {
+    const pageViews = require('./src/services/website/pageViews');
+    pageViews.recordPageView({
+      slug: page.notFound ? pageViews.NOT_FOUND_PAGE : slug, userAgent: req.get('user-agent'), referer: req.get('referer'), host: req.get('host'),
       ip: require('./src/utils/clientIp').clientIpForAudit(req), gpc: req.get('Sec-GPC'), dnt: req.get('DNT'),
     });
   }

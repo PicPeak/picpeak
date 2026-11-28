@@ -177,10 +177,19 @@ describe('website page views', () => {
     await db('website_page_views').del();
     await request(app).get('/').set('User-Agent', 'Mozilla/5.0 (compatible; Googlebot/2.1)');
     await request(app).head('/').set('User-Agent', BROWSER);
-    await request(app).get('/nope').set('User-Agent', BROWSER);
     await request(app).get('/impressum').set('User-Agent', BROWSER);
     await settle();
     expect(await rows()).toEqual([]);
+  });
+
+  test('every address with no page counts in one bucket, so made-up addresses add no rows', async () => {
+    await db('website_page_views').del();
+    for (const slug of ['nope', 'random-a1', 'random-b2', 'random-c3']) {
+      // eslint-disable-next-line no-await-in-loop
+      await request(app).get(`/${slug}`).set('User-Agent', BROWSER);
+    }
+    await settle();
+    expect(await rows()).toEqual([{ page: '(not found)', referrer: '', device: 'desktop', views: 4 }]);
   });
 });
 
