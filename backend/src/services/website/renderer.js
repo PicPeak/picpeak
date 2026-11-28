@@ -52,6 +52,7 @@ const STRINGS = {
     bookingHidden: 'Hidden on the website: client booking is off or nothing can be booked yet.',
     captchaFailed: 'The spam check did not go through. Please complete it and send the message again.',
     secondContactForm: 'Only one contact form per page is shown. Remove this one, or move it to another page.',
+    reloadForm: 'This form was just updated. Please reload the page and send your message again.',
     follow: 'Follow',
     videoInPreview: 'Video plays on the published page',
   },
@@ -78,6 +79,7 @@ const STRINGS = {
     bookingHidden: 'Auf der Website ausgeblendet: Die Online-Buchung ist aus oder es ist noch nichts buchbar.',
     captchaFailed: 'Die Spam-Prüfung hat nicht geklappt. Bitte schliessen Sie sie ab und senden Sie die Nachricht erneut.',
     secondContactForm: 'Pro Seite wird nur ein Kontaktformular gezeigt. Entfernen Sie dieses oder verschieben Sie es auf eine andere Seite.',
+    reloadForm: 'Dieses Formular wurde soeben aktualisiert. Bitte laden Sie die Seite neu und senden Sie Ihre Nachricht erneut.',
     follow: 'Folgen',
     videoInPreview: 'Das Video läuft auf der veröffentlichten Seite',
   },
@@ -374,7 +376,10 @@ ${ctx.captcha ? widgetHtml(ctx.captcha, { locale: ctx.locale, esc }) : ''}
 <button class="pp-btn" type="submit"${disabled}>${esc(block.submitLabel || s.send)}</button>
 ${ctx.preview ? `<p class="pp-muted">${esc(s.previewForm)}</p>` : ''}</form>`;
   const notes = `<p id="contact-sent-${esc(block.id)}" class="pp-note pp-note--ok" role="status">${esc(block.successMessage || s.sent)}</p><p id="contact-error-${esc(block.id)}" class="pp-note pp-note--err" role="alert">${esc(s.failed)}</p>`
-    + (ctx.captcha ? `<p id="contact-captcha-${esc(block.id)}" class="pp-note pp-note--err" role="alert">${esc(s.captchaFailed)}</p>` : '');
+    + (ctx.captcha ? `<p id="contact-captcha-${esc(block.id)}" class="pp-note pp-note--err" role="alert">${esc(s.captchaFailed)}</p>` : '')
+    // On every form: a page cached before the spam check came on posts
+    // without its answer, and the visitor is asked to reload (publicWebsite.js).
+    + `<p id="contact-reload-${esc(block.id)}" class="pp-note pp-note--err" role="alert">${esc(s.reloadForm)}</p>`;
   const intro = `<div>${heading(block.heading)}${block.intro ? `<div class="pp-prose">${richText(block.intro)}</div>` : ''}</div>`;
   if (block.variant === 'split') {
     return section(block, `<div class="pp-wrap pp-split pp-split--top">${intro}<div>${notes}${form}</div></div>`, ctx);

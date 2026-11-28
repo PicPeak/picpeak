@@ -1979,7 +1979,7 @@ describe('spam check on the contact form', () => {
     expect((await settings({ captcha: { friendly: { apiKey: '' } }, contact: { recipients: ['new@studio.example'] } })).body.code).toBe('CAPTCHA_NOT_READY');
     expect((await request(app).get('/api/admin/website/contact-settings').set(auth(adminId))).body).toEqual(before);
     const spy = jest.spyOn(axios, 'post');
-    expect((await post(valid)).headers.location).toBe('/#contact-captcha-c1');
+    expect((await post({ ...valid, 'frc-captcha-response': '' })).headers.location).toBe('/#contact-captcha-c1');
     expect(spy).not.toHaveBeenCalled();
   });
 
@@ -1997,7 +1997,10 @@ describe('spam check on the contact form', () => {
   test('a message without a valid answer is refused and stored nowhere; a valid one goes through', async () => {
     const spy = jest.spyOn(axios, 'post');
     const before = Number((await db('received_emails').count({ c: '*' }).first()).c);
-    expect((await post(valid)).headers.location).toBe('/#contact-captcha-c1');
+    // A form from a page cached before the check was switched on carries no
+    // answer field at all: the visitor is asked to reload, nothing is stored.
+    expect((await post(valid)).headers.location).toBe('/#contact-reload-c1');
+    expect((await post({ ...valid, 'frc-captcha-response': '' })).headers.location).toBe('/#contact-captcha-c1');
     expect(spy).not.toHaveBeenCalled();
     spy.mockResolvedValueOnce({ data: { success: false, error: { error_code: 'response_invalid' } } });
     expect((await post({ ...valid, 'frc-captcha-response': 'bad' })).headers.location).toBe('/#contact-captcha-c1');

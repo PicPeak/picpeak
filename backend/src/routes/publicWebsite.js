@@ -92,7 +92,14 @@ router.post('/contact', daily, hourly, whileLive, (req, res, next) => {
       logger.warn('Website contact form: the spam check cannot be checked (key missing or unreadable); message refused', { provider: captcha.provider });
       return back(res, form.page, form.block.id, 'error');
     }
-    if (captcha && !(await require('../services/website/captcha').verifyAnswer(captcha, body, { ip: req.ip }))) {
+    const captchaModule = require('../services/website/captcha');
+    // No answer field at all: the form came from a page rendered before the
+    // check was switched on (pages are cached per process for up to their
+    // cache TTL, a known limit). Ask for a reload rather than an error.
+    if (captcha && !Object.prototype.hasOwnProperty.call(body, captchaModule.RESPONSE_FIELD[captcha.provider])) {
+      return back(res, form.page, form.block.id, 'reload');
+    }
+    if (captcha && !(await captchaModule.verifyAnswer(captcha, body, { ip: req.ip }))) {
       return back(res, form.page, form.block.id, 'captcha');
     }
     const outcome = await contact.storeSubmission(checked.values, form.page);

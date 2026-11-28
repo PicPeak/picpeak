@@ -197,3 +197,8 @@ test('questions, steps and testimonials keep a short id, unique within their blo
   expect(steps.items[1].id).toMatch(/^[a-z0-9-]{1,24}$/);
   expect(testimonials.items[0].id).toMatch(/^[a-z0-9-]{1,24}$/);
 });
+
+test('every contact form carries the "reload" note, for a page cached before the spam check came on', () => {
+  const html = render([{ id: 'c1', type: 'contact' }]);
+  expect(html).toContain('<p id="contact-reload-c1" class="pp-note pp-note--err" role="alert">This form was just updated. Please reload the page and send your message again.</p>');
+});
