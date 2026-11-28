@@ -78,4 +78,17 @@ describe('contact settings draft', () => {
     expect(hook.result.current.draft?.recipients).toBe('colleague@studio.example');
     expect(hook.result.current.dirty).toBe(false);
   });
+
+  it('a read that started before a save and answers after it is not taken in', async () => {
+    const { client, hook } = setup(settings({ revision: 1 }));
+    await waitFor(() => expect(hook.result.current.draft).not.toBeNull());
+    act(() => hook.result.current.set({ recipients: 'new@studio.example' }));
+    vi.mocked(websiteService.saveContactSettings).mockResolvedValue(settings({ recipients: ['new@studio.example'], revision: 2 }));
+    await act(async () => { await hook.result.current.save(); });
+    // The older read lands now.
+    act(() => { client.setQueryData(CONTACT_SETTINGS_KEY, settings({ recipients: [], revision: 1 })); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    expect(hook.result.current.draft?.recipients).toBe('new@studio.example');
+    expect(hook.result.current.dirty).toBe(false);
+  });
 });

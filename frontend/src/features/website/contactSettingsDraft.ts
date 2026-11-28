@@ -67,9 +67,13 @@ export function useContactSettingsDraft() {
     if (!server || adopted.current === server) return;
     adopted.current = server;
     const next = fromServer(server);
-    setState((s) => (s
-      ? { draft: takeUntouched(s.draft, s.accepted, next), accepted: next, revision: server.revision }
-      : { draft: next, accepted: next, revision: server.revision }));
+    setState((s) => {
+      if (!s) return { draft: next, accepted: next, revision: server.revision };
+      // A read that started before a save and answered after it: older than
+      // what the draft already took in, so not taken.
+      if (server.revision < s.revision) return s;
+      return { draft: takeUntouched(s.draft, s.accepted, next), accepted: next, revision: server.revision };
+    });
   }, [server]);
 
   const draft = state?.draft ?? null;
@@ -92,6 +96,8 @@ export function useContactSettingsDraft() {
         contact: { recipients: recipientList(sent.recipients), confirmation: sent.confirmation && sent.provider !== 'none' },
       });
       const next = fromServer(saved);
+      // A read still under way would answer with the settings before this save.
+      await queryClient.cancelQueries({ queryKey: CONTACT_SETTINGS_KEY });
       adopted.current = saved;
       // Fields still as sent take the saved value; what was typed meanwhile stays.
       setState((s) => (s ? { draft: takeUntouched(s.draft, sent, next), accepted: next, revision: saved.revision } : s));
