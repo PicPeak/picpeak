@@ -74,13 +74,16 @@ test('at most 8 forwards to the tracker under way at once; beyond that they are 
   jest.spyOn(trackers, 'resolveUpstream').mockResolvedValue({ provider: 'umami' });
   const release = [];
   const forward = jest.spyOn(trackers, 'forwardEvent').mockImplementation(() => new Promise((resolve) => release.push(resolve)));
+  // Until the forwards under way settle (no fixed sleep: CI is slow).
+  const until = async (check) => { for (let i = 0; i < 200 && !check(); i += 1) await new Promise((r) => setTimeout(r, 10)); }; // eslint-disable-line no-await-in-loop
   await Promise.all(Array.from({ length: 20 }, () => view()));
-  await new Promise((r) => setTimeout(r, 50));
+  await until(() => forward.mock.calls.length >= 8);
+  await new Promise((r) => setTimeout(r, 100));
   expect(forward).toHaveBeenCalledTimes(8);
   release.forEach((r) => r());
   await new Promise((r) => setTimeout(r, 20));
   await view();
-  await new Promise((r) => setTimeout(r, 50));
+  await until(() => forward.mock.calls.length >= 9);
   expect(forward).toHaveBeenCalledTimes(9);
   jest.restoreAllMocks();
 });
