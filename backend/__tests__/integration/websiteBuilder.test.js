@@ -1516,6 +1516,16 @@ describe('what a page render reads', () => {
     });
     expect(seen.filter((sql) => /branding_watermark_enabled/.test(sql))).toHaveLength(1);
   });
+
+  test('image requests arriving together work out the published set once', async () => {
+    cache.clearWebsiteCache();
+    const seen = await queries(async () => {
+      const sets = await Promise.all(Array.from({ length: 6 }, () => service.publishedPhotoIds()));
+      expect(new Set(sets).size).toBe(1);
+      expect(sets[0].has(photoIds[23])).toBe(true);
+    });
+    expect(seen.filter((sql) => /from .website_documents./i.test(sql))).toHaveLength(1);
+  });
 });
 
 describe('which photo URLs work', () => {

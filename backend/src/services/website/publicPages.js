@@ -28,6 +28,8 @@ async function publishedDocument() {
   return raw ? normalizeDocument(raw).document : null;
 }
 
+let photoIdsInFlight = null;
+
 /**
  * The gallery photos the published website shows. Only these have a working
  * public URL (/site-media). Taken from rendering each visible page, so it is
@@ -40,6 +42,22 @@ async function publishedPhotoIds() {
   const generation = cacheGeneration();
   const cached = getCached('published-photos');
   if (cached !== undefined) return cached;
+  // A page's images are requested together: after a publish or an expiry
+  // they share one computation instead of each rendering every page.
+  if (photoIdsInFlight && photoIdsInFlight.generation === generation) return photoIdsInFlight.promise;
+  const promise = computePublishedPhotoIds()
+    .then((ids) => {
+      setCached('published-photos', ids, generation);
+      return ids;
+    })
+    .finally(() => {
+      if (photoIdsInFlight && photoIdsInFlight.promise === promise) photoIdsInFlight = null;
+    });
+  photoIdsInFlight = { generation, promise };
+  return promise;
+}
+
+async function computePublishedPhotoIds() {
   const document = await publishedDocument();
   const ids = new Set();
   for (const page of document ? document.pages.filter((p) => !p.hidden) : []) {
@@ -47,7 +65,6 @@ async function publishedPhotoIds() {
     const shown = renderedImages(await buildContext(document, page, { views: false }));
     shown.filter((ref) => ref.source === 'photo').forEach((ref) => ids.add(ref.id));
   }
-  setCached('published-photos', ids, generation);
   return ids;
 }
 
