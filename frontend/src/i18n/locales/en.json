@@ -13283,7 +13283,8 @@
       "addSocial": "Add link",
       "moveImageEarlier": "Move image {{n}} earlier",
       "moveImageLater": "Move image {{n}} later",
-      "profileUrlHint": "The address of your profile, which the block links to."
+      "profileUrlHint": "The address of your profile, which the block links to.",
+      "maxItems": "No more than {{max}} fit here."
     },
     "defaults": {
       "heroHeading": "Your headline",
@@ -13493,7 +13494,8 @@
         "description": "Your profiles as icons: Instagram, Facebook, TikTok and more."
       },
       "extraContact": "Only one contact form per page is shown, and the draft cannot be saved with two. Remove this one, or move it to another page.",
-      "contactTaken": "This page already has a contact form."
+      "contactTaken": "This page already has a contact form.",
+      "duplicateContact": "A page has one contact form, so this block cannot be duplicated."
     },
     "saved": "Draft saved",
     "publishTitle": "Publish the website?",

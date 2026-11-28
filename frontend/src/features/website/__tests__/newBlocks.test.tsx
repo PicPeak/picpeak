@@ -10,7 +10,14 @@ import { MemoryRouter } from 'react-router-dom';
 import type { Block, CtaBlock, FaqBlock, SocialBlock, StepsBlock, WebsiteDocument } from '../types';
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (k: string, fb?: unknown) => (typeof fb === 'string' ? fb : (fb as { defaultValue?: string })?.defaultValue ?? k), i18n: { language: 'en' } }),
+  useTranslation: () => ({
+    t: (k: string, fb?: unknown, o?: Record<string, unknown>) => {
+      const text = typeof fb === 'string' ? fb : (fb as { defaultValue?: string })?.defaultValue ?? k;
+      const vars = (typeof fb === 'object' ? fb : o) as Record<string, unknown> | undefined;
+      return text.replace(/\{\{(\w+)\}\}/g, (_, name) => String(vars?.[name] ?? ''));
+    },
+    i18n: { language: 'en' },
+  }),
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureFlags: () => ({ flags: {} }) }));
@@ -146,7 +153,11 @@ describe('call to action form', () => {
   it('allows two buttons at most', () => {
     const block: CtaBlock = { ...base, type: 'cta', variant: 'centered', heading: '', text: '', buttons: [{ label: 'A', target: { kind: 'booking' } }, { label: 'B', target: { kind: 'url', url: 'https://x.example' } }] };
     open(block);
-    expect(screen.getByRole('button', { name: 'Add button' })).toBeDisabled();
+    const add = screen.getByRole('button', { name: 'Add button' });
+    expect(add).toBeDisabled();
+    // And says why it is off.
+    expect(add).toHaveAccessibleDescription('No more than 2 fit here.');
+    expect(screen.getByText('No more than 2 fit here.')).toBeInTheDocument();
   });
 });
 

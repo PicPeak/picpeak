@@ -193,7 +193,11 @@ describe('WebsiteBuilderPage', () => {
     expect(within(dialog).getByText('This page already has a contact form.')).toBeInTheDocument();
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.click(await screen.findByText('Write to us'));
-    expect(screen.getByRole('button', { name: 'Duplicate block' })).toBeDisabled();
+    const duplicate = screen.getByRole('button', { name: 'Duplicate block' });
+    expect(duplicate).toBeDisabled();
+    // The disabled button says why (to a pointer and to a screen reader).
+    expect(duplicate).toHaveAccessibleDescription('A page has one contact form, so this block cannot be duplicated.');
+    expect(duplicate.parentElement).toHaveAttribute('title', 'A page has one contact form, so this block cannot be duplicated.');
     expect(screen.queryByText(/Only one contact form per page is shown/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'All blocks' }));
     fireEvent.click(await screen.findByText('Second form'));

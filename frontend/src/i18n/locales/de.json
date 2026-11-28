@@ -13248,7 +13248,8 @@
       "addSocial": "Link hinzufügen",
       "moveImageEarlier": "Bild {{n}} nach vorne",
       "moveImageLater": "Bild {{n}} nach hinten",
-      "profileUrlHint": "Die Adresse Ihres Profils, auf die der Block verlinkt."
+      "profileUrlHint": "Die Adresse Ihres Profils, auf die der Block verlinkt.",
+      "maxItems": "Mehr als {{max}} passen hier nicht."
     },
     "defaults": {
       "heroHeading": "Ihre Überschrift",
@@ -13458,7 +13459,8 @@
         "description": "Ihre Profile als Symbole: Instagram, Facebook, TikTok und mehr."
       },
       "extraContact": "Pro Seite wird nur ein Kontaktformular gezeigt, und mit zweien lässt sich der Entwurf nicht speichern. Entfernen Sie dieses oder verschieben Sie es auf eine andere Seite.",
-      "contactTaken": "Diese Seite hat bereits ein Kontaktformular."
+      "contactTaken": "Diese Seite hat bereits ein Kontaktformular.",
+      "duplicateContact": "Eine Seite hat ein Kontaktformular, deshalb lässt sich dieser Block nicht duplizieren."
     },
     "saved": "Entwurf gespeichert",
     "publishTitle": "Website veröffentlichen?",

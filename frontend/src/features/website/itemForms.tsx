@@ -37,9 +37,21 @@ const ItemCard: React.FC<{ title: string; removeLabel: string; canRemove: boolea
   </div>
 );
 
-const AddButton: React.FC<{ label: string; disabled: boolean; onClick: () => void }> = ({ label, disabled, onClick }) => (
-  <Button size="sm" variant="secondary" leftIcon={<Plus className="w-4 h-4" />} disabled={disabled} onClick={onClick}>{label}</Button>
-);
+// Adds an item until the list holds `max`; then it is off and says why.
+const AddButton: React.FC<{ label: string; count: number; max: number; onClick: () => void }> = ({ label, count, max, onClick }) => {
+  const { t } = useTranslation();
+  const hintId = useId();
+  const full = count >= max;
+  return (
+    <div>
+      <Button size="sm" variant="secondary" leftIcon={<Plus className="w-4 h-4" />} disabled={full} onClick={onClick}
+        aria-describedby={full ? hintId : undefined}>
+        {label}
+      </Button>
+      {full && <p id={hintId} className="mt-1 text-xs text-muted">{t('website.fields.maxItems', 'No more than {{max}} fit here.', { max })}</p>}
+    </div>
+  );
+};
 
 function patchAt<T>(list: T[], index: number, patch: Partial<T>): T[] {
   return list.map((x, i) => (i === index ? { ...x, ...patch } : x));
@@ -60,7 +72,7 @@ export const FaqItemsField: React.FC<{ value: FaqBlock['items']; onChange: (valu
             onChange={(answer) => onChange(patchAt(value, index, { answer }), `item${index}.answer`)} />
         </ItemCard>
       ))}
-      <AddButton label={t('website.fields.addFaqItem', 'Add question')} disabled={value.length >= MAX_FAQ}
+      <AddButton label={t('website.fields.addFaqItem', 'Add question')} count={value.length} max={MAX_FAQ}
         onClick={() => onChange([...value, { id: newId(), question: '', answer: '' }])} />
     </div>
   );
@@ -95,7 +107,7 @@ export const StepsField: React.FC<{ value: StepsBlock['items']; withIcons: boole
           )}
         </ItemCard>
       ))}
-      <AddButton label={t('website.fields.addStep', 'Add step')} disabled={value.length >= MAX_STEPS}
+      <AddButton label={t('website.fields.addStep', 'Add step')} count={value.length} max={MAX_STEPS}
         onClick={() => onChange([...value, { id: newId(), title: '', text: '', icon: null }])} />
       <p className="text-xs text-muted">{t('website.fields.stepsHint', 'Three to five steps read best; two to eight are possible.')}</p>
     </div>
@@ -114,7 +126,7 @@ export const CtaButtonsField: React.FC<{ value: CtaBlock['buttons']; onChange: (
           <LinkTargetField value={button.target} onChange={(target) => onChange(patchAt(value, index, { target }))} />
         </ItemCard>
       ))}
-      <AddButton label={t('website.fields.addCtaButton', 'Add button')} disabled={value.length >= MAX_CTA_BUTTONS}
+      <AddButton label={t('website.fields.addCtaButton', 'Add button')} count={value.length} max={MAX_CTA_BUTTONS}
         onClick={() => onChange([...value, { label: '', target: null }])} />
     </div>
   );
@@ -131,7 +143,7 @@ export const LogosField: React.FC<{ value: LogosBlock['items']; onChange: (value
           <LinkField label={t('website.fields.logoLink', 'Link (optional)')} value={item.url} onChange={(url) => onChange(patchAt(value, index, { url }), `logo${index}.url`)} />
         </ItemCard>
       ))}
-      <AddButton label={t('website.fields.addLogo', 'Add logo')} disabled={value.length >= MAX_LOGOS}
+      <AddButton label={t('website.fields.addLogo', 'Add logo')} count={value.length} max={MAX_LOGOS}
         onClick={() => onChange([...value, { image: null, url: '' }])} />
       <p className="text-xs text-muted">{t('website.fields.logosHint', 'Upload logos as PNG or WebP with a transparent background; they are shown at most 56 pixels high.')}</p>
     </div>
@@ -170,7 +182,7 @@ export const SocialLinksField: React.FC<{ value: SocialBlock['links']; onChange:
             onChange={(url) => onChange(patchAt(value, index, { url }), `link${index}.url`)} />
         </ItemCard>
       ))}
-      <AddButton label={t('website.fields.addSocial', 'Add link')} disabled={value.length >= MAX_SOCIAL}
+      <AddButton label={t('website.fields.addSocial', 'Add link')} count={value.length} max={MAX_SOCIAL}
         onClick={() => onChange([...value, { network: unused, url: '' }])} />
     </div>
   );

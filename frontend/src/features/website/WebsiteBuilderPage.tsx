@@ -2,7 +2,7 @@
  * Website builder (issue 2618): pages built from blocks, previewed with the
  * server's own markup, edited as a draft and published in one step.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -96,6 +96,7 @@ export const WebsiteBuilderPage: React.FC = () => {
   const canEdit = usePermission('cms.edit');
   // Showing the website at the site root is a site-wide switch (server: settings.edit too).
   const canSwitchSite = usePermission('settings.edit') && canEdit;
+  const duplicateHintId = useId();
   const editor = useWebsiteEditor();
   const queryClient = useQueryClient();
   // Shown at the site root or not: an action like Publish, taken at once.
@@ -293,6 +294,11 @@ export const WebsiteBuilderPage: React.FC = () => {
   const firstContactId = page.blocks.find((b) => b.type === 'contact')?.id;
   const isExtraContact = block?.type === 'contact' && block.id !== firstContactId;
 
+  // Why the open block cannot be duplicated, if it cannot.
+  const duplicateBlocked = block?.type === 'contact'
+    ? t('website.blocks.duplicateContact', 'A page has one contact form, so this block cannot be duplicated.') as string
+    : (page.blocks.length >= MAX_BLOCKS ? t('website.blocks.full', 'A page holds at most 60 blocks.') as string : undefined);
+
   const blocksPanel = block ? (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -302,11 +308,15 @@ export const WebsiteBuilderPage: React.FC = () => {
         <span className="flex-1 min-w-0 text-sm font-semibold text-heading truncate">{blockLabel(t, block.type)}</span>
         {canEdit && (
           <>
-            <Button size="icon-sm" variant="ghost" onClick={() => duplicateBlock(block)} disabled={page.blocks.length >= MAX_BLOCKS || block.type === 'contact'}
-              aria-label={t('website.blocks.duplicate', 'Duplicate block') as string}
-              title={page.blocks.length >= MAX_BLOCKS ? t('website.blocks.full', 'A page holds at most 60 blocks.') as string : undefined}>
-              <Copy className="w-4 h-4" />
-            </Button>
+            {/* On a wrapper: a disabled button shows no tooltip of its own everywhere. */}
+            <span title={duplicateBlocked}>
+              <Button size="icon-sm" variant="ghost" onClick={() => duplicateBlock(block)} disabled={!!duplicateBlocked}
+                aria-label={t('website.blocks.duplicate', 'Duplicate block') as string}
+                aria-describedby={duplicateBlocked ? duplicateHintId : undefined}>
+                <Copy className="w-4 h-4" />
+              </Button>
+              {duplicateBlocked && <span id={duplicateHintId} className="sr-only">{duplicateBlocked}</span>}
+            </span>
             <Button size="icon-sm" variant="ghost" onClick={() => deleteBlock(block)} aria-label={t('website.blocks.delete', 'Remove') as string}>
               <Trash2 className="w-4 h-4" />
             </Button>
