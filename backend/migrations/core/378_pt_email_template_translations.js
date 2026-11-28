@@ -35,17 +35,18 @@ const isBlank = (row) => FIELDS.every((field) => !String(row[field] || '').trim(
 // Mirrors emailProcessor.processTemplate. The row it reads for a language:
 // that language's own row, else the English one, else any row (first by id).
 const chosenRow = (rows, language) => rows.find((row) => row.language === language)
-  || (language !== 'en' && rows.find((row) => row.language === 'en'))
+  || rows.find((row) => row.language === 'en')
   || rows[0];
 // It falls back to the legacy columns when that row has no subject and no HTML.
 const readsLegacy = (row) => !row || (!row.subject && !row.body_html);
 // What it then sends, field by field: the German column for German, else the
-// English one, else the unsuffixed column.
-function legacyFields(template, cols, language) {
+// English one, else the unsuffixed column. A column the install does not have
+// reads as undefined and is skipped like an empty one.
+function legacyFields(template, language) {
   const fields = {};
   for (const field of FIELDS) {
     const names = [language === 'de' ? `${field}_de` : `${field}_en`, `${field}_en`, field];
-    fields[field] = names.map((name) => (name in cols ? template[name] : '')).find(Boolean) || '';
+    fields[field] = names.map((name) => template[name]).find(Boolean) || '';
   }
   return fields;
 }
@@ -53,7 +54,6 @@ function legacyFields(template, cols, language) {
 exports.up = async function up(knex) {
   if (!(await knex.schema.hasTable('email_templates'))) return;
   if (!(await knex.schema.hasTable('email_template_translations'))) return;
-  const cols = await knex('email_templates').columnInfo();
   // ISO strings, not Date objects: they store the same way on SQLite and PG.
   const now = new Date().toISOString();
 
@@ -64,7 +64,7 @@ exports.up = async function up(knex) {
 
     const materialise = ['en', 'de']
       .filter((language) => readsLegacy(chosenRow(rows, language)))
-      .map((language) => ({ language, fields: legacyFields(template, cols, language) }))
+      .map((language) => ({ language, fields: legacyFields(template, language) }))
       .filter(({ fields }) => fields.subject || fields.body_html);
     for (const { language, fields } of materialise) {
       const own = rows.find((row) => row.language === language);

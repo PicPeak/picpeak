@@ -312,7 +312,7 @@ async function ensureEventReminderTemplatesSeeded(db, logger) {
         const templateId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
         await upsertTranslation(templateId, 'en', def.en);
         await upsertTranslation(templateId, 'de', def.de);
-        if (PT_EMAIL_TEMPLATES[templateKey]) await upsertTranslation(templateId, 'pt', PT_EMAIL_TEMPLATES[templateKey]);
+        await upsertTranslation(templateId, 'pt', PT_EMAIL_TEMPLATES[templateKey]);
         touched.push(templateKey);
         if (logger) logger.info(`Self-healed event reminder template: ${templateKey}`);
         continue;

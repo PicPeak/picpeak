@@ -37,6 +37,18 @@ describe('pt email templates', () => {
 
   afterAll(async () => { if (cleanup) await cleanup(); });
 
+  // The seeders insert en, de and pt without checking that each exists.
+  it('is defined, next to en and de, for every template a boot seeder creates', () => {
+    const seeded = {
+      ...require('../../src/services/crmEmailTemplates').CRM_EMAIL_TEMPLATES,
+      ...require('../../src/services/contractEmailTemplates').CONTRACT_EMAIL_TEMPLATES,
+      ...require('../../src/services/eventReminderTemplates').EVENT_REMINDER_TEMPLATES,
+      ...require('../../src/services/galleryDeliveryTemplates').GALLERY_DELIVERY_TEMPLATES,
+    };
+    const incomplete = Object.keys(seeded).filter((key) => !seeded[key].en || !seeded[key].de || !PT_EMAIL_TEMPLATES[key]);
+    expect(incomplete).toEqual([]);
+  });
+
   it('exists with content for every template a fresh install has', () => {
     const keys = Object.keys(byKey);
     expect(keys.length).toBeGreaterThan(60);

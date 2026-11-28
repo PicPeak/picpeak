@@ -186,7 +186,6 @@ async function ensureGalleryDeliveryTemplatesSeeded(db, logger) {
         if (hasTranslations) {
           const contents = { en: def.en, de: def.de, pt: PT_EMAIL_TEMPLATES[templateKey] };
           for (const [language, content] of Object.entries(contents)) {
-            if (!content) continue;
             await trx('email_template_translations').insert({
               template_id: templateId,
               language,
