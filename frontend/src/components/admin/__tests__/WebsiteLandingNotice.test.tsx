@@ -23,9 +23,9 @@ vi.mock('../../../services/website.service', () => ({
 import { websiteService } from '../../../services/website.service';
 import WebsiteLandingNotice from '../WebsiteLandingNotice';
 
-const renderNotice = () => render(
+const renderNotice = (path = '/admin/dashboard') => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <MemoryRouter><WebsiteLandingNotice /></MemoryRouter>
+    <MemoryRouter initialEntries={[path]}><WebsiteLandingNotice /></MemoryRouter>
   </QueryClientProvider>,
 );
 
@@ -41,6 +41,13 @@ describe('website landing notice', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     await waitFor(() => expect(websiteService.dismissNotice).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByText(/landing page now lives under Website/)).toBeNull());
+  });
+
+  it('leaves the Website page to its own banner, which says the same', async () => {
+    vi.mocked(websiteService.getNotice).mockResolvedValue({ legacyLanding: true });
+    renderNotice('/admin/website');
+    await waitFor(() => expect(websiteService.getNotice).toHaveBeenCalled());
+    expect(screen.queryByText(/landing page now lives under Website/)).toBeNull();
   });
 
   it('stays silent when there is nothing to say, the feature is off, or the admin cannot open the website', async () => {

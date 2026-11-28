@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Globe } from 'lucide-react';
 import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
@@ -19,7 +19,9 @@ export default function WebsiteLandingNotice() {
   const { hasPermission } = usePermissions();
   const enabled = useFeatureEnabled('websiteBuilder') && hasPermission('cms.view');
   const { data } = useQuery({ queryKey: QUERY_KEY, queryFn: websiteService.getNotice, enabled, staleTime: 5 * 60 * 1000 });
-  if (!enabled || !data?.legacyLanding) return null;
+  // The Website page says it itself, above the editor (its import banner).
+  const onWebsitePage = useLocation().pathname.startsWith('/admin/website');
+  if (!enabled || !data?.legacyLanding || onWebsitePage) return null;
 
   const dismiss = async () => {
     try {
