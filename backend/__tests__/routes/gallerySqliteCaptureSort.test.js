@@ -192,6 +192,21 @@ describe('capture-date ordering on SQLite (#1172)', () => {
     expect(res.body.photos.map((p) => p.id)).toEqual([a, b, c]);
   });
 
+  test('an empty original name is no name: the browser is sent null and takes the stored one (issue 2617)', async () => {
+    const at = managed('2026-06-03T13:15:42Z');
+    const add = async (filename, original) => {
+      const id = await addPhoto(filename, at, '2026-09-01 00:00:00');
+      await db('photos').where({ id }).update({ original_filename: original });
+      return id;
+    };
+    const c = await add('stored-c.jpg', 'IMG_0003.jpg');
+    const b = await add('IMG_0002.jpg', '');
+    const a = await add('stored-a.jpg', 'IMG_0001.jpg');
+    const res = await request(app).get(`/api/gallery/${SLUG}/photos?sort=capture_date&order=asc`);
+    expect(res.body.photos.map((p) => p.id)).toEqual([a, b, c]);
+    expect(res.body.photos.find((p) => p.id === b).original_filename).toBeNull();
+  });
+
   test('all three storage classes order together correctly', async () => {
     await addPhoto('c-managed-2026-08.jpg', managed('2026-08-15T12:00:00Z'), '2026-09-01 00:00:00');
     await addPhoto('a-external-2026-06.jpg', '2026-06-03T01:15:00.000Z', '2026-09-01 00:00:00');

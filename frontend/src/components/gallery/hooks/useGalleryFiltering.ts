@@ -4,7 +4,7 @@ import type { ColorLabel } from '../../../services/feedback.service';
 import type { FeedbackFilterType } from '../GalleryFilter';
 import { photosInView } from '../folders';
 import { creditKeyOf } from '../../../utils/photoCredits';
-import { photoMatchesFilenameSearch, photoNameCompare } from '../../../utils/photoFilename';
+import { photoDisplayFilename, photoMatchesFilenameSearch, photoNameCompare } from '../../../utils/photoFilename';
 export type GallerySort = 'date' | 'name' | 'size' | 'rating' | 'capture_date';
 export interface GalleryFilterOptions {
   sourcePhotos?: Photo[]; categories?: PhotoCategory[]; folderId: number | string | null;
@@ -179,13 +179,14 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAl
         case 'capture_date': {
           const captureDateA = a.captured_at || a.uploaded_at;
           const captureDateB = b.captured_at || b.uploaded_at;
-          // A burst shares one EXIF second: the camera's file counter, then
-          // id, order it the way the server's capture-date sort does (issue 2617).
-          // A plain code-point comparison, as SQLite and our postgres:alpine
-          // image (byte-order en_US.utf8) compare; a glibc-locale Postgres
-          // would put lower and upper case together instead.
-          const nameA = a.original_filename ?? a.filename;
-          const nameB = b.original_filename ?? b.filename;
+          // A burst shares one EXIF second: the camera's file name, then id,
+          // break the tie by the server's rule (issue 2617), which is
+          // captureNameTieBreakSql in backend/src/utils/captureDateSql.js:
+          // the display name, compared bytewise. `<` compares UTF-16 code
+          // units, the same order except between a character outside the
+          // Basic Multilingual Plane and one from U+E000 up.
+          const nameA = photoDisplayFilename(a);
+          const nameB = photoDisplayFilename(b);
           return flip * (new Date(captureDateB).getTime() - new Date(captureDateA).getTime()
             || (nameB < nameA ? -1 : nameB > nameA ? 1 : 0)
             || b.id - a.id);

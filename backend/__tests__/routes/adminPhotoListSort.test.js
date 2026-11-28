@@ -181,6 +181,15 @@ describe('admin photo list sorting (issue 1739)', () => {
         .toEqual(['IMG_10.jpg', 'IMG_3.jpg', 'IMG_9.jpg', 'img_2.jpg']);
     });
 
+    it('takes the stored name for an empty original name too, as the gallery API reports it (issue 2617)', async () => {
+      const at = managed('2026-06-03T13:15:42.000Z');
+      const c = await addPhoto('stored-c.jpg', { original_filename: 'IMG_0003.jpg', captured_at: at });
+      const b = await addPhoto('IMG_0002.jpg', { original_filename: '', captured_at: at });
+      const a = await addPhoto('stored-a.jpg', { original_filename: 'IMG_0001.jpg', captured_at: at });
+      expect((await list('sort=capture_date&order=asc')).map((p) => p.id)).toEqual([a, b, c]);
+      expect((await list('sort=capture_date&order=desc')).map((p) => p.id)).toEqual([c, b, a]);
+    });
+
     it('takes the stored name where no original name is kept, as external imports store it (issue 2617)', async () => {
       const at = managed('2026-06-03T13:15:42.000Z');
       const c = await addPhoto('IMG_0003.jpg', { original_filename: null, captured_at: at });

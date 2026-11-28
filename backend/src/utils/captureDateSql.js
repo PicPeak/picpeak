@@ -50,4 +50,27 @@ const captureDateOrderSql = (client) => (client === 'pg'
             ELSE substr(photos.uploaded_at, 1, 19) || ${textMillis('photos.uploaded_at')}
           END`);
 
-module.exports = { captureDateOrderSql };
+/**
+ * ORDER BY expression for a tie on the capture date: the camera's file name.
+ * A burst shares one EXIF second and its files are numbered in shot order,
+ * which upload order (photos.id, the last key) is not. Shared by the guest
+ * gallery and the admin photo list; the browser's capture-date comparator
+ * (frontend useGalleryFiltering) sorts the loaded gallery by the same rule.
+ *
+ * The stored name stands in where there is no original one: external imports
+ * keep the camera name in filename, and '' counts as none because the gallery
+ * API reports it to the browser as null.
+ *
+ * Compared byte by byte, so every side can agree: BINARY is SQLite's default,
+ * and PostgreSQL is told so, since its database collation decides otherwise
+ * (a glibc or ICU locale folds case; the alpine image happens to be bytewise).
+ *
+ * Known limit: not a natural sort. An unpadded counter (IMG_10 before IMG_3)
+ * and a counter rolling over inside a burst (9999, then 0001) order wrong.
+ *
+ * @param {string} client  knex client name (db.client.config.client)
+ */
+const captureNameTieBreakSql = (client) => (
+  `COALESCE(NULLIF(photos.original_filename, ''), photos.filename)${client === 'pg' ? ' COLLATE "C"' : ''}`);
+
+module.exports = { captureDateOrderSql, captureNameTieBreakSql };

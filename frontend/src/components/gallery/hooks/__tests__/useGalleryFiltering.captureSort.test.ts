@@ -74,8 +74,8 @@ describe('useGalleryFiltering capture-date sort (issue 2617)', () => {
   });
 
   it('compares names the way the database does: plain, case-sensitive, not numeric', () => {
-    // SQLite's BINARY collation and the postgres:15-alpine image order by
-    // code point, so the server and the browser must agree on this.
+    // The server compares the names bytewise on both engines
+    // (captureNameTieBreakSql), and the browser has to agree with it.
     const unpadded: Photo[] = [
       makePhoto(1, 'IMG_9.jpg', burst),
       makePhoto(2, 'IMG_10.jpg', burst),
@@ -93,5 +93,15 @@ describe('useGalleryFiltering capture-date sort (issue 2617)', () => {
     ];
     const { result } = renderHook(() => useGalleryFiltering({ ...baseOptions, sourcePhotos: subSecond }));
     expect(result.current.map((p) => p.filename)).toEqual(['Z.mp4', 'A.mp4']);
+  });
+
+  it('takes the stored name for an empty original name, as the server does', () => {
+    const emptyName: Photo[] = [
+      makePhoto(1, 'IMG_0003.jpg', burst),
+      makePhoto(2, '', burst, 'IMG_0002.jpg'),
+      makePhoto(3, 'IMG_0001.jpg', burst),
+    ];
+    const { result } = renderHook(() => useGalleryFiltering({ ...baseOptions, sourcePhotos: emptyName }));
+    expect(result.current.map((p) => p.id)).toEqual([3, 2, 1]);
   });
 });

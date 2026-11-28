@@ -37,7 +37,7 @@ const { resolvePhotoContentType } = require('../utils/photoContentType');
 const { adminThumbnailUrl, adminThumbnailVersion } = require('../utils/adminThumbnailUrl');
 const { focalPointOf, normalizeFocalPoint } = require('../utils/focalPoint');
 const { IS_VIDEO_SQL, IS_PHOTO_SQL } = require('../utils/mediaTypeSql');
-const { captureDateOrderSql } = require('../utils/captureDateSql');
+const { captureDateOrderSql, captureNameTieBreakSql } = require('../utils/captureDateSql');
 const { toIso, toServerWallClock, cameraWallClock } = require('../utils/dateNormalize');
 const { parseStoredExif } = require('../services/photoExif');
 const { originalNeedsPreview } = require('../utils/rawFormats');
@@ -2074,10 +2074,9 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
     // inside a tie is whatever the engine returns, which moves rows under a
     // shift-click range from one load to the next.
     if (sort === 'capture_date') {
-      // A burst shares one EXIF second: the camera's file counter orders it
-      // before id does (issue 2617), as in the gallery.
+      // Then the camera's file name (issue 2617), as in the gallery.
       query = query.orderByRaw(`${captureDateOrderSql(db.client.config.client)} ${order}`)
-        .orderByRaw(`COALESCE(photos.original_filename, photos.filename) ${order}`);
+        .orderByRaw(`${captureNameTieBreakSql(db.client.config.client)} ${order}`);
     } else if (sort === 'size') {
       query = query.orderBy('photos.size_bytes', order);
     } else if (sort === 'rating') {
