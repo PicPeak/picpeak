@@ -8,7 +8,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import {
-  ArrowLeft, Copy, ExternalLink, FileText, Globe, Layers, Monitor, Palette, Plus, Redo2, Smartphone, Trash2, Undo2,
+  ArrowLeft, Copy, ExternalLink, FileText, Globe, Layers, Monitor, Palette, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Smartphone, Trash2, Undo2,
 } from 'lucide-react';
 import { Badge, Button, Modal, Notice, Tabs } from '../../components/common';
 import { ErrorState } from '../../components/common/EmptyState';
@@ -112,6 +112,9 @@ export const WebsiteBuilderPage: React.FC = () => {
   // ?panel=pages opens on the Pages panel (Settings › CMS links its legal pages there).
   const [searchParams] = useSearchParams();
   const [panel, setPanel] = useState<Panel>(searchParams.get('panel') === 'pages' ? 'pages' : 'blocks');
+  // The editing panel can be put away: on a laptop the preview beside it is
+  // too narrow to read, and without it the preview has the whole width.
+  const [panelOpen, setPanelOpen] = useState(true);
   const [pageId, setPageId] = useState('');
   const [blockId, setBlockId] = useState<string | null>(null);
   const [device, setDevice] = useState<PreviewDevice>('desktop');
@@ -477,9 +480,10 @@ export const WebsiteBuilderPage: React.FC = () => {
           </Notice>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-[400px_minmax(0,1fr)] gap-6 lg:flex-1 lg:min-h-0">
-          {/* The frame stays put; only its content scrolls, inside the border. */}
-          <aside className="min-w-0 lg:min-h-0 flex flex-col rounded-xl border border-line bg-panel overflow-hidden">
+        <div className={`grid grid-cols-1 gap-6 lg:flex-1 lg:min-h-0 ${panelOpen ? 'lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[400px_minmax(0,1fr)]' : ''}`}>
+          {/* The frame stays put; only its content scrolls, inside the border.
+              Put away, it is hidden, not unmounted: what is open in it stays. */}
+          <aside hidden={!panelOpen} className={`min-w-0 lg:min-h-0 flex-col rounded-xl border border-line bg-panel overflow-hidden ${panelOpen ? 'flex' : 'hidden'}`}>
             <div className="px-4 pt-4">
               <Tabs<Panel>
                 value={panel}
@@ -503,6 +507,11 @@ export const WebsiteBuilderPage: React.FC = () => {
 
           <section className="min-w-0 flex flex-col gap-3 lg:min-h-0">
             <div className="flex flex-wrap items-center gap-2">
+              <Button size="icon-sm" variant="ghost" aria-expanded={panelOpen} onClick={() => setPanelOpen((open) => !open)}
+                aria-label={(panelOpen ? t('website.panel.hide', 'Hide the editing panel') : t('website.panel.show', 'Show the editing panel')) as string}
+                title={(panelOpen ? t('website.panel.hide', 'Hide the editing panel') : t('website.panel.show', 'Show the editing panel')) as string}>
+                {panelOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
+              </Button>
               <label className="sr-only" htmlFor="website-page-select">{t('website.previewPage', 'Page in the preview')}</label>
               <select id="website-page-select" className="input w-auto min-w-0 max-w-[16rem]" value={page.id}
                 onChange={(e) => { setPageId(e.target.value); setBlockId(null); }}>
@@ -535,7 +544,7 @@ export const WebsiteBuilderPage: React.FC = () => {
               </Notice>
             )}
             <PreviewFrame html={preview.html} loading={preview.loading} device={device} selectedBlockId={block?.id || null}
-              onSelectBlock={(id) => { setPanel('blocks'); setBlockId(id); }} />
+              onSelectBlock={(id) => { setPanel('blocks'); setBlockId(id); setPanelOpen(true); }} />
           </section>
         </div>
 

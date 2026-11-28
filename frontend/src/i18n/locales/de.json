@@ -13672,7 +13672,11 @@
     "unsavedBoth": "Der Entwurf und die Einstellungen des Kontaktformulars haben ungespeicherte Änderungen. Die Einstellungen des Kontaktformulars gelten, sobald sie gespeichert sind.",
     "landingOffline": "Bisherige Startseite offline nehmen",
     "landingOfflineTitle": "Bisherige Startseite offline nehmen?",
-    "landingOfflineMessage": "Besucher sehen sie nicht mehr an der Hauptadresse; `/` führt stattdessen zur Seite für den Galerie-Code. Der Entwurf hier bleibt, wie er ist."
+    "landingOfflineMessage": "Besucher sehen sie nicht mehr an der Hauptadresse; `/` führt stattdessen zur Seite für den Galerie-Code. Der Entwurf hier bleibt, wie er ist.",
+    "panel": {
+      "hide": "Bearbeitungsbereich ausblenden",
+      "show": "Bearbeitungsbereich einblenden"
+    }
   },
   "websiteNotice": {
     "title": "Ihre Startseite ist umgezogen",

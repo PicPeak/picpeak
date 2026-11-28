@@ -13707,7 +13707,11 @@
     "unsavedBoth": "The draft and the contact form settings have unsaved changes. Contact form settings apply as soon as they are saved.",
     "landingOffline": "Take the landing page offline",
     "landingOfflineTitle": "Take the landing page offline?",
-    "landingOfflineMessage": "Visitors no longer see it at the site root; `/` leads to the gallery code page instead. The draft here stays as it is."
+    "landingOfflineMessage": "Visitors no longer see it at the site root; `/` leads to the gallery code page instead. The draft here stays as it is.",
+    "panel": {
+      "hide": "Hide the editing panel",
+      "show": "Show the editing panel"
+    }
   },
   "websiteNotice": {
     "title": "Your landing page moved",

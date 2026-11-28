@@ -253,6 +253,17 @@ describe('WebsiteBuilderPage', () => {
     expect(websiteService.saveDraft).not.toHaveBeenCalled();
   });
 
+  it('hides the editing panel to give the preview the whole width, and brings it back', async () => {
+    renderPage();
+    await screen.findByText('Blocks on “Home”');
+    fireEvent.click(screen.getByRole('button', { name: 'Hide the editing panel' }));
+    // Hidden, not unmounted: what is open in it stays as it was.
+    expect(screen.queryByRole('tab', { name: /Blocks/ })).toBeNull();
+    expect(screen.getByRole('tab', { name: /Blocks/, hidden: true })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show the editing panel' }));
+    expect(screen.getByRole('tab', { name: /Blocks/ })).toBeInTheDocument();
+  });
+
   it('adds a block after the selected one', async () => {
     renderPage();
     await screen.findByText('Blocks on “Home”');
