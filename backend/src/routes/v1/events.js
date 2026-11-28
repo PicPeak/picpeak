@@ -1073,6 +1073,8 @@ function buildPhotoFilters(req) {
  *                           Recorded size of the stored original. Null means UNKNOWN, not
  *                           zero — such a row is still sized from storage and still counts
  *                           against the ZIP size cap, so do not sum these to predict it.
+ *                           For an edited photo, the size of its edited JPEG; null until the
+ *                           saved revision is rendered.
  *                       media_type:
  *                         type: string
  *                         nullable: true
@@ -1165,15 +1167,17 @@ router.get(
       // statements above.
       const mediaRows = pageIds.length
         ? await livePhotos(db).where('event_id', eventId).whereIn('id', pageIds)
-          .select('id', 'media_type', 'mime_type', 'processing_status', 'moderation_status', ...photoEdits.EDIT_COLUMNS)
+          .select('id', 'media_type', 'mime_type', 'processing_status', 'moderation_status', ...photoEdits.EDIT_COLUMNS, ...photoEdits.SOURCE_COLUMNS)
         : [];
       const mediaById = new Map(mediaRows.map((r) => [r.id, r]));
       // An edited photo (issue 2619) is listed as the file its download
       // serves: the edited JPEG, its size and dimensions (null until rendered).
+      // The size only of a render of the saved revision and the current
+      // original: one left from the save before is not what goes out.
       const edited = new Map();
       for (const row of mediaRows) {
         if (!photoEdits.isEdited(row)) continue;
-        const stat = photoEdits.isRenderKeyOf(row, row.edit_render_path)
+        const stat = photoEdits.isRenderKeyOf(row, row.edit_render_path, row.edit_rev)
           ? await getStorage().stat(row.edit_render_path).catch(() => null) : null;
         edited.set(row.id, { width: row.edit_width || null, height: row.edit_height || null, size_bytes: stat ? stat.size : null });
       }

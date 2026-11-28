@@ -681,6 +681,13 @@ describe('v1 original downloads (issue 1473)', () => {
         expect(listed).toMatchObject({
           mime_type: 'image/jpeg', width: 96, height: 64, size_bytes: fs.statSync(path.join(storageRoot, render)).size,
         });
+        // A newer save not rendered yet: the render on record is of the
+        // revision before, so its size is not the download's. Unknown.
+        await db('photos').where({ id: photos.edited }).update({
+          edit_params: JSON.stringify({ v: 1, rotate: 90 }), edit_rev: 2, edit_width: 64, edit_height: 96,
+        });
+        const resaved = json(await get(`/api/v1/events/${evId}/photos`)).photos.find((p) => p.id === photos.edited);
+        expect(resaved).toMatchObject({ width: 64, height: 96, size_bytes: null });
         // The download is logged; the cases below count those rows from zero.
         await new Promise((r) => setTimeout(r, 100));
         await db('activity_logs').where({ event_id: evId }).delete();
