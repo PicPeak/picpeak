@@ -29,9 +29,11 @@ export const FOLIO_GAPS: Record<FolioSpacing, number> = { compact: 4, regular: 1
 
 /**
  * The three palettes, as the gallery's own theme tokens. Inside the layout
- * they replace the operator's colours, so the feature toolbox, the empty
- * messages and the buttons in it follow the palette too. Text and muted text
- * keep at least 4.5:1 on the background and the surface (folioSettings test).
+ * they replace the operator's colours, the accent included, so the feature
+ * toolbox, the empty messages and the buttons in it follow the palette too.
+ * Text and muted text keep at least 4.5:1 on the background and the surface,
+ * and so does a filled control against what is written on it
+ * (folioSettings test).
  */
 export const FOLIO_PALETTE_COLORS: Record<FolioPalette, {
   background: string;
@@ -111,6 +113,21 @@ export function folioPaletteStyle(palette: FolioPalette): CSSProperties {
     // tuned for their own page and can vanish on charcoal.
     '--accent-text': colors.text,
     '--color-accent-text': colors.text,
+    // Filled controls in the palette's ink as well (the primary button, the
+    // nav's cart, a checked box): the operator's accent is tuned for their
+    // own page, and a dark one would vanish on charcoal. Every token is
+    // written out, because the --ui-* ones resolve their var() where they are
+    // declared, on :root, and would keep the operator's value in here.
+    '--color-accent': colors.text,
+    '--color-accent-fg': colors.background,
+    '--color-accent-dark': colors.text,
+    '--color-accent-dark-fg': colors.background,
+    '--ui-accent': colors.text,
+    '--ui-accent-strong': colors.text,
+    '--ui-accent-fg': colors.background,
+    '--ui-accent-soft': colors.elevated,
+    '--ui-accent-line': colors.border,
+    '--ui-accent-on-soft': colors.text,
     // The shared primitives inside (the nav's menu) read the UI tokens.
     '--ui-panel': colors.surface,
     '--ui-hover': colors.elevated,

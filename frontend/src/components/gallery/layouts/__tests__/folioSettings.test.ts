@@ -60,6 +60,31 @@ describe('Folio palettes', () => {
     }
   });
 
+  // The fills the shared controls inside the layout read: the primary button
+  // and the lane's checked boxes (--ui-accent-strong), the nav's cart button
+  // (--color-accent), a checked tile (--color-accent-dark).
+  const FILLS: Array<[fill: string, on: string]> = [
+    ['--ui-accent-strong', '--ui-accent-fg'],
+    ['--color-accent', '--color-accent-fg'],
+    ['--color-accent-dark', '--color-accent-dark-fg'],
+  ];
+
+  it.each(FOLIO_PALETTES)('%s fills its controls with its own ink, not the operator\'s accent', (palette) => {
+    // A dark brand accent would vanish on charcoal, a pale one on paper.
+    const style = folioPaletteStyle(palette) as Record<string, string>;
+    const colors = FOLIO_PALETTE_COLORS[palette];
+    for (const [fill, on] of FILLS) {
+      expect(style[fill]).toBe(colors.text);
+      // What is written on the fill reads, and the fill stands out from the page.
+      expect(contrastRatio(style[on], style[fill])).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(style[fill], colors.background)).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(style[fill], colors.surface)).toBeGreaterThanOrEqual(3);
+    }
+    // The soft highlight (a chosen filter chip) and what is written on it.
+    expect(contrastRatio(style['--ui-accent-on-soft'], colors.elevated)).toBeGreaterThanOrEqual(4.5);
+    expect(style['--ui-accent-soft']).toBe(colors.elevated);
+  });
+
   it('writes the palette as the theme tokens the gallery reads', () => {
     const style = folioPaletteStyle('charcoal') as Record<string, string>;
     expect(style['--color-background']).toBe('#1c1c1b');
