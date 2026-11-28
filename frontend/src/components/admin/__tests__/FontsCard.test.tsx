@@ -22,14 +22,17 @@ vi.mock('../../../services/fonts.service', () => ({
     upload: vi.fn().mockResolvedValue({ family: 'New Face', weight: 700, format: 'woff2' }),
     remove: vi.fn().mockResolvedValue(undefined),
   },
+  FONTS_QUERY_KEY: ['fonts'],
 }));
 
-import { fontsService } from '../../../services/fonts.service';
+import { fontsService, FONTS_QUERY_KEY } from '../../../services/fonts.service';
 import { FontsCard } from '../FontsCard';
 
 describe('FontsCard', () => {
   it('lists the fonts, uploads one with its name and weight, and removes only uploaded ones', async () => {
-    render(<QueryClientProvider client={new QueryClient()}><FontsCard /></QueryClientProvider>);
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    render(<QueryClientProvider client={client}><FontsCard /></QueryClientProvider>);
     expect(await screen.findByText('Studio Serif')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Remove/ })).toHaveLength(1);
     fireEvent.change(screen.getByLabelText('Font name'), { target: { value: 'New Face' } });
@@ -38,6 +41,10 @@ describe('FontsCard', () => {
     fireEvent.change(screen.getByLabelText('Font file'), { target: { files: [file] } });
     fireEvent.click(screen.getByRole('button', { name: 'Upload font' }));
     await waitFor(() => expect(fontsService.upload).toHaveBeenCalledWith(file, { family: 'New Face', weight: 700, generic: 'sans-serif' }));
+    // Every font picker (branding theme, PDF typography, the website's Design
+    // panel) reads the one public list: it is fetched again.
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: FONTS_QUERY_KEY }));
+    expect(FONTS_QUERY_KEY).toEqual(['fonts']);
     fireEvent.click(screen.getByRole('button', { name: /Remove/ }));
     await waitFor(() => expect(fontsService.remove).toHaveBeenCalledWith('Studio Serif'));
   });

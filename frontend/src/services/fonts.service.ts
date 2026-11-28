@@ -17,6 +17,9 @@ export interface FontsListResponse {
   fonts: FontDefinition[];
 }
 
+/** The query key of the public font list (fontsService.list), shared by every font picker. */
+export const FONTS_QUERY_KEY = ['fonts'] as const;
+
 export const fontsService = {
   /**
    * List all self-hosted font families discovered by the backend scanner.

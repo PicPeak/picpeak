@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ThemeConfig, GALLERY_THEME_PRESETS, GalleryLayoutType } from '../../types/theme.types';
 import type { EnabledTemplate } from '../../services/cssTemplates.service';
 import { settingsService } from '../../services/settings.service';
-import { fontsService, type FontDefinition } from '../../services/fonts.service';
+import { fontsService, type FontDefinition, FONTS_QUERY_KEY } from '../../services/fonts.service';
 import { useQuery } from '@tanstack/react-query';
 import { ThemePresetsCard } from './theme-customizer/ThemePresetsCard';
 import { GalleryLayoutCard } from './theme-customizer/GalleryLayoutCard';
@@ -98,7 +98,7 @@ export const ThemeCustomizerEnhanced: React.FC<ThemeCustomizerEnhancedProps> = (
   // scanner. Used to populate the body / heading font dropdowns. Cached
   // 5 minutes — fonts rarely change without a backend restart.
   const { data: availableFonts } = useQuery<FontDefinition[]>({
-    queryKey: ['fonts'],
+    queryKey: FONTS_QUERY_KEY,
     queryFn: () => fontsService.list(),
     staleTime: 5 * 60 * 1000,
   });

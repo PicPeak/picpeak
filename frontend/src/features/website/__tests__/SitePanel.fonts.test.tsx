@@ -13,7 +13,7 @@ vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 vi.mock('../../../hooks/usePermission', () => ({ usePermission: () => true }));
-vi.mock('../../../services/fonts.service', () => ({ fontsService: { list: vi.fn().mockResolvedValue([]) } }));
+vi.mock('../../../services/fonts.service', () => ({ fontsService: { list: vi.fn().mockResolvedValue([]) }, FONTS_QUERY_KEY: ['fonts'] }));
 
 import { SitePanel } from '../SitePanel';
 import type { WebsiteDocument } from '../types';

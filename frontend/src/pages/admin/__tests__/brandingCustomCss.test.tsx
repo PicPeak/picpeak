@@ -37,6 +37,7 @@ vi.mock('../../../services/settings.service', async () => {
 vi.mock('../../../services/fonts.service', () => ({
   fontsService: { list: vi.fn(async () => []) },
   extractFamilyName: (s: string) => s,
+  FONTS_QUERY_KEY: ['fonts'],
 }));
 
 vi.mock('../../../services/businessProfile.service', () => ({
