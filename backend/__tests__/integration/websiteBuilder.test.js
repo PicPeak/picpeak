@@ -2109,6 +2109,12 @@ describe('mails of the contact form', () => {
     await db('email_queue').where({ email_type: 'website_contact_confirmation' }).update({ created_at: Date.now() - 25 * 60 * 60 * 1000 });
     await post({ ...valid, email: 'third@example.com', 'frc-captcha-response': 'ok' });
     expect(await queued('website_contact_confirmation')).toHaveLength(2);
+    // The same address in other letter case is the same address.
+    await db('email_queue').del();
+    await post({ ...valid, email: ' Mixed@Example.com', 'frc-captcha-response': 'ok' });
+    await db('email_queue').where({ email_type: 'website_contact_confirmation' }).update({ created_at: Date.now() - 60 * 1000 });
+    await post({ ...valid, email: 'mixed@EXAMPLE.COM', 'frc-captcha-response': 'ok' });
+    expect((await queued('website_contact_confirmation')).map((r) => r.recipient_email)).toEqual(['mixed@example.com']);
     // Turning the spam check off turns the confirmation off with it.
     const off = await settings({ captcha: { provider: 'none' } });
     expect(off.body.contact.confirmation).toBe(false);

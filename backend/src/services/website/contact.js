@@ -136,10 +136,16 @@ const CONFIRMATION_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 // email_queue.created_at comes back as a Date (PostgreSQL) or epoch ms
 // (SQLite), so it is read with toMillis rather than compared in SQL.
-async function confirmedRecently(email) {
+// An address as the cap counts it: trimmed and in one letter case (the whole
+// address; a +tag stays, it is part of what the visitor typed).
+const confirmationKey = (email) => String(email).trim().toLowerCase();
+
+async function confirmedRecently(key) {
   const { toMillis } = require('../../utils/queueTimestamps');
   const since = Date.now() - CONFIRMATION_WINDOW_MS;
-  const rows = await db('email_queue').where({ email_type: 'website_contact_confirmation', recipient_email: email })
+  // LOWER() on the stored address too: rows queued before it was normalised.
+  const rows = await db('email_queue').where({ email_type: 'website_contact_confirmation' })
+    .whereRaw('LOWER(recipient_email) = ?', [key])
     .orderBy('id', 'desc').limit(5).select('created_at');
   return rows.some((row) => {
     const ms = toMillis(row.created_at);
@@ -178,9 +184,10 @@ async function sendMails(values, page, { captchaOn }) {
     // eslint-disable-next-line no-await-in-loop -- a handful of recipients
     await emailProcessor.queueEmail(null, to, 'website_contact_admin', { ...studio });
   }
-  if (settings.confirmation && captchaOn && !(await confirmedRecently(values.email))) {
+  const key = confirmationKey(values.email);
+  if (settings.confirmation && captchaOn && !(await confirmedRecently(key))) {
     const name = (await getAppSetting('branding_company_name', '')) || '';
-    await emailProcessor.queueEmail(null, values.email, 'website_contact_confirmation', {
+    await emailProcessor.queueEmail(null, key, 'website_contact_confirmation', {
       sender_name: values.name.slice(0, 60), business_name: typeof name === 'string' ? name : '', __language: language,
     });
   }
