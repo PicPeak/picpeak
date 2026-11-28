@@ -512,7 +512,6 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
           }
         }
 
-        await invalidateDownloadArchives(datedEvents);
         if (lostClaim) {
           logger.warn(`Capture date backfill stopped: claim taken over after ${successCount} updated, ${errorCount} errors`);
           return;
@@ -530,6 +529,8 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
           .catch(() => {});
       } finally {
         lease.stop();
+        // However the run ended: the dates it wrote are in the database.
+        await invalidateDownloadArchives(datedEvents);
       }
     });
   } catch (error) {
@@ -978,7 +979,6 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
           }
         }
 
-        await invalidateDownloadArchives(datedEvents);
         if (lostClaim) {
           logger.warn(`Orientation backfill stopped: claim taken over after ${corrected} corrected`);
           return;
@@ -999,6 +999,8 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
           .catch(() => {});
       } finally {
         lease.stop();
+        // However the run ended: the dates it wrote are in the database.
+        await invalidateDownloadArchives(datedEvents);
       }
     });
   } catch (error) {

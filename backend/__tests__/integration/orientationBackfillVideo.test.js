@@ -25,6 +25,12 @@ describe('orientation backfill for videos (issue 2263)', () => {
     }
     throw new Error('backfill did not settle');
   };
+  // The job reports done before it drops the archives: wait for all of it.
+  const finished = async () => {
+    const settled = await settle();
+    await require('../../src/services/activeApplicationWork').drain();
+    return settled;
+  };
 
   beforeAll(async () => {
     tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'picpeak-orientbf-video-'));
@@ -147,14 +153,43 @@ describe('orientation backfill for videos (issue 2263)', () => {
       const { eventId } = await seed({ width: 1080, height: 1920, posterWidth: 169, posterHeight: 300 });
       probe.mockResolvedValue({ width: 1080, height: 1920, capturedAt: '2025-06-15T12:30:00.000Z' });
       await run();
-      await settle();
+      await finished();
       expect(invalidate).toHaveBeenCalledWith(eventId);
 
       invalidate.mockClear();
       await seed({ width: 1080, height: 1920, posterWidth: 169, posterHeight: 300, capturedAt: '2024-01-01T00:00:00.000Z' });
       await run();
-      await settle();
+      await finished();
       expect(invalidate).not.toHaveBeenCalled();
+    } finally {
+      invalidate.mockRestore();
+    }
+  });
+
+  it('drops the archive for the dates of a run that aborts (issue 2617)', async () => {
+    const zips = require('../../src/services/downloadZipService');
+    const logger = require('../../src/utils/logger');
+    const invalidate = jest.spyOn(zips, 'invalidateIfBuilt').mockResolvedValue();
+    try {
+      const { eventId, photoId } = await seed({ width: 1080, height: 1920, posterWidth: 169, posterHeight: 300 });
+      // A second clip ffprobe cannot read; a log sink that throws on that
+      // error takes the whole run down with it.
+      await db('photos').insert({
+        event_id: eventId, filename: 'broken.mov', path: 'orientbfv/broken.mov', type: 'individual',
+        media_type: 'video', mime_type: 'video/quicktime', processing_status: 'complete',
+        width: 1080, height: 1920, uploaded_at: new Date().toISOString(),
+      });
+      await fs.promises.writeFile(path.join(storageRoot, 'events/active/orientbfv', 'broken.mov'), 'video');
+      probe.mockResolvedValueOnce({ width: 1080, height: 1920, capturedAt: '2025-06-15T12:30:00.000Z' })
+        .mockRejectedValueOnce(new Error('moov atom not found'));
+      logger.error.mockImplementationOnce(() => { throw new Error('log sink down'); });
+
+      await run();
+      const done = await finished();
+
+      expect(done.body.lastResult.error).toBe('log sink down');
+      expect((await db('photos').where({ id: photoId }).first()).captured_at).toBeTruthy();
+      expect(invalidate).toHaveBeenCalledWith(eventId);
     } finally {
       invalidate.mockRestore();
     }

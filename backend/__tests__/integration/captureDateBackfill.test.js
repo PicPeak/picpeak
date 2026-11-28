@@ -31,6 +31,12 @@ describe('capture date backfill (#1172)', () => {
 
   const settle = async () => { for (let i = 0; i < 60; i++) { await new Promise((r) => setTimeout(r, 50)); const s = await status(); if (!s.body.isRunning) return s; } throw new Error('backfill did not settle'); };
   const status = () => request(app).get('/api/admin/photos/repair-capture-dates/status');
+  // The job reports done before it drops the archives: wait for all of it.
+  const finished = async () => {
+    const settled = await settle();
+    await require('../../src/services/activeApplicationWork').drain();
+    return settled;
+  };
 
   beforeAll(async () => {
     tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'picpeak-capfill-'));
@@ -154,7 +160,7 @@ describe('capture date backfill (#1172)', () => {
       const { eventId } = await seed({ relpath: 'zipped.jpg', exifIso: '2026-06-01T09:45:03Z' });
       await db('events').where({ id: eventId }).update({ download_zip_path: 'events/active/capfill/.download-cache/all.zip' });
       await request(app).post('/api/admin/photos/repair-capture-dates');
-      await settle();
+      await finished();
       expect(invalidate).toHaveBeenCalledWith(eventId);
 
       // A pass that dates nothing leaves the archive alone.
@@ -164,8 +170,33 @@ describe('capture date backfill (#1172)', () => {
         .jpeg().toFile(path.join(mediaRoot, 'trip', 'undated.jpg'));
       await db('events').where({ id: plain.eventId }).update({ download_zip_path: 'events/active/capfill/.download-cache/all.zip' });
       await request(app).post('/api/admin/photos/repair-capture-dates');
-      await settle();
+      await finished();
       expect(invalidate).not.toHaveBeenCalled();
+    } finally {
+      invalidate.mockRestore();
+    }
+  });
+
+  it('drops the archive for the dates of a run that aborts (issue 2617)', async () => {
+    const zips = require('../../src/services/downloadZipService');
+    const logger = require('../../src/utils/logger');
+    const invalidate = jest.spyOn(zips, 'invalidateIfBuilt').mockResolvedValue();
+    try {
+      const { eventId, photoId } = await seed({ relpath: 'aborted.jpg', exifIso: '2026-06-01T09:45:03Z' });
+      // A second, managed photo whose original is gone fails its read; a log
+      // sink that throws on that error takes the whole run down with it.
+      await db('photos').insert({
+        event_id: eventId, filename: 'gone.jpg', path: 'capfill/gone.jpg', type: 'individual',
+        uploaded_at: new Date().toISOString(), captured_at: null,
+      });
+      logger.error.mockImplementationOnce(() => { throw new Error('log sink down'); });
+
+      await request(app).post('/api/admin/photos/repair-capture-dates');
+      const done = await finished();
+
+      expect(done.body.lastResult.error).toBe('log sink down');
+      expect((await db('photos').where({ id: photoId }).first()).captured_at).toBeTruthy();
+      expect(invalidate).toHaveBeenCalledWith(eventId);
     } finally {
       invalidate.mockRestore();
     }
