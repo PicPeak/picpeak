@@ -2032,6 +2032,15 @@ describe('spam check on the contact form', () => {
     expect((await request(app).get('/api/admin/website/contact-settings').set(auth(adminId))).body.captcha.friendly.apiKeyUnreadable).toBe(false);
   });
 
+  test('an answer solved for another site is refused', async () => {
+    jest.spyOn(frontendUrl, 'getFrontendBaseUrl').mockResolvedValue('https://studio.example');
+    const spy = jest.spyOn(axios, 'post');
+    spy.mockResolvedValueOnce({ data: { success: true, data: { challenge: { timestamp: 'x', origin: 'https://evil.example' } } } });
+    expect((await post({ ...valid, 'frc-captcha-response': 'stolen' })).headers.location).toBe('/#contact-captcha-c1');
+    spy.mockResolvedValueOnce({ data: { success: true, data: { challenge: { timestamp: 'x', origin: 'https://studio.example' } } } });
+    expect((await post({ ...valid, 'frc-captcha-response': 'good' })).headers.location).toBe('/#contact-sent-c1');
+  });
+
   test('reCAPTCHA uses the keys of the security settings', async () => {
     await setSetting('security_recaptcha_site_key', '6LcSiteKey', 'security');
     await setSetting('security_recaptcha_secret_key', 'recaptcha-secret', 'security');
@@ -2041,6 +2050,13 @@ describe('spam check on the contact form', () => {
     expect((await post({ ...valid, 'g-recaptcha-response': 'tok' })).headers.location).toBe('/#contact-sent-c1');
     expect(spy.mock.calls[0][0]).toBe('https://www.google.com/recaptcha/api/siteverify');
     expect(spy.mock.calls[0][1]).toContain('secret=recaptcha-secret');
+    // Solved on another site's page: reCAPTCHA names that site's hostname.
+    jest.spyOn(frontendUrl, 'getFrontendBaseUrl').mockResolvedValue('https://studio.example');
+    spy.mockResolvedValueOnce({ data: { success: true, hostname: 'evil.example' } });
+    expect((await post({ ...valid, 'g-recaptcha-response': 'tok' })).headers.location).toBe('/#contact-captcha-c1');
+    spy.mockResolvedValueOnce({ data: { success: true, hostname: 'Studio.Example' } });
+    expect((await post({ ...valid, 'g-recaptcha-response': 'tok' })).headers.location).toBe('/#contact-sent-c1');
+    frontendUrl.getFrontendBaseUrl.mockRestore();
     // Its keys removed under Settings › Security while it is chosen: refused, not unchecked.
     await db('app_settings').where({ setting_key: 'security_recaptcha_secret_key' }).del();
     spy.mockClear();

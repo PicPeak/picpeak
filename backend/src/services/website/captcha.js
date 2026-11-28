@@ -71,8 +71,24 @@ function widgetHtml(captcha, { locale, esc }) {
 }
 
 /**
- * Whether the answer a form carried is valid, asked of the provider. Fails
- * closed: no answer, no key, a timeout or an error is "no".
+ * The site an answer was solved on, as the provider reports it, must be the
+ * public site: an answer solved on another page (someone else's site using
+ * the same key) is refused. Without a known public origin, or without a
+ * site in the provider's answer, there is nothing to compare.
+ */
+async function solvedHere(solvedOn) {
+  if (!solvedOn) return true;
+  let expected = '';
+  try { expected = new URL(await require('../../utils/frontendUrl').getFrontendBaseUrl()).hostname.toLowerCase(); } catch { return true; }
+  let actual = String(solvedOn).toLowerCase();
+  try { if (/^https?:\/\//.test(actual)) actual = new URL(actual).hostname; } catch { return false; }
+  return actual === expected;
+}
+
+/**
+ * Whether the answer a form carried is valid, asked of the provider, and
+ * solved on this site. Fails closed: no answer, no key, a timeout or an
+ * error is "no".
  */
 async function verifyAnswer(captcha, body, { ip } = {}) {
   const answer = body && typeof body[RESPONSE_FIELD[captcha.provider]] === 'string' ? body[RESPONSE_FIELD[captcha.provider]] : '';
@@ -82,13 +98,15 @@ async function verifyAnswer(captcha, body, { ip } = {}) {
       const { data } = await axios.post(FRIENDLY_VERIFY[captcha.endpoint === 'eu' ? 'eu' : 'global'],
         { response: answer, sitekey: captcha.siteKey },
         { headers: { 'X-API-Key': captcha.secret }, timeout: 8000, validateStatus: () => true });
-      return Boolean(data && data.success === true);
+      // Friendly Captcha v2 names the page's origin the puzzle was solved on.
+      return Boolean(data && data.success === true) && await solvedHere(data.data && data.data.challenge && data.data.challenge.origin);
     }
     const params = new URLSearchParams({ secret: captcha.secret, response: answer });
     if (ip) params.set('remoteip', ip);
     const { data } = await axios.post(RECAPTCHA_VERIFY, params.toString(),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 8000 });
-    return Boolean(data && data.success === true);
+    // reCAPTCHA names the hostname of the page it was solved on.
+    return Boolean(data && data.success === true) && await solvedHere(data.hostname);
   } catch (error) {
     logger.warn('Website contact form: captcha check failed', { provider: captcha.provider, error: error.message });
     return false;
