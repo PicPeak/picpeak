@@ -13281,7 +13281,9 @@
       "socialUrl": "Profile address",
       "socialEmailBad": "Enter an e-mail address",
       "socialUrlBad": "Start with https://",
-      "addSocial": "Add link"
+      "addSocial": "Add link",
+      "moveImageEarlier": "Move image {{n}} earlier",
+      "moveImageLater": "Move image {{n}} later"
     },
     "defaults": {
       "heroHeading": "Your headline",

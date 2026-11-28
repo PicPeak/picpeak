@@ -13246,7 +13246,9 @@
       "socialUrl": "Profiladresse",
       "socialEmailBad": "Geben Sie eine E-Mail-Adresse ein",
       "socialUrlBad": "Mit https:// beginnen",
-      "addSocial": "Link hinzufügen"
+      "addSocial": "Link hinzufügen",
+      "moveImageEarlier": "Bild {{n}} nach vorne",
+      "moveImageLater": "Bild {{n}} nach hinten"
     },
     "defaults": {
       "heroHeading": "Ihre Überschrift",

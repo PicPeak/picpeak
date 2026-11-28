@@ -4,10 +4,11 @@
 import React, { createContext, useContext, useId, useLayoutEffect, useRef, useState } from 'react';
 import { CMSEditor } from '../../components/admin/CMSEditor';
 import { useTranslation } from 'react-i18next';
-import { ImageOff, ImagePlus, Pipette, Plus, RotateCcw, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ImageOff, ImagePlus, Pipette, Plus, RotateCcw, X } from 'lucide-react';
 import { Button, Input } from '../../components/common';
 import { mediaKey } from '../../services/website.service';
 import { buildResourceUrl } from '../../utils/url';
+import { moveItem } from './blocks';
 import { ImagePicker } from './ImagePicker';
 import type { Background, Block, ImageRef } from './types';
 
@@ -313,7 +314,11 @@ export const VideoField: React.FC<{
   );
 };
 
-/** An ordered list of images (grid, strip). */
+// A button on a picture tile: shown on hover or keyboard focus, and always
+// where there is no hovering (a touch screen).
+const tileButton = 'inline-flex w-6 h-6 items-center justify-center rounded-full bg-panel text-soft shadow opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(pointer:coarse)]:opacity-100 disabled:hidden';
+
+/** An ordered list of images (grid, strip): add, remove, move earlier or later. */
 export const ImageListField: React.FC<{
   label: string;
   value: ImageRef[];
@@ -329,13 +334,20 @@ export const ImageListField: React.FC<{
         {value.map((ref, index) => (
           <li key={`${mediaKey(ref)}-${index}`} className="relative group">
             <Thumb refValue={ref} className="w-full aspect-square rounded-md" />
-            <button
-              type="button"
-              onClick={() => onChange(value.filter((_, i) => i !== index))}
-              className="absolute top-1 right-1 inline-flex w-6 h-6 items-center justify-center rounded-full bg-panel text-soft shadow opacity-0 group-hover:opacity-100 focus:opacity-100"
-              aria-label={t('website.fields.removeImage', 'Remove image {{n}}', { n: index + 1 }) as string}
-            >
+            <button type="button" onClick={() => onChange(value.filter((_, i) => i !== index))}
+              className={`absolute top-1 right-1 ${tileButton}`}
+              aria-label={t('website.fields.removeImage', 'Remove image {{n}}', { n: index + 1 }) as string}>
               <X className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+            <button type="button" disabled={index === 0} onClick={() => onChange(moveItem(value, index, index - 1))}
+              className={`absolute bottom-1 left-1 ${tileButton}`}
+              aria-label={t('website.fields.moveImageEarlier', 'Move image {{n}} earlier', { n: index + 1 }) as string}>
+              <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+            <button type="button" disabled={index === value.length - 1} onClick={() => onChange(moveItem(value, index, index + 1))}
+              className={`absolute bottom-1 right-1 ${tileButton}`}
+              aria-label={t('website.fields.moveImageLater', 'Move image {{n}} later', { n: index + 1 }) as string}>
+              <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           </li>
         ))}
