@@ -35,10 +35,18 @@ export type SettingsSectionKey =
   | 'reminder'
   | 'slideshow'
   | 'embed'
+  | 'website'
   | 'faces'
   | 'tags'
   | 'languages'
   | 'danger';
+
+// The sections a link can open (`?section=`).
+const LINKED_SECTIONS: SettingsSectionKey[] = ['general', 'access', 'downloads', 'pricing', 'guests', 'appearance', 'source', 'delivery', 'reminder', 'slideshow', 'embed', 'website', 'faces', 'tags', 'danger'];
+
+export function isLinkedSection(value: string | null): value is SettingsSectionKey {
+  return value !== null && (LINKED_SECTIONS as string[]).includes(value);
+}
 
 export interface EventFields {
   welcome_message: string;
@@ -122,6 +130,8 @@ export interface EventFields {
   customer_accounts: Array<{ id: number; email: string; displayName: string | null }>;
   // Per-event opt-in for hero photo as social-share preview (#474).
   og_image_share_enabled: boolean;
+  // The public website opt-in (issue 2618).
+  show_on_website: boolean;
   temporarily_disabled: boolean;
   /**
    * Read-only. The gallery's password was generated for portal-only access
@@ -389,6 +399,7 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
     customer_accounts: (extra.customer_accounts || [])
       .map((c) => ({ id: c.id, email: c.email, displayName: c.display_name ?? null, groups: c.groups })),
     og_image_share_enabled: truthy(event.og_image_share_enabled),
+    show_on_website: truthy(event.show_on_website),
     custom_theme_enabled: usesCustomTheme(event),
     theme: themeFromEvent(event, branding),
     event_reminder_disabled: truthy(event.event_reminder_disabled),
@@ -472,6 +483,7 @@ export const SECTION_OF_FIELD: Record<keyof EventFields, SettingsSectionKey> = {
   reveal_at: 'guests',
   hero_photo_id: 'appearance',
   og_image_share_enabled: 'appearance',
+  show_on_website: 'website',
   hero_image_anchor: 'appearance',
   chapter_marker_style: 'appearance',
   hero_logo_visible: 'appearance',
@@ -646,6 +658,7 @@ function requestFields(f: EventFields): Record<string, unknown> {
     purchase_access_days: f.purchase_access_days,
     hero_photo_id: f.hero_photo_id,
     og_image_share_enabled: f.og_image_share_enabled,
+    show_on_website: f.show_on_website,
     hero_image_anchor: f.hero_image_anchor,
     chapter_marker_style: f.chapter_marker_style,
     text_language_mode: f.text_language_mode,

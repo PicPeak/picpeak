@@ -241,6 +241,27 @@ describe('settings protected-key boundary (/general)', () => {
     expect((await put(superTok, true)).status).toBe(200);
   });
 
+  // Sending the website's page views to the tracker (issue 2618) decides
+  // where visitor data goes, as the tracker itself does: super admin only,
+  // strictly boolean, and off while nothing is stored.
+  it('only a super admin sends the website\'s page views to the tracker, and only with a boolean', async () => {
+    const put = (tok, value) => auth(request(app).put('/api/admin/settings/analytics'), tok)
+      .send({ analytics_website_forward: value });
+    expect((await put(mgrTok, false)).status).toBe(200);
+    const denied = await put(mgrTok, true);
+    expect(denied.status).toBe(403);
+    expect(denied.body.keys.map((k) => k.key)).toEqual(['analytics_website_forward']);
+    for (const bad of ['true', 1, null]) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await put(superTok, bad);
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('BAD_BOOLEAN');
+    }
+    expect((await put(superTok, true)).status).toBe(200);
+    expect(await readSetting('analytics_website_forward')).toBe(true);
+    expect((await put(superTok, false)).status).toBe(200);
+  });
+
   it('super_admin can change the tracker URL', async () => {
     const res = await auth(request(app).put('/api/admin/settings/analytics'), superTok)
       .send({ analytics_tracker_provider: 'umami', analytics_umami_url: 'https://tracker.example' });

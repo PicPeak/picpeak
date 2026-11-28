@@ -118,3 +118,22 @@ it('an enable failure cannot prevent finishing setup', async () => {
   fireEvent.click(dialog.getByRole('button', { name: 'productUsage.enable' }));
   await screen.findByText('setup.community.mission');
 });
+
+it('offers the website builder as an optional feature and switches it on when ticked', async () => {
+  const { featureFlagsService } = await import('../../services/featureFlags.service');
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}>
+    <MemoryRouter><SetupPage /></MemoryRouter>
+  </QueryClientProvider>);
+  fireEvent.change(await screen.findByLabelText('setup.tokenLabel'), { target: { value: 'test-token' } });
+  fireEvent.click(screen.getByRole('button', { name: 'setup.continue' }));
+  fireEvent.change(await screen.findByLabelText('setup.emailLabel'), { target: { value: 'owner@example.test' } });
+  fireEvent.change(screen.getByLabelText('setup.passwordLabel'), { target: { value: 'Review-test-password1' } });
+  fireEvent.change(screen.getByLabelText('setup.confirmLabel'), { target: { value: 'Review-test-password1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'setup.submit' }));
+  expect(await screen.findByText('setup.usageGroupWebsite')).toBeInTheDocument();
+  expect(screen.getByText('settings.features.websiteBuilder.description')).toBeInTheDocument();
+  fireEvent.click(screen.getByText('settings.features.websiteBuilder.title'));
+  fireEvent.click(screen.getByRole('button', { name: 'setup.finish' }));
+  await waitFor(() => expect(featureFlagsService.update).toHaveBeenCalledWith(expect.objectContaining({ websiteBuilder: true })));
+});

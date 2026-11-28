@@ -2,6 +2,7 @@ import React from 'react';
 import { Globe, Key, Activity, ShieldCheck } from 'lucide-react';
 import { Card, Input, Notice } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
+import { useFeatureEnabled } from '../../../contexts/FeatureFlagsContext';
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import type { AnalyticsSettings, TrackerProvider } from '../hooks/useSettingsState';
 
@@ -70,6 +71,40 @@ const DoNotTrackSetting: React.FC<{ value: boolean; onChange: AnalyticsSettingsS
           {t(
             'settings.analytics.honorDoNotTrackHelp',
             'On by default: a visitor whose browser sends Do Not Track is not counted. Switch it off to count them, for example for invite-only galleries; you are then responsible for the legal basis. Global Privacy Control is always honoured.',
+          )}
+        </p>
+      </div>
+    </label>
+  );
+};
+
+/**
+ * Whether the public website's page views (issue 2618) also go to the
+ * tracker: from the server, as the galleries' events do, so the website
+ * still runs no script. Only while the website builder is on.
+ */
+const WebsiteForwardSetting: React.FC<{ value: boolean; onChange: AnalyticsSettingsSetter }> = ({ value, onChange }) => {
+  const { t } = useTranslation();
+  if (!useFeatureEnabled('websiteBuilder')) return null;
+  return (
+    <label className="flex items-start gap-3 cursor-pointer">
+      <input
+        type="checkbox"
+        checked={value}
+        onChange={(e) => {
+          const checked = e.target.checked;
+          onChange((prev) => ({ ...prev, website_forward: checked }));
+        }}
+        className="w-4 h-4 mt-0.5 text-accent rounded focus:ring-accent"
+      />
+      <div>
+        <span className="text-sm font-medium text-body">
+          {t('settings.analytics.websiteForward', 'Also count the website here')}
+        </span>
+        <p className="text-sm text-muted mt-0.5">
+          {t(
+            'settings.analytics.websiteForwardHelp',
+            'Off by default; the website counts its own page views without it. On, each view of a website page also goes from your server to this tracker with the visitor’s address and browser (user agent), so the tracker can tell visitors apart. The website still runs no script and sets no cookie; Do Not Track and Global Privacy Control are honoured as above. Mention it in your privacy policy.',
           )}
         </p>
       </div>
@@ -195,6 +230,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
             </div>
 
             <DoNotTrackSetting value={analyticsSettings.honor_do_not_track} onChange={setAnalyticsSettings} />
+            <WebsiteForwardSetting value={analyticsSettings.website_forward} onChange={setAnalyticsSettings} />
 
             <ProxiedNotice />
           </div>
@@ -262,6 +298,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
             </div>
 
             <DoNotTrackSetting value={analyticsSettings.honor_do_not_track} onChange={setAnalyticsSettings} />
+            <WebsiteForwardSetting value={analyticsSettings.website_forward} onChange={setAnalyticsSettings} />
 
             <ProxiedNotice />
           </div>

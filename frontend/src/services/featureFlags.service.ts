@@ -110,7 +110,10 @@ export type FeatureKey =
   | 'backupRestoreTest'
   // Website embed (migration 363, issue 1112) - an <iframe> of a gallery
   // without a password on another site. Every embed link 404s while off.
-  | 'embed';
+  | 'embed'
+  // Website builder (migration 379, issue 2618) - pages built from blocks at
+  // `/`. While off, `/` stays the single-page public site.
+  | 'websiteBuilder';
 
 export type FeatureFlags = Record<FeatureKey, boolean>;
 

@@ -7,9 +7,11 @@ vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({ t: (key: string, fallback?: string) => fallback || key }),
 }));
+let websiteOn = false;
+vi.mock('../../../../contexts/FeatureFlagsContext', () => ({ useFeatureEnabled: () => websiteOn }));
 afterEach(cleanup);
 const base: AnalyticsSettings = {
-  tracker_provider: 'custom', honor_do_not_track: true, custom_head_html: '<script>window.__evil = true</script>',
+  tracker_provider: 'custom', honor_do_not_track: true, website_forward: false, custom_head_html: '<script>window.__evil = true</script>',
   umami_enabled: false, umami_url: '', umami_website_id: '', umami_share_url: '', umami_api_key: '',
   rybbit_url: '', rybbit_website_id: '', rybbit_api_key: '',
 };
@@ -47,4 +49,23 @@ it('switching Do Not Track honouring off changes only that setting', () => {
 it('says next to the share URL that embedding also needs the dashboard origin in frame-src', () => {
   show('umami');
   expect(screen.getByText(/settings\.analytics\.shareUrlHelp/)).toHaveTextContent('analytics.embedCspHint');
+});
+
+it('offers the website\'s page views to the tracker only while the website is on, off by default, and says what leaves', () => {
+  websiteOn = false;
+  show('umami');
+  expect(screen.queryByRole('checkbox', { name: /Also count the website/ })).toBeNull();
+  cleanup();
+  websiteOn = true;
+  const setAnalyticsSettings = vi.fn();
+  render(<AnalyticsTab analyticsSettings={{ ...base, tracker_provider: 'umami' }}
+    setAnalyticsSettings={setAnalyticsSettings} saveAnalyticsMutation={{ mutate: vi.fn(), isPending: false }}
+    isDirty={false} onDiscard={vi.fn()} />);
+  const box = screen.getByRole('checkbox', { name: /Also count the website/ });
+  expect(box).not.toBeChecked();
+  expect(screen.getByText(/address and browser/)).toBeInTheDocument();
+  fireEvent.click(box);
+  const update = setAnalyticsSettings.mock.calls[0][0] as (prev: AnalyticsSettings) => AnalyticsSettings;
+  expect(update({ ...base, tracker_provider: 'umami' })).toMatchObject({ website_forward: true });
+  websiteOn = false;
 });

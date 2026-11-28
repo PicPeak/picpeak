@@ -35,6 +35,7 @@ import { PhotoSalesSection } from './PhotoSalesSection';
 import { AppearanceSection } from './AppearanceSection';
 import { SlideshowSection } from './SlideshowSection';
 import { EmbedSection } from './EmbedSection';
+import { WebsiteSection } from './WebsiteSection';
 import { DeliverySection } from './DeliverySection';
 import { LanguagesSection } from './LanguagesSection';
 import { safeParseDate } from '../utils';
@@ -107,6 +108,7 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
     { key: 'reminder', label: t('eventReminderOverride.title', 'Pre-event reminder'), show: !!flags.reminderEmails },
     { key: 'slideshow', label: t('slideshow.adminTitle', 'Live Slideshow'), show: !!flags.slideshow },
     { key: 'embed', label: t('embed.admin.title', 'Website embed'), show: !!flags.embed },
+    { key: 'website', label: t('events.settingsTab.website', 'Public website'), show: !!flags.websiteBuilder },
     { key: 'faces', label: t('events.settingsTab.faces', 'Faces'), show: !!flags.faces },
     { key: 'tags', label: t('events.settingsTab.tags', 'Tags'), show: !!flags.autoTagging },
     { key: 'danger', label: t('events.settingsTab.danger', 'Danger zone'), show: !archived && (canArchive || canDelete) },
@@ -189,6 +191,7 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
     guests: t('events.settingsTab.about.guests', 'Guest uploads, names and feedback.'),
     slideshow: t('events.settingsTab.about.slideshow', 'A fullscreen link for projectors at live events.'),
     embed: t('events.settingsTab.about.embed', 'Show this gallery on your own website.'),
+    website: t('events.settingsTab.about.website', 'Use photos of this gallery on your public website.'),
     source: t('events.settingsTab.about.source', 'Where the photos of this gallery come from.'),
     delivery: t('events.settingsTab.about.delivery', 'Nested folders from uploads, and delivering a first look before the full gallery.'),
     pricing: t('events.settingsTab.about.pricing', 'Sell individual photo downloads: price, free quota and access window.'),
@@ -255,6 +258,8 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
         );
       case 'embed':
         return <EmbedSection event={event} canAct={canEdit} onChanged={refetchEvent} />;
+      case 'website':
+        return <WebsiteSection f={draft.event} set={set} event={event} readOnly={!canEdit} />;
       case 'faces':
         // Face recognition is a set of jobs (detect, rescan, recluster,
         // delete) rather than settings, so it acts immediately.

@@ -20,15 +20,9 @@ const { clearMaintenanceCache } = require('../middleware/maintenance');
 const { clearSettingsCache, initializeRateLimiters, RATE_LIMIT_DEFAULTS } = require('../services/rateLimitService');
 const { SETTING_KEY: GALLERY_PASSWORD_SETTING, purgeRecoverablePasswords, purgePlanForSettingWrite } = require('../utils/galleryPasswordVault');
 const {
-  DEFAULT_PUBLIC_SITE_HTML,
-  DEFAULT_PUBLIC_SITE_CSS,
-} = require('../constants/publicSiteDefaults');
-const {
   clearPublicSiteCache,
-  getDefaultPublicSitePayload,
   getRawPublicSiteSettings,
 } = require('../services/publicSiteService');
-const { sanitizeCss } = require('../utils/cssSanitizer');
 const { upsertAppSetting } = require('../utils/appSettings');
 const { clearShareLinkSettingsCache } = require('../services/shareLinkService');
 const { invalidateSiteUrlCache, isEnvPinned, envPinnedBase } = require('../utils/frontendUrl');
@@ -91,6 +85,11 @@ const isReservedSettingKey = (key) => RESERVED_SETTING_KEYS.includes(key)
   // PUT /admin/system-health/status/settings is the only writer: it needs
   // system.manage, validates the values and writes the audit entry.
   || key.startsWith('degradation_')
+  // The website's spam check and contact notifications: PUT
+  // /admin/website/contact-settings checks the keys exist and encrypts the
+  // Friendly Captcha API key (issue 2618).
+  || key.startsWith('website_captcha_')
+  || key.startsWith('website_contact_')
   || key === 'transfer_max_upload_size_mb'
   // Derived, read-only fields the GET response adds for the General tab
   // (#705). They are computed from the environment, never stored, so a
@@ -173,6 +172,8 @@ const TRACKER_CODE_KEYS = new Set([
   // Decides whether visitors who sent Do Not Track are counted (issue 1921):
   // the same kind of decision as where the events go.
   'analytics_honor_do_not_track',
+  // Whether the website's page views also go to the tracker (issue 2618).
+  'analytics_website_forward',
 ]);
 const parseStoredSetting = (row) => {
   if (!row) return undefined;
@@ -219,6 +220,7 @@ const MASKED_SECRET_KEYS = [
   'backup_rsync_ssh_key',
   'analytics_umami_api_key',
   'analytics_rybbit_api_key',
+  'website_captcha_friendly_api_key',
 ];
 const maskSecrets = (settingsObject) => {
   for (const key of MASKED_SECRET_KEYS) {
@@ -273,6 +275,7 @@ const effectiveMissingSetting = async (key) => {
   }
   if (key === 'analytics_umami_enabled') return false;
   if (key === 'analytics_honor_do_not_track') return true;
+  if (key === 'analytics_website_forward') return false;
   return null;
 };
 // A rule names either the owning `perm`, or `superAdmin: true` when the key is
@@ -343,10 +346,11 @@ const rejectUnauthorizedProtectedKeys = async (settings, req, res) => {
   // whichever endpoint wrote it: a strict boolean (issue 1921). The client
   // reads it through the public settings and the relay reads it directly;
   // a string would let the two disagree about who is counted.
-  if (Object.hasOwn(settings, 'analytics_honor_do_not_track')
-    && typeof settings.analytics_honor_do_not_track !== 'boolean') {
-    res.status(400).json({ error: 'analytics_honor_do_not_track must be true or false', code: 'BAD_BOOLEAN' });
-    return true;
+  for (const key of ['analytics_honor_do_not_track', 'analytics_website_forward']) {
+    if (Object.hasOwn(settings, key) && typeof settings[key] !== 'boolean') {
+      res.status(400).json({ error: `${key} must be true or false`, code: 'BAD_BOOLEAN' });
+      return true;
+    }
   }
   return false;
 };
@@ -544,6 +548,59 @@ router.get('/', adminAuth, requirePermission('settings.view'), async (req, res) 
     res.json(settingsObject);
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to fetch settings');
+  }
+});
+
+// Fonts (issue 2618): the families the galleries and the website offer,
+// and uploads of new ones (WOFF2, WOFF or TTF, known by their first bytes).
+// No bracket-indexed field names (fieldArrayIndexLimit, as adminCMS): a huge
+// index would have the field parser walk a sparse array synchronously.
+const fontUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 3, fieldArrayIndexLimit: 0 },
+}).single('file');
+router.get('/fonts', adminAuth, requirePermission('settings.view'), async (req, res) => {
+  try {
+    res.json({ fonts: await require('../services/fontsService').listFonts() });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to list fonts');
+  }
+});
+
+router.post('/fonts', adminAuth, requirePermission('settings.edit'), (req, res, next) => fontUpload(req, res, (err) => {
+  if (!err) return next();
+  if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'A font file can be at most 2 MB', code: 'FONT_TOO_LARGE' });
+  return res.status(400).json({ error: 'Invalid upload', code: 'FONT_TYPE' });
+}), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Choose a font file', code: 'FONT_TYPE' });
+    const saved = await require('../services/fontsService').saveUploadedFont({
+      family: req.body.family, weight: Number(req.body.weight), generic: req.body.generic, buffer: req.file.buffer,
+    });
+    clearPublicSiteCache();
+    // The website's pages name the font files with their version: render anew.
+    require('../services/website/cache').clearWebsiteCache();
+    await logActivity('font_uploaded', { family: saved.family, weight: saved.weight, format: saved.format }, null,
+      { type: 'admin', id: req.admin.id, name: req.admin.username });
+    res.status(201).json(saved);
+  } catch (error) {
+    if (error.statusCode === 400) return res.status(400).json({ error: error.message, code: error.code });
+    errorResponse(res, error, 500, 'Failed to upload the font');
+  }
+});
+
+router.delete('/fonts/:family', adminAuth, requirePermission('settings.edit'), async (req, res) => {
+  try {
+    if (!(await require('../services/fontsService').deleteUploadedFamily(req.params.family))) {
+      return res.status(404).json({ error: 'No uploaded font of that name', code: 'FONT_NOT_FOUND' });
+    }
+    clearPublicSiteCache();
+    require('../services/website/cache').clearWebsiteCache();
+    await logActivity('font_deleted', { family: req.params.family }, null,
+      { type: 'admin', id: req.admin.id, name: req.admin.username });
+    res.status(204).end();
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to remove the font');
   }
 });
 
@@ -1794,6 +1851,11 @@ async function prepareGeneralSettings(settings, ctx) {
     .normaliseCustomerDocumentSettings(settings);
   if (documentSettingsError) return { error: documentSettingsError };
 
+  // The landing page's HTML and CSS have no editor of their own (the page
+  // moved into the website builder, issue 2618). The stored page is still
+  // served until the website replaces it, so the two are not written here.
+  delete settings.general_public_site_html;
+  delete settings.general_public_site_custom_css;
   ctx.publicSiteKeysTouched = Object.keys(settings).some((key) => key.startsWith('general_public_site_'));
 
   // Per-file size limits (MB) are validated on save like the count, so an
@@ -1904,28 +1966,13 @@ async function prepareGeneralSettings(settings, ctx) {
   }
 
   if (ctx.publicSiteKeysTouched) {
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_public_site_custom_css')) {
-      settings.general_public_site_custom_css = sanitizeCss(settings.general_public_site_custom_css || '');
-    }
-
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_public_site_html') && typeof settings.general_public_site_html === 'string') {
-      settings.general_public_site_html = settings.general_public_site_html.trim();
-    }
-
     if (Object.prototype.hasOwnProperty.call(settings, 'general_public_site_enabled')) {
       settings.general_public_site_enabled = formatBoolean(settings.general_public_site_enabled);
     }
 
-    const enableToggle = settings.general_public_site_enabled;
-    if (enableToggle === true) {
-      let htmlValue = settings.general_public_site_html;
-
-      if (htmlValue === undefined) {
-        const currentSettings = await getRawPublicSiteSettings();
-        htmlValue = currentSettings.general_public_site_html;
-      }
-
-      if (!htmlValue || !String(htmlValue).trim()) {
+    if (settings.general_public_site_enabled === true) {
+      const { general_public_site_html: html } = await getRawPublicSiteSettings();
+      if (!html || !String(html).trim()) {
         return {
           error: 'Public site HTML must be provided before enabling the public landing page.'
         };
@@ -2471,68 +2518,6 @@ router.put('/security/rate-limit', adminAuth, requirePermission('settings.securi
     res.json({ message: 'Rate limit settings updated successfully' });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to update rate limit settings');
-  }
-});
-
-// Get default public site template
-router.get('/public-site/default', adminAuth, requirePermission('settings.view'), async (req, res) => {
-  try {
-    const defaults = await getDefaultPublicSitePayload();
-
-    res.json({
-      enabled: false,
-      html: DEFAULT_PUBLIC_SITE_HTML.trim(),
-      css: '',
-      baseCss: DEFAULT_PUBLIC_SITE_CSS.trim(),
-      branding: defaults.branding,
-      meta: {
-        title: defaults.title,
-      }
-    });
-  } catch (error) {
-    errorResponse(res, error, 500, 'Failed to load defaults');
-  }
-});
-
-// Reset public site template to defaults
-router.post('/public-site/reset', adminAuth, requirePermission('settings.edit'), async (req, res) => {
-  try {
-    const entries = [
-      {
-        key: 'general_public_site_html',
-        value: DEFAULT_PUBLIC_SITE_HTML.trim()
-      },
-      {
-        key: 'general_public_site_custom_css',
-        value: ''
-      }
-    ];
-
-    for (const { key, value } of entries) {
-      await upsertSettingValue(key, value, 'general');
-    }
-
-    clearPublicSiteCache();
-
-    const defaults = await getDefaultPublicSitePayload();
-
-    await logActivity('public_site_reset_to_default',
-      {
-        template_length: DEFAULT_PUBLIC_SITE_HTML.length,
-      },
-      null,
-      { type: 'admin', id: req.admin.id, name: req.admin.username }
-    );
-
-    res.json({
-      message: 'Public site template reset to defaults',
-      html: DEFAULT_PUBLIC_SITE_HTML.trim(),
-      css: '',
-      baseCss: DEFAULT_PUBLIC_SITE_CSS.trim(),
-      branding: defaults.branding
-    });
-  } catch (error) {
-    errorResponse(res, error, 500, 'Failed to reset template');
   }
 });
 

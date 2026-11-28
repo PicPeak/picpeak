@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ThemeConfig, GALLERY_THEME_PRESETS, GalleryLayoutType } from '../../types/theme.types';
 import type { EnabledTemplate } from '../../services/cssTemplates.service';
 import { settingsService } from '../../services/settings.service';
-import { fontsService, type FontDefinition } from '../../services/fonts.service';
+import { useFonts } from '../../hooks/useFonts';
 import { useQuery } from '@tanstack/react-query';
 import { ThemePresetsCard } from './theme-customizer/ThemePresetsCard';
 import { GalleryLayoutCard } from './theme-customizer/GalleryLayoutCard';
@@ -94,14 +94,8 @@ export const ThemeCustomizerEnhanced: React.FC<ThemeCustomizerEnhancedProps> = (
     staleTime: 60000,
   });
 
-  // Fetch the list of self-hosted font families discovered by the backend
-  // scanner. Used to populate the body / heading font dropdowns. Cached
-  // 5 minutes — fonts rarely change without a backend restart.
-  const { data: availableFonts } = useQuery<FontDefinition[]>({
-    queryKey: ['fonts'],
-    queryFn: () => fontsService.list(),
-    staleTime: 5 * 60 * 1000,
-  });
+  // The self-hosted font families, for the body / heading font dropdowns.
+  const { data: availableFonts } = useFonts();
 
   const thumbnailWidth = parseInt(allSettings?.thumbnail_width) || 300;
   const thumbnailHeight = parseInt(allSettings?.thumbnail_height) || 300;

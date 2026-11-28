@@ -27,18 +27,13 @@ import { PhotosTab } from './event-details/PhotosTab';
 import { OrdersTab } from './event-details/OrdersTab';
 import { EventSettingsTab } from './event-details/settings/EventSettingsTab';
 import { useEventSettingsDraft } from './event-details/settings/useEventSettingsDraft';
-import type { SettingsSectionKey } from './event-details/settings/draft';
+import { isLinkedSection, type SettingsSectionKey } from './event-details/settings/draft';
 import { EventFeedbackPanel } from './EventFeedbackPage';
 
 const ALL_TAB_KEYS: EventDetailsTab[] = ['overview', 'photos', 'guests', 'orders', 'settings'];
-const SECTION_KEYS: SettingsSectionKey[] = ['general', 'access', 'downloads', 'pricing', 'guests', 'appearance', 'source', 'delivery', 'reminder', 'slideshow', 'embed', 'faces', 'tags', 'danger'];
 
 function isValidTab(value: string | null): value is EventDetailsTab {
   return value !== null && (ALL_TAB_KEYS as string[]).includes(value);
-}
-
-function isValidSection(value: string | null): value is SettingsSectionKey {
-  return value !== null && (SECTION_KEYS as string[]).includes(value);
 }
 
 export const EventDetailsPage: React.FC = () => {
@@ -67,7 +62,7 @@ export const EventDetailsPage: React.FC = () => {
   // then shows General, a phone shows the section overview. It lives in the
   // URL so a link to any section (General included) opens it.
   const [settingsSection, setSettingsSection] = useState<SettingsSectionKey | null>(
-    isValidSection(searchParams.get('section')) ? (searchParams.get('section') as SettingsSectionKey) : null
+    isLinkedSection(searchParams.get('section')) ? (searchParams.get('section') as SettingsSectionKey) : null
   );
 
   useEffect(() => {
@@ -84,7 +79,7 @@ export const EventDetailsPage: React.FC = () => {
     const urlTab = searchParams.get('tab');
     if (isValidTab(urlTab) && urlTab !== activeTab) setActiveTab(urlTab);
     const urlSection = searchParams.get('section');
-    const nextSection = isValidSection(urlSection) ? urlSection : null;
+    const nextSection = isLinkedSection(urlSection) ? urlSection : null;
     if (nextSection !== settingsSection) setSettingsSection(nextSection);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);

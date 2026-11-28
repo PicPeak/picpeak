@@ -26,6 +26,17 @@ export interface PublicCMSPage {
   updated_at: string;
 }
 
+/**
+ * The legal pages: the CMS pages the footers link, which a website menu
+ * item or button can lead to, and which the website builder edits in its
+ * Pages panel while the website is on (issue 2618). The frontend's one
+ * list; a backend test holds it to LEGAL_SLUGS in
+ * backend/src/services/website/document.js.
+ */
+export const LEGAL_PAGE_SLUGS = ['impressum', 'datenschutz', 'agb'] as const;
+export type LegalPageSlug = (typeof LEGAL_PAGE_SLUGS)[number];
+export const isLegalPageSlug = (slug: string): slug is LegalPageSlug => (LEGAL_PAGE_SLUGS as readonly string[]).includes(slug);
+
 export const cmsService = {
   // Get all CMS pages
   async getPages(): Promise<CMSPage[]> {

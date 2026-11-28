@@ -2,6 +2,19 @@ const axios = require('axios');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 
+/**
+ * Google's answer for one solved challenge ({ success, hostname, … }), for
+ * the site whose secret key this is. Throws when Google cannot be asked;
+ * what that means is the caller's to decide.
+ */
+async function siteverify(secretKey, token, { ip } = {}) {
+  const params = new URLSearchParams({ secret: secretKey, response: token });
+  if (ip) params.set('remoteip', ip);
+  const { data } = await axios.post('https://www.google.com/recaptcha/api/siteverify', params.toString(),
+    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 8000 });
+  return data || {};
+}
+
 async function verifyRecaptcha(token) {
   // Check if reCAPTCHA is enabled
   const settings = await db('app_settings')
@@ -38,22 +51,11 @@ async function verifyRecaptcha(token) {
   }
   
   try {
-    const response = await axios.post(
-      'https://www.google.com/recaptcha/api/siteverify',
-      null,
-      {
-        params: {
-          secret: secretKey,
-          response: token
-        }
-      }
-    );
-    
-    return response.data.success === true;
+    return (await siteverify(secretKey, token)).success === true;
   } catch (error) {
     logger.error('reCAPTCHA verification error:', error);
     return false;
   }
 }
 
-module.exports = { verifyRecaptcha };
+module.exports = { verifyRecaptcha, siteverify };

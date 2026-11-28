@@ -43,6 +43,17 @@ async function getAppSetting(key, defaultValue = null, conn = db) {
 }
 
 /**
+ * Several settings at once: { key: parsed value } for the keys that are
+ * stored (a key with no row is absent, so the caller's default applies).
+ */
+async function getAppSettings(keys, conn = db) {
+  const rows = await conn('app_settings').whereIn('setting_key', keys);
+  const out = {};
+  rows.forEach((row) => { out[row.setting_key] = parseSettingValue(row.setting_value); });
+  return out;
+}
+
+/**
  * Schema-correct upsert into app_settings. The table has NO `created_at`
  * column (only setting_key/setting_value/setting_type + updated_at — see
  * src/database/db.js), so inserting created_at throws and silently breaks the
@@ -60,4 +71,4 @@ async function upsertAppSetting(setting_key, setting_value, setting_type, conn =
   }
 }
 
-module.exports = { getAppSetting, parseSettingValue, upsertAppSetting };
+module.exports = { getAppSetting, getAppSettings, parseSettingValue, upsertAppSetting };

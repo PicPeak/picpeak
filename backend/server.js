@@ -317,16 +317,7 @@ function composeInlineStyles(payload) {
   const { branding } = payload;
   const cssSegments = [];
 
-  cssSegments.push(`:root {
-  --brand-primary: ${branding.colors.primary};
-  --brand-accent: ${branding.colors.accent};
-  --brand-background: ${branding.colors.background};
-  --brand-text: ${branding.colors.text};
-  --brand-surface: ${branding.colors.surface || '#ffffff'};
-  --brand-elevated: ${branding.colors.elevated || '#f5f5f5'};
-  --brand-border: ${branding.colors.border || '#e5e5e5'};
-  --brand-muted-text: ${branding.colors.mutedText || '#737373'};
-}`);
+  cssSegments.push(require('./src/utils/brandCssVariables').brandCssVariables(branding.colors));
 
   if (payload.baseCss) {
     cssSegments.push(payload.baseCss);
@@ -469,8 +460,98 @@ function buildPublicSiteDocument(payload) {
 </html>`;
 }
 
+// The website builder's pages (issue 2618). Same headers as the single
+// page; the CSP adds media-src for a hero video, and the captcha's origins on
+// a page with a contact form while it is on (captcha.js). Answers 304 on a matching
+// validator, and the noindex header travels with the cached page.
+function sendWebsitePage(req, res, page, slug) {
+  if (page.status === 302) {
+    res.setHeader('Cache-Control', 'no-store');
+    res.redirect(302, page.location);
+    return;
+  }
+  // Counted server-side (no cookie, no script); a revalidation is a view too.
+  // A published page by its slug; every address with no page in one bucket
+  // (pageViews.NOT_FOUND_PAGE), so made-up addresses add no rows; the legal
+  // pages are not the website's own and not counted.
+  if (req.method === 'GET' && (!page.system || page.notFound)) {
+    const pageViews = require('./src/services/website/pageViews');
+    pageViews.recordPageView({
+      slug: page.notFound ? pageViews.NOT_FOUND_PAGE : slug, userAgent: req.get('user-agent'), referer: req.get('referer'), host: req.get('host'),
+      ip: require('./src/utils/clientIp').clientIpForAudit(req), gpc: req.get('Sec-GPC'), dnt: req.get('DNT'),
+    });
+  }
+  // Every header before the conditional answer: a 304 updates the cached
+  // copy's headers, so it must carry this page's policy, not Helmet's.
+  if (page.noindex) res.setHeader('X-Robots-Tag', 'noindex');
+  res.setHeader('Cache-Control', 'public, max-age=30, must-revalidate');
+  res.setHeader('ETag', page.etag);
+  res.setHeader('Vary', 'Accept-Encoding');
+  res.setHeader('Content-Security-Policy', require('./src/services/website/captcha').websiteCsp(page.captcha));
+  if (req.headers['if-none-match'] === page.etag) {
+    res.status(304).end();
+    return;
+  }
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.status(page.status || 200).send(page.html);
+}
+
+// A path the app answers itself (document.js; the maintenance gate asks the same).
+const ownedByApp = (slug) => require('./src/services/website/document').ownedByApp(slug);
+
+// A path the website does not answer (the builder off, the site not live)
+// goes on to the app. Behind nginx, whose website location marks its
+// requests (X-PicPeak-Spa-Fallback), the answer is an internal redirect to
+// the SPA shell. Without nginx, the routes below.
+const viaNginxWebsiteLocation = (req) => req.get('X-PicPeak-Spa-Fallback') === '1';
+
+function notOurs(req, res, next) {
+  if (viaNginxWebsiteLocation(req)) {
+    res.setHeader('X-Accel-Redirect', '/__spa');
+    return res.status(200).end();
+  }
+  return next();
+}
+
+// That location turns every 404 into the SPA shell (so an older backend's,
+// or a path nothing answers, still gets the app), so the website's own
+// not-found page goes to nginx's internal /__website/ location instead,
+// which asks again without the mark and lets the page's 404 through. It is
+// counted there, once.
+function handOverNotFound(req, res, slug) {
+  res.setHeader('X-Accel-Redirect', `/__website/${slug}`);
+  return res.status(200).end();
+}
+
+// `/<slug>` of a published website page, a legal page, or, for any other
+// address, the not-found page, all while the website is live. Anything else
+// (the flag off, the site not live) is not the website's to answer.
+async function handleWebsitePageRequest(req, res, next) {
+  try {
+    // Paths the app owns (/health, /admin, ...) never cost a lookup.
+    if (ownedByApp(req.params[0])) return notOurs(req, res, next);
+    const page = await require('./src/services/website/service').resolvePublicPage(req.params[0]);
+    if (!page) return notOurs(req, res, next);
+    if (page.notFound && viaNginxWebsiteLocation(req)) return handOverNotFound(req, res, req.params[0]);
+    return sendWebsitePage(req, res, page, req.params[0]);
+  } catch (error) {
+    logger.error('Failed to render website page', { error: error.message });
+    return notOurs(req, res, next);
+  }
+}
+
 async function handlePublicSiteRequest(req, res, next) {
   try {
+    const websitePage = await require('./src/services/website/service').resolvePublicPage('')
+      .catch((error) => {
+        logger.error('Failed to render website home page', { error: error.message });
+        return null;
+      });
+    if (websitePage) {
+      sendWebsitePage(req, res, websitePage, '');
+      return;
+    }
+
     const payload = await getPublicSitePayload();
 
     if (!payload.enabled) {
@@ -691,12 +772,10 @@ app.use('/uploads/favicons', setCorsHeaders, secureStatic(path.join(storagePath,
 // admin-writable and a restored backup can populate it, so anything else in
 // it must not be served from the app origin. nosniff keeps a browser from
 // promoting a font response to another type.
-const { isPublicFontFile } = require('./src/middleware/secureStatic');
-const fontStaticOpts = {
-  maxAge: '7d',
-  onlyServe: isPublicFontFile,
-  setHeaders: (res) => res.setHeader('X-Content-Type-Options', 'nosniff'),
-};
+const { fontReadThrough, fontStaticOpts } = require('./src/middleware/fontReadThrough');
+// Uploaded fonts kept in an object store (S3): served from a local copy, so
+// every replica serves what any replica uploaded (issue 2618).
+app.use('/fonts', setCorsHeaders, fontReadThrough());
 app.use(
   '/fonts',
   setCorsHeaders,
@@ -833,6 +912,37 @@ app.get('/robots.txt', async (req, res) => {
     res.status(200).send('User-agent: *\nDisallow: /\n');
   }
 });
+
+// sitemap.xml of the published website (issue 2618); 404 while the builder
+// is not live.
+// These run before the SPA block mounts compression() (and the API stays
+// uncompressed), so the website's HTML and sitemap take it themselves, as
+// the home page gets it there. /site-media serves already compressed images.
+const websiteCompression = compression();
+app.get('/sitemap.xml', websiteCompression, async (req, res, next) => {
+  try {
+    const xml = await require('./src/services/website/service').sitemapXml();
+    if (!xml) return next();
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return res.status(200).send(xml);
+  } catch (error) {
+    logger.error('Failed to generate sitemap.xml', { error: error.message });
+    return next();
+  }
+});
+
+// Website images: signed rendition URLs only (issue 2618). Cross-origin
+// loadable like /fonts: the editor's preview takes them from the backend's
+// origin when the admin runs on another one.
+app.use('/site-media', setCorsHeaders, require('./src/routes/publicWebsiteMedia'));
+
+// Website builder pages at a single clean path segment (issue 2618). Only
+// slug-shaped paths reach the handler; it hands everything it does not own
+// on to the SPA routes below.
+// Paths the app owns (/health, /api, /admin, ...) pass by untouched.
+const compressWebsitePage = (req, res, next) => (ownedByApp(req.params[0]) ? next() : websiteCompression(req, res, next));
+app.get(require('./src/services/website/validators').PAGE_PATH_PATTERN, compressWebsitePage, handleWebsitePageRequest);
 
 // Dynamic favicon endpoints. Browsers — notably Safari — request
 // /favicon.ico and /apple-touch-icon*.png directly at the site root and are
@@ -996,6 +1106,8 @@ app.use('/api/admin/document-attachments', require('./src/routes/adminDocumentAt
 app.use('/api/admin/projects',   require('./src/routes/adminProjects'));
 // Project briefs (issue 2678): templates, project and customer briefs.
 app.use('/api/admin/briefs',     require('./src/routes/adminBriefs'));
+// Website builder (issue 2618), behind the websiteBuilder flag.
+app.use('/api/admin/website',    require('./src/routes/adminWebsite'));
 app.use('/api/admin/calendar',   require('./src/routes/adminCalendar'));
 // Client booking requests (#2440): admin side and the public booking page.
 app.use('/api/admin/booking', require('./src/routes/adminBooking'));
@@ -1054,6 +1166,7 @@ app.use('/api/v1', require('./src/middleware/productUsage').productUsageApi, req
 app.use('/api/invite', require('./src/routes/acceptInvite'));
 app.use('/api/public/settings', require('./src/routes/publicSettings'));
 app.use('/api/public/fonts', require('./src/routes/publicFonts'));
+app.use('/api/public/website', require('./src/routes/publicWebsite'));
 app.use('/api/public', require('./src/routes/publicCMS'));
 
 // Optional: Serve built frontend (native installs and the all-in-one image, #1042)

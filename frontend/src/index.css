@@ -595,6 +595,24 @@
     scrollbar-width: none;
   }
 
+  /*
+   * A scroll area inside a bordered panel: the admin's scrollbar thumb on a
+   * clear track, so the panel's own surface shows behind it, and a stable
+   * gutter so content does not shift when it appears.
+   */
+  .panel-scroll {
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: var(--ui-fill-strong) transparent;
+  }
+  .panel-scroll::-webkit-scrollbar-track {
+    background-color: transparent;
+  }
+  .panel-scroll::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
   /* Smooth scroll */
   .smooth-scroll {
     scroll-behavior: smooth;

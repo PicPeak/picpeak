@@ -1,64 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { ThemeConfig, EventTheme, GALLERY_THEME_PRESETS } from '../types/theme.types';
-import { fontsService, extractFamilyName, type FontDefinition } from '../services/fonts.service';
+import { loadFontForFamily } from '../services/fontLoader';
 import { applyForceColorMode, DARK_SURFACE_DEFAULTS, LIGHT_SURFACE_DEFAULTS } from '../utils/themeMigration';
 import { getReadableForeground, readableAccentText } from '../utils/contrast';
 import { applyStatusColors, normalizeStatusColors } from '../utils/statusColors';
 import { usePublicSettings } from '../hooks/usePublicSettings';
-
-// Self-hosted font loader. Resolves the available-fonts list once (cached for
-// 5 minutes) and lazily injects @font-face blocks into <head> only for the
-// families a page actually uses. Avoids preloading every available font on
-// every gallery view.
-const FONTS_LIST_TTL_MS = 5 * 60 * 1000;
-let fontsListPromise: Promise<FontDefinition[]> | null = null;
-let fontsListExpiresAt = 0;
-const injectedFamilies = new Set<string>();
-const FONT_STYLE_ID = 'self-hosted-fonts';
-
-function getFontsList(): Promise<FontDefinition[]> {
-  if (fontsListPromise && Date.now() < fontsListExpiresAt) {
-    return fontsListPromise;
-  }
-  fontsListPromise = fontsService.list().catch((err) => {
-    console.error('Failed to load fonts list:', err);
-    return [];
-  });
-  fontsListExpiresAt = Date.now() + FONTS_LIST_TTL_MS;
-  return fontsListPromise;
-}
-
-function ensureFontFaceLoaded(family: string, weights: number[]): void {
-  if (injectedFamilies.has(family)) return;
-  injectedFamilies.add(family);
-
-  let styleEl = document.getElementById(FONT_STYLE_ID) as HTMLStyleElement | null;
-  if (!styleEl) {
-    styleEl = document.createElement('style');
-    styleEl.id = FONT_STYLE_ID;
-    document.head.appendChild(styleEl);
-  }
-
-  // Folder name on disk = family name with hyphens. URL-encode in case of
-  // unusual characters (the scanner already restricts to subdirectory names,
-  // so this is belt-and-braces).
-  const folderName = family.replace(/ /g, '-');
-  const blocks = weights.map(
-    (w) => `@font-face{font-family:'${family}';font-style:normal;font-weight:${w};font-display:swap;src:url('/fonts/${encodeURIComponent(folderName)}/${w}.woff2') format('woff2');}`
-  );
-  styleEl.textContent += '\n' + blocks.join('\n');
-}
-
-async function loadFontForFamily(cssFontFamily: string | undefined | null): Promise<void> {
-  const family = extractFamilyName(cssFontFamily);
-  if (!family) return;
-  if (injectedFamilies.has(family)) return;
-  const fonts = await getFontsList();
-  const match = fonts.find((f) => f.family.toLowerCase() === family.toLowerCase());
-  if (!match) return; // unknown family — browser falls back to the CSS generic
-  ensureFontFaceLoaded(match.family, match.weights);
-}
 
 function resolveColorMode(mode: 'light' | 'dark' | 'auto' | undefined): 'light' | 'dark' {
   if (mode === 'dark') return 'dark';

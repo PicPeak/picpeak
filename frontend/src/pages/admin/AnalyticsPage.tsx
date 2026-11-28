@@ -13,7 +13,6 @@ import {
   RefreshCw,
   Tablet
 } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
 
 import { Button, Card, ErrorState, Loading, Notice } from '../../components/common';
 import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
@@ -22,6 +21,9 @@ import { adminService } from '../../services/admin.service';
 import { settingsService } from '../../services/settings.service';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../config/api';
+import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
+import { MiniChart } from '../../components/admin/analytics/MiniChart';
+import { WebsiteTrafficSection } from '../../components/admin/analytics/WebsiteTrafficSection';
 
 // Map API response to component format
 interface ComponentAnalyticsData {
@@ -56,6 +58,8 @@ export const AnalyticsPage: React.FC = () => {
   const { t } = useTranslation();
   const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d'>('7d');
   const [isEmbedMode, setIsEmbedMode] = useState(false);
+  const websiteOn = useFeatureEnabled('websiteBuilder');
+  const days = dateRange === '7d' ? 7 : dateRange === '30d' ? 30 : 90;
   
   // Check if Umami is configured in the admin settings
   const [umamiConfig, setUmamiConfig] = useState<{ url?: string; shareUrl?: string; enabled?: boolean; cookieDomain?: string | null }>({});
@@ -78,10 +82,7 @@ export const AnalyticsPage: React.FC = () => {
   // Fetch analytics data from backend
   const { data: apiData, isLoading, isError, isRefetching, refetch } = useQuery({
     queryKey: ['admin-analytics', dateRange],
-    queryFn: async () => {
-      const days = dateRange === '7d' ? 7 : dateRange === '30d' ? 30 : 90;
-      return adminService.getAnalytics(days);
-    },
+    queryFn: () => adminService.getAnalytics(days),
     refetchInterval: 60000 // Refresh every minute
   });
 
@@ -199,24 +200,6 @@ export const AnalyticsPage: React.FC = () => {
         <TrendingUp className={`w-3 h-3 mr-1 ${!isPositive ? 'rotate-180' : ''}`} />
         {Math.abs(trend)}%
       </span>
-    );
-  };
-
-  const renderMiniChart = (data: Array<{ date: string; value: number }>, color: string) => {
-    const max = Math.max(...data.map(d => d.value));
-    const height = 40;
-    
-    return (
-      <div className="flex items-end gap-1 h-10">
-        {data.map((item, index) => (
-          <div
-            key={index}
-            className={`flex-1 ${color} rounded-t opacity-70 hover:opacity-100 transition-opacity`}
-            style={{ height: `${(item.value / max) * height}px` }}
-            title={`${format(parseISO(item.date), 'MMM d')}: ${item.value}`}
-          />
-        ))}
-      </div>
     );
   };
 
@@ -342,9 +325,8 @@ export const AnalyticsPage: React.FC = () => {
             </div>
             <Eye className="w-8 h-8 text-info-text" />
           </div>
-          {analytics?.pageViews.chartData && renderMiniChart(
-            analytics.pageViews.chartData.map(d => ({ date: d.date, value: d.views })),
-            'bg-info'
+          {analytics?.pageViews.chartData && (
+            <MiniChart data={analytics.pageViews.chartData.map(d => ({ date: d.date, value: d.views }))} color="bg-info" />
           )}
         </Card>
 
@@ -359,9 +341,8 @@ export const AnalyticsPage: React.FC = () => {
             </div>
             <Users className="w-8 h-8 text-success-text" />
           </div>
-          {analytics?.uniqueVisitors.chartData && renderMiniChart(
-            analytics.uniqueVisitors.chartData.map(d => ({ date: d.date, value: d.visitors })),
-            'bg-success'
+          {analytics?.uniqueVisitors.chartData && (
+            <MiniChart data={analytics.uniqueVisitors.chartData.map(d => ({ date: d.date, value: d.visitors }))} color="bg-success" />
           )}
         </Card>
 
@@ -566,6 +547,9 @@ export const AnalyticsPage: React.FC = () => {
           })()}
         </div>
       </div>
+
+      {/* The public website's own traffic (issue 2618), while it is on. */}
+      {websiteOn && <WebsiteTrafficSection days={days} />}
 
       {/* Configuration Notice */}
       {umamiConfig.enabled === false && (

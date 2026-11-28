@@ -82,7 +82,7 @@ import { useAdminSearchIndex } from '../adminSearchIndex';
 /** Every permission the sidebar and its section hooks ever ask about. */
 const ALL_PERMISSIONS = [
   'events.view', 'archives.view', 'email.view', 'workflows.view', 'analytics.view',
-  'settings.view', 'users.view', 'customers.view', 'newsletters.view', 'accounting.view',
+  'settings.view', 'users.view', 'customers.view', 'newsletters.view', 'accounting.view', 'cms.view',
 ];
 
 function renderSidebar(path: string, { collapsed = false } = {}) {
@@ -222,6 +222,26 @@ describe('admin sidebar — sections', () => {
     for (const link of eventsLinks) {
       expect(link).not.toHaveAttribute('aria-current', 'page');
     }
+  });
+
+  it('keeps Website and Analytics inside Sharing, not on the main menu', () => {
+    granted = new Set(ALL_PERMISSIONS);
+    flags = { analytics: true, websiteBuilder: true };
+    renderSidebar('/admin/dashboard');
+    expect(screen.queryByText('navigation.website')).not.toBeInTheDocument();
+    expect(screen.queryByText('admin.analytics')).not.toBeInTheDocument();
+    cleanup();
+    renderSidebar('/admin/website');
+    expect(screen.getByText('navigation.website').closest('a')).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByText('navigation.archives')).toBeInTheDocument();
+    expect(screen.getByText('admin.analytics')).toBeInTheDocument();
+    cleanup();
+    // Each keeps its own flag and permission.
+    flags = { analytics: false, websiteBuilder: true };
+    granted = new Set(ALL_PERMISSIONS.filter((p) => p !== 'cms.view'));
+    renderSidebar('/admin/events');
+    expect(screen.queryByText('navigation.website')).not.toBeInTheDocument();
+    expect(screen.queryByText('admin.analytics')).not.toBeInTheDocument();
   });
 
   it('stays in the Sharing section on PicTransfer, which is a different URL tree', () => {

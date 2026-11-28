@@ -81,6 +81,8 @@ beforeEach(async () => {
   userRoot = path.join(storageParent, 'fonts');
   process.env.STORAGE_PATH = storageParent;
 
+  // Uploads go through the storage adapter, rooted at STORAGE_PATH.
+  require('../../src/services/storage').resetStorage();
   // Reset the module-level cache so each test sees a fresh scan.
   // (Both getBundledFontsRoot and getUserFontsRoot read process.env at
   // call-time, so the env vars set above are picked up without needing
@@ -262,7 +264,7 @@ describe('fontsService.listFonts', () => {
   });
 
   describe('result shape', () => {
-    test('every family is { family, weights, generic }', async () => {
+    test('every family is { family, weights, generic, formats, versions, source }', async () => {
       await makeFamily(bundledRoot, 'Inter', [400, 700]);
       await makeFamily(bundledRoot, 'Playfair-Display', [400], { generic: 'serif' });
       const fonts = await fontsService.listFonts();
@@ -270,7 +272,10 @@ describe('fontsService.listFonts', () => {
         expect(f).toEqual({
           family: expect.any(String),
           weights: expect.any(Array),
-          generic: expect.stringMatching(/^(sans-serif|serif|cursive|monospace)$/)
+          generic: expect.stringMatching(/^(sans-serif|serif|cursive|monospace)$/),
+          formats: expect.any(Object),
+          versions: expect.any(Object),
+          source: 'bundled',
         });
         expect(f.weights.length).toBeGreaterThan(0);
       }
@@ -316,5 +321,190 @@ describe('fontsService.listFonts', () => {
       const fresh = await fontsService.listFonts();
       expect(fresh.map((f) => f.family)).toEqual(['Inter', 'Roboto']);
     });
+  });
+});
+
+describe('uploaded fonts (issue 2618)', () => {
+  const WOFF2 = Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(60)]);
+  const WOFF = Buffer.concat([Buffer.from('wOFF'), Buffer.alloc(60)]);
+  const TTF = Buffer.concat([Buffer.from([0x00, 0x01, 0x00, 0x00]), Buffer.alloc(60)]);
+
+  test('a font file is known by its first bytes, not its name', () => {
+    expect(fontsService.fontFormatOf(WOFF2)).toBe('woff2');
+    expect(fontsService.fontFormatOf(WOFF)).toBe('woff');
+    expect(fontsService.fontFormatOf(TTF)).toBe('ttf');
+    expect(fontsService.fontFormatOf(Buffer.from('<svg onload=alert(1)>'))).toBeNull();
+    expect(fontsService.fontFormatOf(Buffer.from('OTTO'))).toBeNull();
+  });
+
+  test('woff and ttf weights count, woff2 wins a weight, and each family says where it came from', async () => {
+    await makeFamily(bundledRoot, 'Inter', [400]);
+    await makeFamily(userRoot, 'Studio-Sans', ['400.ttf', '400.woff2', '700.woff']);
+    const fonts = await fontsService.listFonts();
+    expect(fonts.find((f) => f.family === 'Inter')).toMatchObject({ source: 'bundled', formats: { 400: 'woff2' } });
+    expect(fonts.find((f) => f.family === 'Studio Sans')).toMatchObject({ weights: [400, 700], source: 'uploaded', formats: { 400: 'woff2', 700: 'woff' } });
+  });
+
+  test('an upload lands in the user fonts folder, replaces the same weight, and can be removed', async () => {
+    await fontsService.saveUploadedFont({ family: 'Studio Serif', weight: 400, generic: 'serif', buffer: TTF });
+    await fontsService.saveUploadedFont({ family: 'Studio Serif', weight: 400, generic: 'serif', buffer: WOFF2 });
+    expect(fs.readdirSync(path.join(userRoot, 'Studio-Serif')).sort()).toEqual(['400.woff2', 'meta.json']);
+    expect((await fontsService.listFonts()).find((f) => f.family === 'Studio Serif')).toMatchObject({ generic: 'serif', source: 'uploaded' });
+    expect(await fontsService.deleteUploadedFamily('Studio Serif')).toBe(true);
+    expect(fs.existsSync(path.join(userRoot, 'Studio-Serif'))).toBe(false);
+    // A bundled family is not removable.
+    await makeFamily(bundledRoot, 'Inter', [400]);
+    expect(await fontsService.deleteUploadedFamily('Inter')).toBe(false);
+  });
+
+  test('a replacement that cannot be stored leaves the font it was to replace', async () => {
+    await fontsService.saveUploadedFont({ family: 'Studio Serif', weight: 400, buffer: TTF });
+    const storage = require('../../src/services/storage').getStorage();
+    const put = jest.spyOn(storage, 'put').mockRejectedValueOnce(new Error('disk full'));
+    try {
+      await expect(fontsService.saveUploadedFont({ family: 'Studio Serif', weight: 400, buffer: WOFF2 })).rejects.toThrow('disk full');
+    } finally {
+      put.mockRestore();
+    }
+    expect(fs.readdirSync(path.join(userRoot, 'Studio-Serif'))).toContain('400.ttf');
+  });
+
+  test('refuses what is not a font, a name that is not a plain family name, and odd weights', async () => {
+    await expect(fontsService.saveUploadedFont({ family: 'Evil', weight: 400, buffer: Buffer.from('<script>') })).rejects.toMatchObject({ code: 'FONT_TYPE' });
+    await expect(fontsService.saveUploadedFont({ family: '../etc', weight: 400, buffer: WOFF2 })).rejects.toMatchObject({ code: 'FONT_NAME' });
+    await expect(fontsService.saveUploadedFont({ family: 'Ok', weight: 450, buffer: WOFF2 })).rejects.toMatchObject({ code: 'FONT_WEIGHT' });
+    expect(fs.readdirSync(userRoot)).toEqual([]);
+  });
+});
+
+// An S3-like store in memory: the adapter interface fontsService uses.
+function memoryStore() {
+  const objects = new Map();
+  const mtimes = new Map();
+  let clock = Date.parse('2026-11-28T10:00:00Z');
+  const { Readable } = require('stream');
+  return {
+    objects,
+    kind: () => 's3',
+    put: async (key, body) => { objects.set(key, Buffer.isBuffer(body) ? body : Buffer.from(String(body))); clock += 1000; mtimes.set(key, new Date(clock)); },
+    get: async (key) => { if (!objects.has(key)) throw Object.assign(new Error('missing'), { code: 'ENOENT' }); return Readable.from([objects.get(key)]); },
+    getToFile: async (key, local) => { await fsPromises.mkdir(path.dirname(local), { recursive: true }); await fsPromises.writeFile(local, objects.get(key)); },
+    stat: async (key) => (objects.has(key) ? { size: objects.get(key).length, mtime: new Date() } : null),
+    exists: async (key) => objects.has(key),
+    delete: async (key) => { objects.delete(key); },
+    list: async (prefix) => [...objects.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key, size: objects.get(key).length, mtime: mtimes.get(key) })),
+  };
+}
+
+describe('uploaded fonts on an object store (S3, several replicas)', () => {
+  const WOFF2 = Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(60)]);
+  const TTF = Buffer.concat([Buffer.from([0x00, 0x01, 0x00, 0x00]), Buffer.alloc(60)]);
+  let store;
+  beforeEach(() => { store = memoryStore(); require('../../src/services/storage').setStorageForTesting(store); });
+  afterEach(() => require('../../src/services/storage').resetStorage());
+
+  test('an upload is stored in the object store, listed from it on any replica, and removed from it', async () => {
+    await fontsService.saveUploadedFont({ family: 'Studio Serif', weight: 400, generic: 'serif', buffer: TTF });
+    await fontsService.saveUploadedFont({ family: 'Studio Serif', weight: 400, generic: 'serif', buffer: WOFF2 });
+    await fontsService.saveUploadedFont({ family: 'Studio Serif', weight: 700, generic: 'serif', buffer: TTF });
+    expect([...store.objects.keys()].sort()).toEqual(['fonts/Studio-Serif/400.woff2', 'fonts/Studio-Serif/700.ttf', 'fonts/Studio-Serif/meta.json']);
+    // Nothing on this replica's disk.
+    expect(fs.readdirSync(userRoot)).toEqual([]);
+    fontsService.clearFontsCache();
+    expect((await fontsService.listFonts()).find((f) => f.family === 'Studio Serif'))
+      .toEqual({ family: 'Studio Serif', weights: [400, 700], generic: 'serif', formats: { 400: 'woff2', 700: 'ttf' }, versions: { 400: expect.any(String), 700: expect.any(String) }, source: 'uploaded' });
+    expect(await fontsService.deleteUploadedFamily('Studio Serif')).toBe(true);
+    expect(store.objects.size).toBe(0);
+    expect(await fontsService.deleteUploadedFamily('Studio Serif')).toBe(false);
+  });
+
+  test('the fonts route serves an uploaded file from the object store (read through a local copy)', async () => {
+    store.objects.set('fonts/Studio-Serif/400.woff2', WOFF2);
+    const express = require('express');
+    const request = require('supertest');
+    const app = express();
+    app.use('/fonts', require('../../src/middleware/fontReadThrough').fontReadThrough());
+    const res = await request(app).get('/fonts/Studio-Serif/400.woff2');
+    expect(res.status).toBe(200);
+    expect(Buffer.from(res.body).equals(WOFF2)).toBe(true);
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    // Only font files, only from fonts/.
+    store.objects.set('fonts/Studio-Serif/evil.html', Buffer.from('<script>'));
+    expect((await request(app).get('/fonts/Studio-Serif/evil.html')).status).toBe(404);
+    expect((await request(app).get('/fonts/..%2Fsecrets/400.woff2')).status).toBe(404);
+    expect((await request(app).get('/fonts/Missing/400.woff2')).status).toBe(404);
+  });
+
+  test('fonts placed on this disk before the move to the object store stay listed and served beside the uploaded ones', async () => {
+    await makeFamily(userRoot, 'Old-Local', [400]);
+    await makeFamily(userRoot, 'Studio-Serif', ['300.woff2']);
+    await fontsService.saveUploadedFont({ family: 'Studio Serif', weight: 400, generic: 'serif', buffer: TTF });
+    await fontsService.saveUploadedFont({ family: 'Bucket Only', weight: 700, generic: 'serif', buffer: WOFF2 });
+    fontsService.clearFontsCache();
+    const fonts = await fontsService.listFonts();
+    expect(fonts.find((f) => f.family === 'Old Local')).toMatchObject({ weights: [400], source: 'uploaded' });
+    expect(fonts.find((f) => f.family === 'Bucket Only')).toMatchObject({ weights: [700], formats: { 700: 'woff2' } });
+    // One family on both: its weights from both, the store's file where both have one.
+    expect(fonts.find((f) => f.family === 'Studio Serif')).toMatchObject({ weights: [300, 400], formats: { 300: 'woff2', 400: 'ttf' }, generic: 'serif' });
+    expect(fonts.filter((f) => f.family === 'Studio Serif')).toHaveLength(1);
+
+    const express = require('express');
+    const request = require('supertest');
+    const secureStatic = require('../../src/middleware/secureStatic');
+    const { fontReadThrough, fontStaticOpts } = require('../../src/middleware/fontReadThrough');
+    const app = express();
+    app.use('/fonts', fontReadThrough());
+    app.use('/fonts', secureStatic(userRoot, fontStaticOpts));
+    expect((await request(app).get('/fonts/Old-Local/400.woff2')).status).toBe(200);
+    expect((await request(app).get('/fonts/Bucket-Only/700.woff2')).status).toBe(200);
+    // A family listed from this disk can be removed like any other.
+    expect(await fontsService.deleteUploadedFamily('Old Local')).toBe(true);
+    expect(fs.existsSync(path.join(userRoot, 'Old-Local'))).toBe(false);
+    expect(await fontsService.deleteUploadedFamily('Studio Serif')).toBe(true);
+    expect(fs.existsSync(path.join(userRoot, 'Studio-Serif'))).toBe(false);
+    expect([...store.objects.keys()].some((k) => k.startsWith('fonts/Studio-Serif/'))).toBe(false);
+  });
+
+  test('a replaced font gets a new address, and the object-store copy is never served stale', async () => {
+    const express = require('express');
+    const request = require('supertest');
+    const { fontReadThrough } = require('../../src/middleware/fontReadThrough');
+    const app = express();
+    app.use('/fonts', fontReadThrough());
+    const versionOf = async () => { fontsService.clearFontsCache(); return (await fontsService.listFonts()).find((f) => f.family === 'Swap Serif').versions[400]; };
+    const v1Bytes = Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(60, 1)]);
+    const v2Bytes = Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(60, 2)]);
+    await fontsService.saveUploadedFont({ family: 'Swap Serif', weight: 400, generic: 'serif', buffer: v1Bytes });
+    const v1 = await versionOf();
+    expect(v1).toMatch(/^[a-z0-9]+$/);
+    expect(Buffer.from((await request(app).get(`/fonts/Swap-Serif/400.woff2?v=${v1}`)).body).equals(v1Bytes)).toBe(true);
+    // Replaced on this replica: a new address, and the old one is not served from the old copy.
+    await fontsService.saveUploadedFont({ family: 'Swap Serif', weight: 400, generic: 'serif', buffer: v2Bytes });
+    const v2 = await versionOf();
+    expect(v2).not.toBe(v1);
+    expect(Buffer.from((await request(app).get(`/fonts/Swap-Serif/400.woff2?v=${v1}`)).body).equals(v2Bytes)).toBe(true);
+    // Replaced on another replica (straight into the store): the new address fetches it again.
+    const v3Bytes = Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(60, 3)]);
+    await store.put('fonts/Swap-Serif/400.woff2', v3Bytes);
+    const v3 = await versionOf();
+    expect(v3).not.toBe(v2);
+    expect(Buffer.from((await request(app).get(`/fonts/Swap-Serif/400.woff2?v=${v3}`)).body).equals(v3Bytes)).toBe(true);
+  });
+
+  test.each([
+    ['Studio Serif', 'studio serif', 'Studio-Serif', 'Studio Serif'],
+    ['studio serif', 'Studio Serif', 'studio-serif', 'studio serif'],
+  ])('"%s" then "%s" is one family, in the first one\'s folder and name', async (first, second, folder, shown) => {
+    await fontsService.saveUploadedFont({ family: first, weight: 400, generic: 'serif', buffer: WOFF2 });
+    const saved = await fontsService.saveUploadedFont({ family: second, weight: 700, generic: 'serif', buffer: TTF });
+    expect(saved.family).toBe(shown);
+    expect([...store.objects.keys()].filter((k) => k.endsWith('.woff2') || k.endsWith('.ttf')).sort())
+      .toEqual([`fonts/${folder}/400.woff2`, `fonts/${folder}/700.ttf`]);
+    fontsService.clearFontsCache();
+    expect((await fontsService.listFonts()).filter((f) => f.family.toLowerCase() === 'studio serif'))
+      .toEqual([expect.objectContaining({ family: shown, weights: [400, 700] })]);
+    // Removing it by either spelling removes it.
+    expect(await fontsService.deleteUploadedFamily(second)).toBe(true);
+    expect(store.objects.size).toBe(0);
   });
 });

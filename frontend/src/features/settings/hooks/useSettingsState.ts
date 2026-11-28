@@ -112,6 +112,8 @@ export interface AnalyticsSettings {
   tracker_provider: TrackerProvider;
   // Off counts visitors whose browser sends Do Not Track (issue 1921).
   honor_do_not_track: boolean;
+  /** The website's page views also go to the tracker (issue 2618). */
+  website_forward: boolean;
   umami_enabled: boolean;
   umami_url: string;
   umami_website_id: string;
@@ -256,6 +258,7 @@ const analyticsFromSettings = (settings: Record<string, any>): AnalyticsSettings
   return {
     tracker_provider: provider,
     honor_do_not_track: toBoolean(settings.analytics_honor_do_not_track, true),
+    website_forward: toBoolean(settings.analytics_website_forward, false),
     umami_enabled: toBoolean(settings.analytics_umami_enabled, false),
     umami_url: settings.analytics_umami_url || '',
     umami_website_id: settings.analytics_umami_website_id || '',

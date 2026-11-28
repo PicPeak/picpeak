@@ -27,6 +27,7 @@ const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 const { withTrustedCrmAccess } = require('../database/crmAccess');
 const { formatBoolean } = require('../utils/dbCompat');
+const { isAwaitingPayment } = require('../utils/galleryLifecycle');
 const { stripeClient } = require('../modules/photoSales/stripeClient');
 const { notifyReceived, notifyDeclined } = require('./bookingNotifications');
 // bookingService requires this module lazily (the two call each other).
@@ -669,7 +670,7 @@ async function dealFullyPaid(requestId) {
  * @returns {Promise<boolean>} true while it stays locked
  */
 async function refreshGalleryLock(event) {
-  if (!event || !event.payment_lock || event.payment_unlocked_at) return false;
+  if (!isAwaitingPayment(event)) return false;
   // The lock holds with client booking switched off too: the Bookings page
   // and its unlock stay reachable while a gallery is locked
   // (depositDecisionsOpen).

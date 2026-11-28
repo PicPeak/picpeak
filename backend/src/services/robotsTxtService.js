@@ -43,7 +43,16 @@ async function generateRobotsTxt() {
   const customRules = Array.isArray(settings.seo_custom_rules)
     ? settings.seo_custom_rules
     : [];
-  const sitemapUrl = settings.seo_sitemap_url || '';
+  let sitemapUrl = settings.seo_sitemap_url || '';
+  // A live website (issue 2618) brings its own sitemap; an explicit URL in
+  // the SEO settings still wins.
+  if (!sitemapUrl && allowIndexing) {
+    const website = require('./website/service');
+    if (await website.isWebsiteActive().catch(() => false)) {
+      const base = await require('../utils/frontendUrl').getFrontendBaseUrl().catch(() => '');
+      if (base) sitemapUrl = `${base}/sitemap.xml`;
+    }
+  }
 
   const lines = [];
 
@@ -53,7 +62,9 @@ async function generateRobotsTxt() {
   // Disallow left bare login and share URLs in search results.
   lines.push('# Protected paths');
   lines.push('User-agent: *');
-  lines.push('Disallow: /api');
+  // Whole path segments ("/api/", not "/api"): a rule is a prefix match, and
+  // a website page may be called /apiary or /photos-of-us (issue 2618).
+  lines.push('Disallow: /api/');
   lines.push('');
 
   if (!allowIndexing) {
@@ -62,10 +73,11 @@ async function generateRobotsTxt() {
     lines.push('# Indexing disabled. Pages stay crawlable on purpose: each answers');
     lines.push('# "X-Robots-Tag: noindex", which only takes effect if a crawler may fetch it.');
     lines.push('User-agent: *');
-    lines.push('Disallow: /photos');
-    lines.push('Disallow: /thumbnails');
-    lines.push('Disallow: /uploads');
-    lines.push('Disallow: /og');
+    lines.push('Disallow: /photos/');
+    lines.push('Disallow: /thumbnails/');
+    lines.push('Disallow: /uploads/');
+    lines.push('Disallow: /og/');
+    lines.push('Disallow: /site-media/');
     lines.push('');
   }
 

@@ -24,24 +24,18 @@ vi.mock('../../../hooks/useLocalizedDate', () => ({
   useLocalizedDate: () => ({ format: String, formatDateTime: String, formatTime: String }),
 }));
 vi.mock('../../../components/admin/CMSEditor', () => ({ CMSEditor: () => <div>editor</div> }));
+vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureEnabled: () => false }));
 
 const stored = { slug: 'impressum', title_en: 'Imprint', title_de: 'Impressum', content_en: '<p>x</p>', content_de: '<p>x</p>', logo_url: null as string | null };
 let current = { ...stored };
 let calls = 0;
-vi.mock('../../../services/cms.service', () => ({
+vi.mock('../../../services/cms.service', async (original) => ({
+  ...(await original<typeof import('../../../services/cms.service')>()),
   cmsService: {
     getPages: () => { calls += 1; return Promise.resolve([{ ...current }]); },
     updatePage: vi.fn(),
     uploadPageLogo: vi.fn(),
     clearPageLogo: vi.fn(),
-  },
-}));
-vi.mock('../../../services/settings.service', () => ({
-  settingsService: {
-    getAllSettings: () => Promise.resolve({}),
-    getPublicSiteDefaults: () => Promise.resolve({ html: '', css: '' }),
-    updatePublicSite: vi.fn(),
-    resetPublicSite: vi.fn(),
   },
 }));
 
@@ -57,10 +51,11 @@ it('keeps the typed title when the page list refetches with a new logo', async (
   const title = await screen.findByDisplayValue('Imprint');
   fireEvent.change(title, { target: { value: 'Imprint, edited' } });
 
+  const before = calls;
   current = { ...stored, logo_url: '/logos/new.png' };
   await act(async () => { await client.invalidateQueries({ queryKey: ['cms-pages'] }); });
 
-  await waitFor(() => expect(calls).toBe(2));
+  await waitFor(() => expect(calls).toBeGreaterThan(before));
   await waitFor(() => expect(screen.getByDisplayValue('Imprint, edited')).toBeInTheDocument());
   expect(screen.queryByDisplayValue('Imprint')).not.toBeInTheDocument();
 });

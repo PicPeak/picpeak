@@ -184,13 +184,16 @@ describe('importFilePathProblem', () => {
     'uploads/contracts/signed/notes.htm',
     'business-docs/inbound/report.html',
     'events/active/wedding/script.mjs',
+    'fonts/Inter/400.woff2',
   ])('accepts %s', (rel) => {
     expect(importFilePathProblem(rel)).toBeNull();
   });
 
   it.each([
-    ['fonts/Inter/400.woff2', /not under an exported storage folder/],
-    ['fonts/payload.html', /not under an exported storage folder/],
+    // fonts/ is exported since uploaded fonts travel in an archive (issue
+    // 2618), and held to font files: nothing else lands in the served tree.
+    ['fonts/payload.html', /not a font file/],
+    ['fonts/Inter/payload.js', /not a font file/],
     ['thumbnails-other/x.jpg', /not under an exported storage folder/],
     ['events/x.jpg', /not under an exported storage folder/],
     ['events/active', /not under an exported storage folder/],

@@ -65,6 +65,16 @@ async function checkMaintenanceMode() {
 }
 
 // Middleware to enforce maintenance mode
+// The website page location of frontend/nginx.conf, the same shape server.js
+// routes to the builder: one slug-shaped segment the app does not own itself
+// (a page, a legal page, the not-found page for any other address), while
+// the builder is on. ownedByApp is server.js's own decision.
+async function isWebsitePagePath(requestPath) {
+  const match = require('../services/website/validators').PAGE_PATH_PATTERN.exec(requestPath);
+  if (!match || require('../services/website/document').ownedByApp(match[1])) return false;
+  return require('./requireFeatureFlag').isFeatureEnabled('websiteBuilder').catch(() => false);
+}
+
 async function maintenanceMiddleware(req, res, next) {
   // Skip maintenance check for certain paths. Admin auth MUST work during
   // maintenance — otherwise enabling it locks every admin out, including
@@ -126,14 +136,23 @@ async function maintenanceMiddleware(req, res, next) {
   // Note /og/ and /s/ in particular: those render event names and cover
   // images, so leaving them open would publish gallery metadata from a site
   // that is supposed to be down.
-  const BACKEND_RENDERED_PREFIXES = ['/api/', '/photos/', '/thumbnails/', '/fonts/', '/og/', '/s/'];
+  //
+  // The website builder (issue 2618) adds three proxied shapes: /site-media/
+  // (its images), `location = /sitemap.xml`, and the page location, every
+  // slug-shaped single segment that is not one of the app's own paths (the
+  // legal pages included: the website renders them, and the not-found page
+  // for any other address). A page is the site root's sibling and is gated
+  // like it; while the builder is off the backend owns no such path, so it
+  // stays the shell (CMS and not-found pages).
+  const BACKEND_RENDERED_PREFIXES = ['/api/', '/photos/', '/thumbnails/', '/fonts/', '/og/', '/s/', '/site-media/'];
   const CRAWLER_RENDERED_PREFIXES = ['/gallery/', '/transfer/', '/transfer-upload/'];
   const BACKEND_RENDERED_EXACT = [
     '/',
     '/robots.txt',
     '/favicon.ico',
     '/apple-touch-icon.png',
-    '/apple-touch-icon-precomposed.png'
+    '/apple-touch-icon-precomposed.png',
+    '/sitemap.xml'
   ];
   // Express routes case-insensitively, so `/API/gallery/...` still reaches the
   // API router; classify on the lowercased path or that spelling is treated
@@ -147,7 +166,8 @@ async function maintenanceMiddleware(req, res, next) {
     && isSocialCrawler(req.headers?.['user-agent']);
   const isBackendRendered = BACKEND_RENDERED_EXACT.includes(requestPath)
     || BACKEND_RENDERED_PREFIXES.some((prefix) => requestPath.startsWith(prefix))
-    || isCrawlerShareRender;
+    || isCrawlerShareRender
+    || (req.method === 'GET' && await isWebsitePagePath(requestPath));
   const isSpaShell = req.method === 'GET' && !isBackendRendered;
   
   // Allow admin routes if admin is authenticated

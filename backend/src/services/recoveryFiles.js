@@ -17,7 +17,9 @@ const logger = require('../utils/logger');
 const MANAGED_ROOTS = [
   'events/active', 'events/archived', 'thumbnails', 'previews', 'heroes',
   'videos', 'watermarks', 'uploads/transfers', 'transfers',
-  'business-docs/customer-documents', 'album-products', '.print-sales',
+  'business-docs/customer-documents', 'album-products', '.print-sales', 'website',
+  // Fonts uploaded in the branding settings (issue 2618), kept through the adapter.
+  'fonts',
 ];
 const DEFAULT_MAX_BYTES = 5000 * 1024 * 1024;
 // The list of required keys lives beside the database dump it belongs to; the
@@ -26,6 +28,7 @@ const REFERENCES_SUFFIX = '.storage-references.json';
 // Only the columns a storage reference is read from, fetched in id order.
 const REFERENCE_COLUMNS = {
   album_product_images: ['id', 'storage_key'],
+  website_assets: ['id', 'rendition_keys'],
   print_sales_assets: ['id', 'storage_key', 'kind'],
   events: ['id', 'is_archived', 'archive_path', 'source_mode'],
   photos: ['id', 'event_id', 'path', 'source_origin', 'thumbnail_path', 'preview_path', 'hero_path', 'watermark_path', 'web_path'],
@@ -49,6 +52,20 @@ const under = (key, root) => key === root || key.startsWith(`${root}/`);
 function managedKey(key) {
   validKey(key);
   return MANAGED_ROOTS.some(root => under(key, root));
+}
+
+/**
+ * The local files that stay in an inventory beside the object store's: what
+ * is not under a managed root, and fonts on this disk the store does not
+ * have (placed there before uploads went to the store, or by hand; listed
+ * and served all the same, fontsService), as the font list merges them.
+ */
+function localBesideStore(localFiles, remote, keyOf) {
+  const inStore = new Set(remote.map(file => file.relativePath));
+  return localFiles.filter((file) => {
+    const key = keyOf(file);
+    return !managedKey(key) || (under(key, 'fonts') && !inStore.has(key));
+  });
 }
 
 function remoteDestination(key) {
@@ -163,6 +180,12 @@ async function requiredKeys(knex, selected, derived) {
       table === 'transfer_uploads' ? 'uploads/transfers' : 'transfers', `Transfer file ${row.id}`);
   }
   for await (const row of rows(knex, 'album_product_images')) add(row.storage_key, 'album-products', `Product image ${row.id}`);
+  // Website uploads keep no original: their files are the only copy.
+  for await (const row of rows(knex, 'website_assets')) {
+    let keys = {};
+    try { keys = typeof row.rendition_keys === 'string' ? JSON.parse(row.rendition_keys) : (row.rendition_keys || {}); } catch { keys = {}; }
+    for (const key of Object.values(keys)) add(key, 'website', `Website upload ${row.id}`);
+  }
   for await (const row of rows(knex, 'print_sales_assets')) {
     if (row.kind !== 'staging') add(row.storage_key, '.print-sales', `Print order asset ${row.id}`);
   }
@@ -361,6 +384,6 @@ async function materialize(files, directory, maxBytes = DEFAULT_MAX_BYTES, refer
   return output;
 }
 
-module.exports = { MANAGED_ROOTS, DEFAULT_MAX_BYTES, REFERENCES_SUFFIX, validKey, managedKey, remoteDestination, objectOptions,
+module.exports = { MANAGED_ROOTS, DEFAULT_MAX_BYTES, REFERENCES_SUFFIX, validKey, managedKey, localBesideStore, remoteDestination, objectOptions,
   printTemporaryKey, discardedPrintFile, retainedPrintKey, localPrintInventory,
   restoreObjectOptions, selectedManifestFiles, adapterInventory, requiredKeys, captureStream, captureAdapter, verifyAdapter, materialize };

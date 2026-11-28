@@ -141,6 +141,9 @@ const KNOWN_FLAGS = [
   // without a password on another site. Strictly opt-in: while off, every
   // embed link answers 404 and no page is frameable.
   'embed',
+  // Website builder (migration 379, issue 2618). While off, `/` stays the
+  // single-page public site and every builder route answers 403/404.
+  'websiteBuilder',
 ];
 
 // Spec defaults for any flag that has no row in feature_flags.
@@ -181,6 +184,7 @@ const DEFAULT_FLAGS = {
   customerGifts: false,
   backupRestoreTest: false,
   embed: false,
+  websiteBuilder: false,
 };
 
 async function readAllFlags() {

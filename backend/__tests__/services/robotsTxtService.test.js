@@ -16,6 +16,11 @@ jest.mock('../../src/database/db', () => ({
   })),
 }));
 
+// The website builder (issue 2618) is off unless a case turns it on.
+const mockWebsiteActive = jest.fn(async () => false);
+jest.mock('../../src/services/website/service', () => ({ isWebsiteActive: () => mockWebsiteActive() }));
+jest.mock('../../src/utils/frontendUrl', () => ({ getFrontendBaseUrl: async () => 'https://studio.example' }));
+
 const { generateRobotsTxt, clearRobotsTxtCache } = require('../../src/services/robotsTxtService');
 
 const robots = async (settings) => {
@@ -38,7 +43,7 @@ describe('robots.txt', () => {
   it('never keeps a crawler away from the pages, with indexing on or off', async () => {
     for (const seo_allow_indexing of [true, false]) {
       const rules = forEveryone(await robots({ seo_allow_indexing }));
-      expect(rules).toContain('Disallow: /api');
+      expect(rules).toContain('Disallow: /api/');
       for (const blocked of ['Disallow: /', 'Disallow: /admin', 'Disallow: /customer', 'Disallow: /gallery']) {
         expect(rules).not.toContain(blocked);
       }
@@ -47,11 +52,31 @@ describe('robots.txt', () => {
 
   it('with indexing off blocks the media paths, which carry no noindex', async () => {
     expect(forEveryone(await robots({ seo_allow_indexing: false })))
-      .toEqual(['Disallow: /api', 'Disallow: /photos', 'Disallow: /thumbnails', 'Disallow: /uploads', 'Disallow: /og']);
+      .toEqual(['Disallow: /api/', 'Disallow: /photos/', 'Disallow: /thumbnails/', 'Disallow: /uploads/', 'Disallow: /og/', 'Disallow: /site-media/']);
   });
 
   it('with indexing on blocks the API only', async () => {
-    expect(forEveryone(await robots({ seo_allow_indexing: true }))).toEqual(['Disallow: /api']);
+    expect(forEveryone(await robots({ seo_allow_indexing: true }))).toEqual(['Disallow: /api/']);
+  });
+
+  it('blocks whole path segments, so a website page named like one stays crawlable', async () => {
+    // A Disallow is a prefix match: "/api" would also cover a page at /apiary.
+    for (const seo_allow_indexing of [true, false]) {
+      const blocked = forEveryone(await robots({ seo_allow_indexing })).map((rule) => rule.replace('Disallow: ', ''));
+      for (const page of ['/apiary', '/api-docs', '/photos-of-us', '/uploads-guide', '/og-image-tips', '/site-media-kit']) {
+        expect(blocked.filter((prefix) => page.startsWith(prefix))).toEqual([]);
+      }
+      expect(blocked.some((prefix) => '/api/public/settings'.startsWith(prefix))).toBe(true);
+    }
+  });
+
+  it('names the website sitemap while the website is live and indexable', async () => {
+    mockWebsiteActive.mockResolvedValue(true);
+    expect(await robots({ seo_allow_indexing: true })).toContain('Sitemap: https://studio.example/sitemap.xml');
+    expect(await robots({ seo_allow_indexing: false })).not.toContain('Sitemap: https://studio.example/sitemap.xml');
+    expect(await robots({ seo_allow_indexing: true, seo_sitemap_url: 'https://cdn.example/s.xml' })).not.toContain('Sitemap: https://studio.example/sitemap.xml');
+    mockWebsiteActive.mockResolvedValue(false);
+    expect(await robots({ seo_allow_indexing: true })).not.toContain('Sitemap: https://studio.example/sitemap.xml');
   });
 
   it('still shuts AI crawlers out entirely', async () => {

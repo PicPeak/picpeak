@@ -49,6 +49,8 @@ const USAGE_GROUPS: { id: string; titleKey: string; features: FeatureKey[] }[] =
   { id: 'crm', titleKey: 'setup.usageGroupCrm', features: ['quotes', 'contracts', 'bills', 'hoursLogging', 'customerPortal', 'calendar'] },
   { id: 'accounting', titleKey: 'setup.usageGroupAccounting', features: ['taxReport', 'incomingInvoices', 'expenses'] },
   { id: 'automation', titleKey: 'setup.usageGroupAutomation', features: ['reminderEmails', 'slideshow', 'workflows', 'whatsapp', 'incomingMail'] },
+  // The public website (issue 2618): a global feature, off unless chosen.
+  { id: 'website', titleKey: 'setup.usageGroupWebsite', features: ['websiteBuilder'] },
 ];
 const ALL_USAGE_FEATURES: FeatureKey[] = USAGE_GROUPS.flatMap((g) => g.features);
 

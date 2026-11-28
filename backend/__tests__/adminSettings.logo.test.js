@@ -118,7 +118,6 @@ describe('Admin settings logo upload flow', () => {
 
     jest.doMock('../src/services/publicSiteService', () => ({
       clearPublicSiteCache: jest.fn(),
-      getDefaultPublicSitePayload: jest.fn(),
       getRawPublicSiteSettings: jest.fn().mockResolvedValue({})
     }));
 

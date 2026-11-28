@@ -29,6 +29,7 @@ const { toDateOnly, pgDateColumnsByTable } = require('../utils/dateOnly');
 const packageJson = require('../../package.json');
 const recoveryFiles = require('./recoveryFiles');
 const { getStorage } = require('./storage');
+const { portableFontFile } = require('../utils/portableFontFiles');
 const { latestMigration } = require('../utils/schemaLevel');
 
 // Bump only on a breaking change to the on-disk layout below.
@@ -73,7 +74,8 @@ const EXCLUDED_TABLES = new Set([
 ]);
 
 // Storage subdirs holding non-recalculable blobs — always included.
-const DOC_DIRS = ['business-docs', 'uploads', 'transfers', 'album-products', '.print-sales'];
+// fonts/: fonts uploaded in the branding settings (issue 2618), their only copy.
+const DOC_DIRS = ['business-docs', 'uploads', 'transfers', 'album-products', '.print-sales', 'website', 'fonts'];
 // Original gallery photos — only when includePhotos is true (large; otherwise
 // the admin re-uploads originals per gallery and previews are re-rendered).
 const PHOTO_DIRS = ['events/active', 'events/archived', 'thumbnails', 'previews', 'heroes', 'videos', 'watermarks'];
@@ -228,9 +230,18 @@ async function collectFiles(includePhotos, requiredReferences) {
   for (const d of dirs) {
     await collectDir(d, storageRoot, acc);
   }
+  // fonts/ holds only what the import takes back (utils/portableFontFiles):
+  // a stray file there would make the whole archive unimportable.
+  for (let i = acc.length - 1; i >= 0; i -= 1) {
+    const rel = acc[i].rel.split(path.sep).join('/');
+    if (!rel.startsWith('fonts/')) continue;
+    const size = (await fsp.stat(acc[i].abs).catch(() => ({ size: Infinity }))).size;
+    if (!portableFontFile(rel, size)) acc.splice(i, 1);
+  }
   if (getStorage().kind() !== 's3') return recoveryFiles.localPrintInventory(db, acc, key => dirs.some(root => key.startsWith(`${root}/`)));
-  const remote = await recoveryFiles.adapterInventory(db, dirs, undefined, requiredReferences);
-  return [...acc.filter(file => !recoveryFiles.managedKey(file.rel.split(path.sep).join('/'))),
+  const remote = (await recoveryFiles.adapterInventory(db, dirs, undefined, requiredReferences))
+    .filter(file => !file.relativePath.startsWith('fonts/') || portableFontFile(file.relativePath, file.size));
+  return [...recoveryFiles.localBesideStore(acc, remote, file => file.rel.split(path.sep).join('/')),
     ...remote.map(file => ({ ...file, rel: file.relativePath }))];
 }
 
@@ -288,7 +299,8 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
     const dateColumnsByTable = await pgDateColumns();
     for (const table of tables) {
       const { largestRowBytes: largest, ...meta } = await writeTableNdjson(table, dataDir, pathMap, (name, rows) => {
-        if (['events', 'photos', 'customer_documents', 'transfer_uploads', 'transfer_extra_files', 'print_sales_assets'].includes(name)) referenceRows.set(name, rows);
+        if (['events', 'photos', 'customer_documents', 'transfer_uploads', 'transfer_extra_files', 'print_sales_assets',
+          'website_assets'].includes(name)) referenceRows.set(name, rows);
       }, dateColumnsByTable);
       tableMeta[table] = meta;
       largestRowBytes = Math.max(largestRowBytes, largest);

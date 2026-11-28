@@ -66,7 +66,7 @@ const {
   originalAssetDenial, grantDenial, isPresentationRenditionKey, isRemuxWebKey, fullResolutionDenial,
   MAXIMUM_PROTECTION_CAP, capsFullSizeView,
 } = require('../../services/galleryAssetPolicy');
-const sharp = require('../../services/isolatedSharp');
+const { viewWatermarkSettings, capPreviewRendition, watermarkPreviewRendition } = require('../../services/galleryViewRendition');
 const imageResourcePolicy = require('../../services/imageResourcePolicy');
 const {
   currentDownloadLimit, grantedPhotoIds, grantDownloads, checkDownloads,
@@ -191,48 +191,6 @@ async function loadGalleryPhoto(req, res, { columns = [], sourceGrant = false } 
     return null;
   }
   return photo;
-}
-
-/**
- * The watermark a view tier (thumbnail, hero, preview) carries: the event's
- * watermark settings, or in a priced gallery the photo-sales mark, which
- * every tier keeps independent of the global setting. The photo route has
- * its own rule (event-only mark, purchased viewers).
- */
-async function viewWatermarkSettings(event, photo) {
-  const settings = await watermarkService.getWatermarkSettingsForEvent(event);
-  return isGalleryPriced(event) ? resolvePhotoSalesWatermarkSettings(event, photo) : settings;
-}
-
-/**
- * A preview rendition inside MAXIMUM_PROTECTION_CAP (issue 2152), re-encoded
- * at its quality, with no metadata (sharp strips it). Maximum protection
- * serves this from both the photo and the preview route, so the lightbox gets
- * the cap whether it loads the preview tier or the original. The preview tier
- * is the source, so a request decodes at most a 1920px image, in the image
- * worker pool (`interactive`: refused with a 503 under a flood, not queued);
- * no further derived file is stored. The watermark goes on first, through the
- * same path-keyed cache the preview route uses, and is scaled down with the
- * picture; marking after the resize would re-encode at the watermark's own
- * quality. A WebP preview (alpha or animation) stays WebP, and without a
- * watermark an animated one keeps its frames: the preview generator leaves
- * them unrotated, so they are not rotated here either (`.rotate()` flattens).
- */
-async function capPreviewRendition(previewPath, watermarkSettings) {
-  const webp = previewPath.endsWith('.webp');
-  const { width, height, quality } = MAXIMUM_PROTECTION_CAP;
-  const buffer = await withLocalCopy(previewPath, async (localPath) => {
-    const input = watermarkSettings?.enabled
-      ? await watermarkService.applyWatermark(localPath, watermarkSettings, { failClosed: true })
-      : localPath;
-    const animated = webp && !watermarkSettings?.enabled
-      && ((await sharp(input, { interactive: true, failOn: 'none' }).metadata()).pages || 1) > 1;
-    let image = sharp(input, { interactive: true, failOn: 'none', animated });
-    if (!animated) image = image.rotate();
-    image = image.resize(width, height, { fit: 'inside', withoutEnlargement: true });
-    return (webp ? image.webp({ quality }) : image.jpeg({ quality, progressive: true, mozjpeg: true })).toBuffer();
-  });
-  return { buffer, contentType: webp ? 'image/webp' : 'image/jpeg' };
 }
 
 /** The photo route's capped view: its preview rendition, capped. Null when no preview can be made. */
@@ -1240,10 +1198,7 @@ router.get('/:slug/preview/:photoId',
         // What is still lost is the animation: the compositor flattens a
         // multi-frame source to one frame while keeping the WebP container.
         // That is a separate problem and a much larger one.
-        const watermarkedBuffer = await withLocalCopy(previewPath, (localPath) =>
-          watermarkService.applyWatermark(localPath, watermarkSettings, { failClosed: true })
-        );
-        res.send(watermarkedBuffer);
+        res.send(await watermarkPreviewRendition(previewPath, watermarkSettings));
       } else {
         res.setHeader('Content-Length', stat.size);
         const stream = await storage.get(previewPath);

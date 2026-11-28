@@ -43,6 +43,14 @@ function publishedEventFilter({ includeDrafts = false } = {}) {
   };
 }
 
+/**
+ * A booking gallery waiting for payment (issue 2440): `payment_lock` holds
+ * the reason ('full_payment'), `payment_unlocked_at` the moment it opened.
+ */
+function isAwaitingPayment(event) {
+  return !!event && !!event.payment_lock && !event.payment_unlocked_at;
+}
+
 function isGalleryAvailable(event, { adminPreview = false, allowTemporarilyDisabled = false } = {}) {
   return !!event && isTrue(event.is_active) && !isTrue(event.is_archived)
     && (adminPreview || ((!isTrue(event.temporarily_disabled) || allowTemporarilyDisabled)
@@ -65,4 +73,4 @@ function assertGalleryAvailable(event, { adminPreview = false } = {}) {
   }
 }
 
-module.exports = { isTrue, isFalse, publishedEventFilter, isGalleryAvailable, assertGalleryAvailable, assertGalleryEnabled, isGalleryExpired, requiresGalleryPassword };
+module.exports = { isTrue, isFalse, publishedEventFilter, isAwaitingPayment, isGalleryAvailable, assertGalleryAvailable, assertGalleryEnabled, isGalleryExpired, requiresGalleryPassword };

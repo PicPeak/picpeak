@@ -79,6 +79,7 @@ const DEFAULTS = {
   analyticsSettings: {
     tracker_provider: 'none',
     honor_do_not_track: true,
+    website_forward: false,
     umami_enabled: false,
     umami_url: '',
     umami_website_id: '',
@@ -175,6 +176,7 @@ const FULL_PAYLOAD: Record<string, unknown> = {
   rate_limit_public_endpoints_only: true,
   analytics_tracker_provider: 'rybbit',
   analytics_honor_do_not_track: false,
+  analytics_website_forward: true,
   analytics_umami_enabled: 'true',
   analytics_umami_url: 'https://umami.example',
   analytics_umami_website_id: 'u-1',
@@ -271,6 +273,7 @@ const FULL_EXPECTED = {
   analyticsSettings: {
     tracker_provider: 'rybbit',
     honor_do_not_track: false,
+    website_forward: true,
     umami_enabled: true,
     umami_url: 'https://umami.example',
     umami_website_id: 'u-1',

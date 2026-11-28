@@ -22,10 +22,9 @@
  */
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
 import { Type } from 'lucide-react';
 import { Card } from '../common';
-import { fontsService } from '../../services/fonts.service';
+import { useFonts } from '../../hooks/useFonts';
 
 /**
  * The bundled-fonts API returns the DISPLAY name (e.g. "Playfair
@@ -49,11 +48,7 @@ export const PdfTypographyCard: React.FC<PdfTypographyCardProps> = ({ value, onC
 
   // Same query the web typography picker consumes — single source of
   // truth for "which bundled families exist on disk".
-  const { data: availableFonts } = useQuery({
-    queryKey: ['fonts'],
-    queryFn: () => fontsService.list(),
-    staleTime: 60 * 60 * 1000, // fonts don't change at runtime
-  });
+  const { data: availableFonts } = useFonts();
 
   const selection = value || '';
 

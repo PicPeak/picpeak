@@ -1346,6 +1346,9 @@
       "reason": "Only specified configuration presence/booleans and explicit branding/SEO/slideshow operations. Generic settings reads, security policies, passwords, storage data, SMTP/OIDC credentials, custom HTML/CSS/SEO values excluded. v3 adds only: s3_auto_import, download_original_filenames. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
       "route_signatures": [
         "GET /",
+        "GET /fonts",
+        "POST /fonts",
+        "DELETE /fonts/:family",
         "GET /:type",
         "GET /customer-surface",
         "PUT /customer-surface",
@@ -1372,9 +1375,7 @@
         "PUT /seo",
         "GET /storage/info",
         "POST /favicon",
-        "PUT /security/rate-limit",
-        "GET /public-site/default",
-        "POST /public-site/reset"
+        "PUT /security/rate-limit"
       ]
     },
     "adminShortUrls.js": {
@@ -2270,6 +2271,48 @@
         "POST /requests",
         "GET /requests/status/:token"
       ]
+    },
+    "adminWebsite.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Website builder admin (issue 2618) is not reported as its own capability: no page content, slugs, blocks, images, gallery opt-ins or publish counts.",
+      "route_signatures": [
+        "GET /",
+        "PUT /draft",
+        "PUT /visibility",
+        "GET /contact-settings",
+        "PUT /contact-settings",
+        "GET /booking",
+        "GET /analytics",
+        "GET /notice",
+        "POST /notice/dismiss",
+        "POST /publish",
+        "POST /preview",
+        "POST /media/resolve",
+        "GET /galleries",
+        "PUT /galleries/:id",
+        "GET /galleries/:id/photos",
+        "GET /assets",
+        "POST /assets",
+        "DELETE /assets/:id",
+        "GET /packages"
+      ]
+    },
+    "publicWebsite.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public website visitor surface (contact form): no product-usage middleware, counters, visitor data or submission counts.",
+      "route_signatures": [
+        "POST /contact"
+      ]
+    },
+    "publicWebsiteMedia.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public website image and video delivery: visitor traffic, no product-usage middleware, counters or report triggers.",
+      "route_signatures": [
+        "GET /:token/:size"
+      ]
     }
   },
   "feature_flags": {
@@ -2459,6 +2502,10 @@
     "embed": {
       "signals": [],
       "reason": "Excluded: the website embed is not reported as its own capability; no flag value, embedding websites or view counts."
+    },
+    "websiteBuilder": {
+      "signals": [],
+      "reason": "Excluded: the website builder is not reported as its own capability; no flag value, pages, visitors or submissions."
     }
   },
   "excluded_runtime": [
