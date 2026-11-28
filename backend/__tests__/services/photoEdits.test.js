@@ -1184,7 +1184,9 @@ describe('face covers while an edit is being applied', () => {
       await photoEdits().saveEdits([{ photo: await fresh(), params: validated({ rotate: 90, crop: { x: 0, y: 0, w: 0.5, h: 1 } }) }]);
       fs.renameSync(storagePath('events/active/edit-card/face-pending.jpg'), storagePath('events/active/edit-card/face-pending.gone'));
       try {
-        expect(await photoEdits().runPass({ active: () => true, sleep: async () => {} })).toMatchObject({ failed: 1 });
+        // This photo's failure (other rows of the suite may be in the pass too).
+        await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+        expect((await fresh()).edit_failed_rev).toBe(2);
       } finally {
         fs.renameSync(storagePath('events/active/edit-card/face-pending.gone'), storagePath('events/active/edit-card/face-pending.jpg'));
       }

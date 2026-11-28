@@ -413,7 +413,13 @@ async function ensureEditedSource(photo, { interactive = false, retryFailed = fa
       }
     }
     // A HEAD request answers from what is there; it never starts a render.
-    if (headOnly) throw Object.assign(new Error(`The edit of photo ${photo.id} is not rendered yet`), { status: 503, code: 'EDIT_PENDING' });
+    // The applied revision's render lost: the pass is asked to make it again,
+    // or a client that only ever asks HEAD (a download preflight) would wait
+    // forever, the revision being applied already.
+    if (headOnly) {
+      await markRenderLost(photo, key);
+      throw Object.assign(new Error(`The edit of photo ${photo.id} is not rendered yet`), { status: 503, code: 'EDIT_PENDING' });
+    }
     if (await failedBefore()) {
       throw Object.assign(new Error(`The edit of photo ${photo.id} could not be rendered; it is tried again later`), { status: 503, code: 'EDIT_FAILED' });
     }
@@ -438,6 +444,25 @@ async function ensureEditedSource(photo, { interactive = false, retryFailed = fa
     if (!params) return null;
   }
   throw Object.assign(new Error(`The edit of photo ${photo.id} kept changing while it was rendered`), { status: 503, code: 'EDIT_BUSY' });
+}
+
+/**
+ * The render of an applied revision is missing (issue 2619): its columns
+ * stop naming it, so pendingRows includes the photo, and the pass is woken.
+ * Only for the applied revision (a pending one is in the pass already) and
+ * only where the row still names that key (or none).
+ */
+async function markRenderLost(photo, key) {
+  const rev = Number(photo.edit_rev);
+  const named = (column) => (q) => (key ? q.where(column, key) : q.whereNull(column));
+  const cleared = await db('photos').where({ id: photo.id, edit_applied_rev: rev })
+    .where(named('edit_applied_render_path'))
+    .update({ edit_applied_render_path: null })
+    .catch(() => 0);
+  if (!cleared) return;
+  await db('photos').where({ id: photo.id, edit_rev: rev }).where(named('edit_render_path'))
+    .update({ edit_render_path: null }).catch(() => {});
+  requestPass();
 }
 
 /** A file name with `.jpg` in place of its extension. */
@@ -705,7 +730,10 @@ async function afterUpload(photoId) {
 function pendingRows() {
   return wherePhotoProcessed(livePhotos(db))
     .join('events', 'photos.event_id', 'events.id')
-    .whereRaw('photos.edit_rev > photos.edit_applied_rev')
+    // A newer save, or an applied edit whose render was lost (markRenderLost).
+    .where((q) => q.whereRaw('photos.edit_rev > photos.edit_applied_rev')
+      .orWhere((lost) => lost.whereRaw('photos.edit_rev = photos.edit_applied_rev')
+        .whereNotNull('photos.edit_applied_params').whereNull('photos.edit_applied_render_path')))
     .where(function () {
       this.where('events.is_archived', false).orWhereNull('events.is_archived');
     });
@@ -788,6 +816,17 @@ async function applyPhoto(photo, references) {
   try {
     let row = await db('photos').where({ id: photo.id }).first();
     if (!row || Number(row.edit_rev) !== rev) return true;
+    // Applied already, its render lost (markRenderLost): rendered again and
+    // recorded for both columns; the renditions are left as they are.
+    if (Number(row.edit_applied_rev) === rev) {
+      if (!paramsOf(row)) return true;
+      const rendered = await ensureEditedSource(row, { retryFailed: true }).catch((err) => {
+        if (err.code === 'PHOTO_GONE') return 'gone';
+        logger.warn(`Photo edit: the lost render of photo ${photo.id} revision ${rev} could not be made: ${err.message}`);
+        return null;
+      });
+      return rendered ? true : 'render';
+    }
     if (paramsOf(row)) {
       const rendered = await ensureEditedSource(row, { retryFailed: true }).catch((err) => {
         // Deleted meanwhile: nothing left to apply, and no failure to record.

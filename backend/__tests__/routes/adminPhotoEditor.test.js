@@ -876,3 +876,35 @@ describe('the gallery photo route\'s cache lifetime for an edited photo', () => 
     }
   });
 });
+
+describe('an applied edit whose render was lost', () => {
+  it('is queued by a HEAD that finds it missing, and the pass renders it again', async () => {
+    const math = require('../../src/utils/photoEditMath');
+    const id = unwrap(await db('photos').insert({
+      event_id: event.id, filename: 'lost-render.jpg', path: 'edit-route/beach.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      size_bytes: originalBytes.length, processing_status: 'complete', uploaded_at: new Date().toISOString(), width: 800, height: 600,
+    }).returning('id'));
+    try {
+      await require('../../src/services/photoEdits').saveEdits([{ photo: await row(id), params: math.validateEditParams({ exposure: 0.4 }).params }]);
+      await applyEdits();
+      const lost = (await row(id)).edit_render_path;
+      expect(lost).toBeTruthy();
+      fs.unlinkSync(path.join(process.env.STORAGE_PATH, lost));
+
+      const head = await guest('head', `/download/${id}`);
+      expect(head.status).toBe(503);
+      // Not rendered on the HEAD; the row says it is to be rendered again.
+      expect(fs.existsSync(path.join(process.env.STORAGE_PATH, lost))).toBe(false);
+      expect((await row(id)).edit_applied_render_path).toBeNull();
+
+      await applyEdits();
+      const restored = await row(id);
+      expect(restored.edit_render_path).toBeTruthy();
+      expect(restored.edit_applied_render_path).toBe(restored.edit_render_path);
+      expect(fs.existsSync(path.join(process.env.STORAGE_PATH, restored.edit_render_path))).toBe(true);
+      expect((await guest('head', `/download/${id}`)).status).toBe(200);
+    } finally {
+      await db('photos').where({ id }).delete();
+    }
+  });
+});
