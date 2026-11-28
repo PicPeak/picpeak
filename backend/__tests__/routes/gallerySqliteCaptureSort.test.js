@@ -140,6 +140,18 @@ describe('capture-date ordering on SQLite (#1172)', () => {
     expect(await orderedFilenames('asc')).toEqual(['iso-0115.jpg', 'fallback-2300.jpg']);
   });
 
+  test('an upload time written as ISO text compares by clock too', async () => {
+    // uploaded_at comes in both text shapes: knex's 'YYYY-MM-DD HH:MM:SS' and
+    // the ISO string the API routes write. Left as written, the 'T' put the
+    // ISO 05:00 behind every other key of that day.
+    await addPhoto('plain-upload-2300.jpg', null, '2026-06-03 23:00:00');
+    await addPhoto('captured-1200.jpg', '2026-06-03T12:00:00.000Z', '2026-09-01 00:00:00');
+    await addPhoto('iso-upload-0500.jpg', null, '2026-06-03T05:00:00.000Z');
+
+    expect(await orderedFilenames('asc')).toEqual(['iso-upload-0500.jpg', 'captured-1200.jpg', 'plain-upload-2300.jpg']);
+    expect(await orderedFilenames('desc')).toEqual(['plain-upload-2300.jpg', 'captured-1200.jpg', 'iso-upload-0500.jpg']);
+  });
+
   test('an epoch-integer uploaded_at is compared as a date, not as its digits', async () => {
     // uploaded_at is not always text either: a legacy archive restore leaves
     // epoch milliseconds in it (__tests__/integration/sqliteEpochTimestamps.js).
